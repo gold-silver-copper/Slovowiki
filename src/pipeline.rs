@@ -57,10 +57,9 @@ pub fn generate(
                     // flavored letters the consensus guessed (język y/i, blago g/h).
                     // When it diverges, the reflexes (consensus) win; the proto
                     // form stays a scored alternative.
-                    let cons_form = candidates
-                        .first()
-                        .map(|c| c.form.clone())
-                        .unwrap_or_default();
+                    let cons_top = candidates.first();
+                    let cons_form = cons_top.map(|c| c.form.clone()).unwrap_or_default();
+                    let cons_branch_cov = cons_top.map(|c| c.branch_coverage).unwrap_or(0);
                     let agree = flavor_equivalent(&pc.form, &cons_form);
                     // Reflex-shape agreement, confidence-gated (§F: a trustworthy
                     // engine earns a looser gate). When the reconstruction agrees
@@ -71,6 +70,12 @@ pub fn generate(
                     // 0.62), where the living evidence wins instead. Adjectives are
                     // exempt (their consensus citation often has a spurious fleeting
                     // vowel the reconstruction rightly drops: dobry vs dobery).
+                    // Rejected experiment: also demoting when consensus is strong
+                    // (cons_branch_cov >= 3) regressed −0.47pp exact — a 3-branch
+                    // consensus is often the de-flavored form the reconstruction
+                    // correctly flavors. The flavor-equivalence gate already
+                    // handles the flavor/prothesis-only case.
+                    let _ = cons_branch_cov;
                     let demote =
                         !agree && l.confidence < 0.62 && input.pos != crate::model::Pos::Adjective;
                     let base = 0.58 + 0.40 * l.confidence;

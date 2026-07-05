@@ -637,6 +637,20 @@ mod tests {
     }
 
     #[test]
+    fn reflex_alignment_counts_j() {
+        // Regression for the is_reflex_cons `j` bug: the yer in *vojьna aligns
+        // past the j, so the reflexes (vojna, no vowel there) drop it.
+        let out = generate_with_reflexes(
+            "*vojьna",
+            Pos::Noun,
+            None,
+            &["vojna".into(), "vojna".into(), "vojna".into()],
+        )
+        .form;
+        assert!(normalized_match(&out, "vojna"), "got {out}");
+    }
+
+    #[test]
     fn reflex_guided_weak_yer() {
         // Strict Havlík drops the weak yer of *pьsati → *psati (matching only
         // Czech psát); the reflexes vocalize it, so with reflex evidence the

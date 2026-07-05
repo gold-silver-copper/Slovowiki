@@ -26,10 +26,10 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **34.80%** | +7.42 pp |
-| normalized top-1 | 34.96% | **41.56%** | +6.60 pp |
-| normalized top-3 | 42.89% | **51.39%** | +8.5 pp |
-| mean normalized edit distance | 0.253 | **0.235** | −0.018 |
+| exact top-1 | 27.38% | **36.02%** | +8.64 pp |
+| normalized top-1 | 34.96% | **43.22%** | +8.26 pp |
+| normalized top-3 | 42.89% | **53.37%** | +10.5 pp |
+| mean normalized edit distance | 0.253 | **0.232** | −0.021 |
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
 ~38% *wrong-cluster* (the official root is in the evidence but a different one
