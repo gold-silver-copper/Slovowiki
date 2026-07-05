@@ -1,0 +1,659 @@
+//! Modern-Slavic consensus engine.
+//!
+//! Given the cognate forms of one meaning across the modern Slavic languages,
+//! reconstruct the Interslavic lemma the way the language's own vocabulary was
+//! built: by consensus, balanced across the East / West / South branches so no
+//! single large language dominates.
+//!
+//! The pipeline is:
+//!   1. Normalize every cognate to phonemic Latin (done upstream).
+//!   2. Vote on a *consonant-skeleton* alignment key, counting **branches**
+//!      rather than languages. Because every form in a meaning group is cognate
+//!      by construction, an aggressive key is safe and makes East pleophony /
+//!      *g→h / vowel shifts collapse onto one fingerprint.
+//!   3. Pick the surface representative closest to Interslavic orthography from
+//!      the winning group, then run a set of individually-toggleable
+//!      etymological repairs (nasal recovery, liquid metathesis, jat, palatals)
+//!      to recover the flavored spelling.
+//!   4. Score from branch coverage and agreement, and calibrate confidence.
+//!
+//! Every repair is gated by [`ConsensusConfig`] so its accuracy effect can be
+//! measured in isolation on the benchmark.
+
+use crate::lang::{Branch, LANGS};
+use crate::model::{Candidate, CandidateSource, Evidence, EvidenceRelation, Gender, Pos, RuleStep};
+use crate::normalize::NormForm;
+use crate::orthography as ortho;
+use std::collections::BTreeMap;
+
+const DOC_DESIGN: &str = "https://interslavic.fun/learn/misc/design-criteria/";
+const DOC_ORTHO: &str = "https://interslavic.fun/learn/orthography/";
+
+/// One attested cognate form feeding the consensus.
+#[derive(Debug, Clone)]
+pub struct SourceForm {
+    pub lang_code: String,
+    pub branch: Branch,
+    pub modern: bool,
+    pub norm: NormForm,
+    pub source_url: String,
+}
+
+/// The consensus input for a single meaning.
+#[derive(Debug, Clone)]
+pub struct MeaningInput {
+    pub pos: Pos,
+    pub gender: Option<Gender>,
+    pub gloss: String,
+    pub forms: Vec<SourceForm>,
+}
+
+/// Toggles for each etymological repair, so the benchmark can attribute the
+/// accuracy delta of every rule.
+#[derive(Debug, Clone, Copy)]
+pub struct ConsensusConfig {
+    /// Count branches (not languages) when voting; the core anti-domination rule.
+    pub branch_balanced: bool,
+    /// Prefer a South-Slavic surface representative (closest to ISV shape).
+    pub prefer_south_representative: bool,
+    /// Recover nasal vowels (ę/ų) from the Polish cognate.
+    pub nasal_from_polish: bool,
+    /// Recover ć/đ (*tj/*dj) from the South-Slavic (esp. Serbo-Croatian) reflex.
+    pub palatal_from_south: bool,
+    /// Undo East-Slavic pleophony when an East form is the representative.
+    pub depleophony: bool,
+    /// Recover jat (ě) from the cross-branch reflex signature.
+    pub jat_reconstruction: bool,
+    /// Normalize native POS lemma endings (noun/adj/verb, §3).
+    pub lemma_endings: bool,
+    /// Apply the internationalism ending table (§5.2).
+    pub internationalism: bool,
+    /// Use the six-subgroup vote (§4.1) instead of three coarse branches.
+    pub six_subgroup_vote: bool,
+}
+
+impl ConsensusConfig {
+    /// The pre-existing behavior: transliterate the first available form, no
+    /// branch balancing and no repairs. Used to measure the baseline.
+    pub fn baseline() -> Self {
+        ConsensusConfig {
+            branch_balanced: false,
+            prefer_south_representative: false,
+            nasal_from_polish: false,
+            palatal_from_south: false,
+            depleophony: false,
+            jat_reconstruction: false,
+            lemma_endings: false,
+            internationalism: false,
+            six_subgroup_vote: false,
+        }
+    }
+
+    pub fn full() -> Self {
+        ConsensusConfig {
+            branch_balanced: true,
+            prefer_south_representative: true,
+            nasal_from_polish: true,
+            palatal_from_south: true,
+            depleophony: true,
+            jat_reconstruction: true,
+            lemma_endings: true,
+            internationalism: true,
+            six_subgroup_vote: true,
+        }
+    }
+}
+
+/// Surface-representative language priority: closest-to-Interslavic first.
+/// Slovene/Croatian/Serbian keep *g and have the metathesized liquid
+/// diphthongs; Czech/Slovak add clean sibilants; East Slavic is last (pleophony).
+const REP_PRIORITY: &[&str] = &[
+    "sl", "hr", "sr", "cs", "sk", "pl", "bg", "mk", "ru", "uk", "be",
+];
+const REP_PRIORITY_NO_SOUTH_BIAS: &[&str] =
+    &["ru", "pl", "cs", "uk", "sk", "sl", "hr", "sr", "bg", "mk", "be"];
+
+/// Generate ranked Interslavic candidates from modern-Slavic consensus.
+pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
+    // Keep one primary form per modern language.
+    let mut per_lang: BTreeMap<&str, &SourceForm> = BTreeMap::new();
+    for f in &input.forms {
+        if !f.modern {
+            continue;
+        }
+        per_lang.entry(f.lang_code.as_str()).or_insert(f);
+    }
+    if per_lang.is_empty() {
+        return Vec::new();
+    }
+
+    // Group languages by consonant-skeleton key.
+    struct Group<'a> {
+        key: String,
+        langs: Vec<&'a SourceForm>,
+        branches: Vec<Branch>,
+    }
+    let mut groups: Vec<Group> = Vec::new();
+    for f in per_lang.values() {
+        let key = ortho::consonant_key(&f.norm.latin);
+        if let Some(g) = groups.iter_mut().find(|g| g.key == key) {
+            g.langs.push(f);
+            if !g.branches.contains(&f.branch) {
+                g.branches.push(f.branch);
+            }
+        } else {
+            groups.push(Group {
+                key,
+                langs: vec![f],
+                branches: vec![f.branch],
+            });
+        }
+    }
+
+    // Rank groups by vote strength. With the six-subgroup vote each dialect
+    // subgroup contributes one vote (½ on internal splits); otherwise fall back
+    // to distinct-branch coverage; the plain-majority baseline uses raw count.
+    let vote = |g: &Group| -> f32 {
+        if cfg.six_subgroup_vote {
+            subgroup_score(&g.langs, &per_lang)
+        } else if cfg.branch_balanced {
+            g.branches.len() as f32
+        } else {
+            0.0
+        }
+    };
+    groups.sort_by(|a, b| {
+        vote(b)
+            .total_cmp(&vote(a))
+            .then(b.langs.len().cmp(&a.langs.len()))
+            .then(population_weight(&b.langs).total_cmp(&population_weight(&a.langs)))
+            .then(a.key.cmp(&b.key))
+    });
+
+    let total_langs = per_lang.len();
+    let mut candidates = Vec::new();
+    for (rank, g) in groups.iter().enumerate().take(3) {
+        let branch_coverage = g.branches.len();
+        let agreement = g.langs.len() as f32 / total_langs as f32;
+        let subvote = subgroup_score(&g.langs, &per_lang);
+
+        let (form, mut trace) = reconstruct(g.langs.as_slice(), &per_lang, input, cfg);
+        if form.is_empty() {
+            continue;
+        }
+
+        let mut score = if cfg.six_subgroup_vote {
+            // subvote is in [0,6]; a form attested in all six subgroups is the
+            // strongest possible pan-Slavic consensus.
+            0.28 + 0.105 * subvote + 0.12 * agreement
+        } else if cfg.branch_balanced {
+            0.30 + 0.16 * branch_coverage as f32 + 0.22 * agreement
+        } else {
+            0.30 + 0.10 + 0.22 * agreement
+        };
+        // First-ranked group is the chosen consensus; demote the rest.
+        score -= 0.12 * rank as f32;
+        let score = score.clamp(0.05, 0.97);
+
+        let source = if cfg.branch_balanced {
+            CandidateSource::BranchConsensus
+        } else {
+            CandidateSource::MajorityModernSlavic
+        };
+        let mut cand = Candidate::new(form, source, round3(score));
+        cand.branch_coverage = branch_coverage as u8;
+
+        trace.insert(
+            0,
+            RuleStep::new(
+                "consensus-vote",
+                g.langs
+                    .iter()
+                    .map(|f| f.lang_code.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                g.key.clone(),
+                format!(
+                    "Konsensusna forma podpŕta {} větvami ({}), {} od {} językov.",
+                    branch_coverage,
+                    g.branches
+                        .iter()
+                        .map(|b| b.label())
+                        .collect::<Vec<_>>()
+                        .join("+"),
+                    g.langs.len(),
+                    total_langs
+                ),
+                Some(DOC_DESIGN),
+            ),
+        );
+
+        // Evidence: every source form, marked by branch.
+        for f in &input.forms {
+            cand.evidence.push(Evidence {
+                lang_code: f.lang_code.clone(),
+                lang_name: crate::lang::lang_name(&f.lang_code).to_string(),
+                branch: Some(f.branch),
+                form: f.norm.original.clone(),
+                normalized_form: f.norm.latin.clone(),
+                relation: EvidenceRelation::Cognate,
+                source_url: f.source_url.clone(),
+            });
+        }
+        if branch_coverage < 2 {
+            cand.warnings
+                .push("Konsensus opŕt na jednoj větvi; slaby medžuslovjansky dokaz.".to_string());
+        }
+        candidates.push(cand);
+    }
+
+    candidates
+}
+
+/// Build the surface form from the winning group and apply etymological repairs.
+fn reconstruct(
+    group: &[&SourceForm],
+    per_lang: &BTreeMap<&str, &SourceForm>,
+    input: &MeaningInput,
+    cfg: &ConsensusConfig,
+) -> (String, Vec<RuleStep>) {
+    let priority = if cfg.prefer_south_representative {
+        REP_PRIORITY
+    } else {
+        REP_PRIORITY_NO_SOUTH_BIAS
+    };
+    // Pick representative by priority; fall back to first in group.
+    let rep = priority
+        .iter()
+        .find_map(|code| group.iter().find(|f| &f.lang_code == code))
+        .or_else(|| group.first())
+        .copied();
+    let Some(rep) = rep else {
+        return (String::new(), Vec::new());
+    };
+
+    let mut trace = Vec::new();
+    let mut form = rep.norm.latin.clone();
+    trace.push(RuleStep::new(
+        "pick-representative",
+        rep.norm.original.clone(),
+        form.clone(),
+        format!(
+            "Izbrana izvorna forma iz jezyka {} kako najbliža medžuslovjanskomu pravopisu.",
+            crate::lang::lang_name(&rep.lang_code)
+        ),
+        Some(DOC_ORTHO),
+    ));
+
+    // Repair 1: undo East-Slavic pleophony if the representative is East.
+    if cfg.depleophony && rep.branch == Branch::East {
+        if let Some(fixed) = undo_pleophony(&form) {
+            if fixed != form {
+                trace.push(RuleStep::new(
+                    "liquid-metathesis",
+                    form.clone(),
+                    fixed.clone(),
+                    "Vȯzhodnoslovjanske polnoglasje (-oro-/-olo-/-ere-) prěvedeno v medžuslovjansku metatezu.".to_string(),
+                    Some("https://steen.free.fr/interslavic/grammar.html"),
+                ));
+                form = fixed;
+            }
+        }
+    }
+
+    // Repair 2: recover ć/đ from South-Slavic reflex before other edits.
+    if cfg.palatal_from_south {
+        if let Some((fixed, from)) = palatal_from_south(&form, per_lang) {
+            if fixed != form {
+                trace.push(RuleStep::new(
+                    "tj-dj-palatal",
+                    form.clone(),
+                    fixed.clone(),
+                    format!("Refleks *tj/*dj (ć/đ) vȯzstanovljeny iz južnoslovjanskej formy ({from})."),
+                    Some(DOC_ORTHO),
+                ));
+                form = fixed;
+            }
+        }
+    }
+
+    // Repair 3: recover nasal vowels (ę/ų) from Polish.
+    if cfg.nasal_from_polish {
+        if let Some(pl) = per_lang.get("pl") {
+            if let Some(fixed) = nasal_from_polish(&form, &pl.norm.latin) {
+                if fixed != form {
+                    trace.push(RuleStep::new(
+                        "nasal-vowel",
+                        form.clone(),
+                        fixed.clone(),
+                        "Nosovy glasnik (ę/ų) vȯzstanovljeny iz poljskej formy (ę/ą).".to_string(),
+                        Some("https://interslavic.fun/learn/phonology/"),
+                    ));
+                    form = fixed;
+                }
+            }
+        }
+    }
+
+    // Baseline path: keep a raw ǫ→u fold if nasals were not recovered.
+    form = form.replace('ǫ', "u").replace('ř', "r");
+
+    // Repair 4: reconstruct jat from the cross-branch signature.
+    if cfg.jat_reconstruction {
+        if let Some(fixed) = jat_reconstruction(&form, per_lang) {
+            if fixed != form {
+                trace.push(RuleStep::new(
+                    "jat-reflex",
+                    form.clone(),
+                    fixed.clone(),
+                    "Jať (ě) vȯzstanovljeny iz medžuvětvovogo refleksa (ru e / uk i / pl ie).".to_string(),
+                    Some("https://interslavic.fun/learn/phonology/"),
+                ));
+                form = fixed;
+            }
+        }
+    }
+
+    // POS-aware lemma ending normalization: internationalism table (§5.2) and
+    // native endings (§3), both individually gated so the benchmark can
+    // attribute their effect.
+    if cfg.internationalism || cfg.lemma_endings {
+        let (fixed, steps) =
+            crate::morph::normalize_lemma(&form, input.pos, cfg.internationalism, cfg.lemma_endings);
+        form = fixed;
+        trace.extend(steps);
+    } else {
+        form = tidy_ending(&form, input.pos, input.gender);
+    }
+    (form, trace)
+}
+
+/// Undo East-Slavic pleophony: -oroC->-raC, -oloC->-laC(/-lěC), -ereC->-rěC.
+/// Conservative: only fires inside a clear C V r/l V C environment.
+fn undo_pleophony(word: &str) -> Option<String> {
+    let chars: Vec<char> = word.chars().collect();
+    let n = chars.len();
+    let mut out = String::new();
+    let mut i = 0;
+    let mut changed = false;
+    while i < n {
+        // pattern: C (o|e) (r|l) (o|e) C
+        if i + 4 < n
+            && is_cons(chars[i])
+            && matches!(chars[i + 1], 'o' | 'e')
+            && matches!(chars[i + 2], 'r' | 'l')
+            && matches!(chars[i + 3], 'o' | 'e')
+            && is_cons(chars[i + 4])
+        {
+            out.push(chars[i]);
+            out.push(chars[i + 2]);
+            // -oro- -> -ra-, -olo- -> -la-, -ere- -> -re-(jat added later)
+            let nucleus = if chars[i + 1] == 'e' { 'e' } else { 'a' };
+            out.push(nucleus);
+            i += 4; // consume up to (but not including) the closing consonant
+            changed = true;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    changed.then_some(out)
+}
+
+/// If South-Slavic (hr/sr/bs, then sl) shows ć/đ where the representative has
+/// another reflex, adopt the palatal.
+fn palatal_from_south(
+    word: &str,
+    per_lang: &BTreeMap<&str, &SourceForm>,
+) -> Option<(String, String)> {
+    for code in ["hr", "sr", "bs", "sl", "mk"] {
+        if let Some(sf) = per_lang.get(code) {
+            let s = &sf.norm.latin;
+            if s.contains('ć') && !word.contains('ć') {
+                // Replace a č/c/t before the front region with ć (coarse).
+                if let Some(rep) = replace_first_of(word, &['č', 'c', 't'], 'ć') {
+                    return Some((rep, code.to_string()));
+                }
+            }
+            if s.contains('đ') && !word.contains('đ') {
+                if let Some(rep) = replace_first_of(word, &['ž', 'z', 'd'], 'đ') {
+                    return Some((rep, code.to_string()));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn replace_first_of(word: &str, targets: &[char], to: char) -> Option<String> {
+    let mut out = String::with_capacity(word.len());
+    let mut done = false;
+    for ch in word.chars() {
+        if !done && targets.contains(&ch) {
+            out.push(to);
+            done = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    done.then_some(out)
+}
+
+/// Transfer a nasal vowel from the Polish cognate onto the aligned vowel slot.
+fn nasal_from_polish(word: &str, pl: &str) -> Option<String> {
+    if !pl.contains('ę') && !pl.contains('ǫ') {
+        return None;
+    }
+    if ortho::consonant_key(word) != ortho::consonant_key(pl) {
+        return None;
+    }
+    let pl_slots = vowel_slots(pl);
+    let nasal = pl_slots
+        .iter()
+        .find(|(_, v, _)| *v == 'ę' || *v == 'ǫ')?;
+    let target = if nasal.1 == 'ę' { 'ę' } else { 'ų' };
+    let word_slots = vowel_slots(word);
+    let slot = word_slots
+        .iter()
+        .min_by_key(|(c, _, _)| (*c as isize - nasal.0 as isize).unsigned_abs())?;
+    let mut chars: Vec<char> = word.chars().collect();
+    if slot.2 < chars.len() {
+        chars[slot.2] = target;
+        return Some(chars.into_iter().collect());
+    }
+    None
+}
+
+/// Reconstruct jat: if East shows `e`/`ě` at a vowel slot where Ukrainian shows
+/// `i` and/or Czech/Slovak/South shows a differing front vowel, mark ě.
+fn jat_reconstruction(
+    word: &str,
+    per_lang: &BTreeMap<&str, &SourceForm>,
+) -> Option<String> {
+    // Signature: Russian has `e` and Ukrainian has `i` in the same slot.
+    let ru = per_lang.get("ru")?;
+    let uk = per_lang.get("uk")?;
+    if ortho::consonant_key(&ru.norm.latin) != ortho::consonant_key(word) {
+        return None;
+    }
+    let ru_slots = vowel_slots(&ru.norm.latin);
+    let uk_slots = vowel_slots(&uk.norm.latin);
+    for (c, v, _) in &ru_slots {
+        if *v != 'e' {
+            continue;
+        }
+        // Ukrainian shows i at the aligned slot => jat.
+        if uk_slots
+            .iter()
+            .any(|(uc, uv, _)| (*uc as isize - *c as isize).abs() <= 1 && *uv == 'i')
+        {
+            let word_slots = vowel_slots(word);
+            if let Some(slot) = word_slots
+                .iter()
+                .find(|(wc, wv, _)| (*wc as isize - *c as isize).abs() <= 1 && *wv == 'e')
+            {
+                let mut chars: Vec<char> = word.chars().collect();
+                chars[slot.2] = 'ě';
+                return Some(chars.into_iter().collect());
+            }
+        }
+    }
+    None
+}
+
+/// (consonants-before, vowel-char, char-index) for each vowel nucleus.
+fn vowel_slots(word: &str) -> Vec<(usize, char, usize)> {
+    let mut slots = Vec::new();
+    let mut cons = 0usize;
+    let mut prev_vowel = false;
+    for (idx, ch) in word.chars().enumerate() {
+        if is_vowelish(ch) {
+            if !prev_vowel {
+                slots.push((cons, ch, idx));
+            }
+            prev_vowel = true;
+        } else {
+            if ch != 'j' {
+                cons += 1;
+            }
+            prev_vowel = false;
+        }
+    }
+    slots
+}
+
+fn is_vowelish(ch: char) -> bool {
+    matches!(ch, 'a' | 'e' | 'i' | 'o' | 'u' | 'y' | 'ě' | 'ę' | 'ǫ' | 'ų' | 'å' | 'ȯ')
+}
+
+fn is_cons(ch: char) -> bool {
+    ch.is_alphabetic() && !is_vowelish(ch)
+}
+
+/// Light POS-aware ending normalization for the consensus lemma.
+fn tidy_ending(word: &str, pos: Pos, gender: Option<Gender>) -> String {
+    let mut w = word.trim().to_string();
+    match pos {
+        Pos::Verb => {
+            // Most languages cite verbs with an infinitive suffix; normalize the
+            // common Slavic infinitive endings to Interslavic -ti/-ať->-ati.
+            if w.ends_with("ť") {
+                w.truncate(w.len() - "ť".len());
+                w.push_str("ti");
+            } else if w.ends_with("t") && !w.ends_with("ti") {
+                // Russian -ть already lost soft sign -> ends in t
+                w.push_str("i");
+            } else if w.ends_with("ć") {
+                w.truncate(w.len() - "ć".len());
+                w.push_str("ti");
+            }
+        }
+        Pos::Adjective => {
+            // Interslavic hard adjective lemma ends in -y (masc nom sg).
+            if w.ends_with("i") && !w.ends_with("ji") {
+                w.pop();
+                w.push('y');
+            }
+        }
+        Pos::Noun => {
+            if gender == Some(Gender::Neuter) && !ends_with_vowel(&w) {
+                // leave; neuter usually already ends in -o/-e
+            }
+        }
+        _ => {}
+    }
+    w
+}
+
+fn ends_with_vowel(w: &str) -> bool {
+    w.chars().last().map(ortho::is_vowel).unwrap_or(false)
+}
+
+fn round3(x: f32) -> f32 {
+    (x * 1000.0).round() / 1000.0
+}
+
+/// The six dialect subgroups (§4.1). Each gets one vote; RU and PL stand alone
+/// so they cannot over-count, and the large BCMS cluster shares a single vote.
+const SUBGROUPS: &[&[&str]] = &[
+    &["ru"],
+    &["uk", "be"],
+    &["pl"],
+    &["cs", "sk"],
+    &["sl", "hr", "sr", "bs"],
+    &["bg", "mk"],
+];
+
+/// Relative speaker weights, used only as a population tie-break (§4.3).
+fn pop_weight(code: &str) -> f32 {
+    match code {
+        "ru" => 1.0,
+        "pl" => 0.44,
+        "uk" => 0.42,
+        "cs" => 0.10,
+        "be" => 0.10,
+        "sr" => 0.09,
+        "bg" => 0.08,
+        "sk" => 0.05,
+        "hr" => 0.05,
+        "bs" => 0.03,
+        "sl" => 0.02,
+        "mk" => 0.02,
+        _ => 0.0,
+    }
+}
+
+/// §4.3: Σ over subgroups of (present members agreeing / present members). A
+/// form attested across all six subgroups scores 6.0; ½ votes fall out
+/// naturally from intra-subgroup splits.
+fn subgroup_score(langs: &[&SourceForm], present: &BTreeMap<&str, &SourceForm>) -> f32 {
+    let mut total = 0.0;
+    for sg in SUBGROUPS {
+        let present_members: Vec<&str> = sg
+            .iter()
+            .copied()
+            .filter(|c| present.contains_key(*c))
+            .collect();
+        if present_members.is_empty() {
+            continue;
+        }
+        let agree = present_members
+            .iter()
+            .filter(|c| langs.iter().any(|f| &f.lang_code == *c))
+            .count();
+        total += agree as f32 / present_members.len() as f32;
+    }
+    total
+}
+
+fn population_weight(langs: &[&SourceForm]) -> f32 {
+    langs.iter().map(|f| pop_weight(&f.lang_code)).sum()
+}
+
+/// Convenience: build [`SourceForm`]s for every modern Slavic language present in
+/// a cell map (used by the evaluator and site builder).
+pub fn source_forms_from_cells(
+    cells: &std::collections::HashMap<String, String>,
+    url_for: impl Fn(&str, &str) -> String,
+) -> Vec<SourceForm> {
+    let mut forms = Vec::new();
+    for li in LANGS.iter() {
+        if li.csv_col.is_empty() {
+            continue;
+        }
+        let Some(cell) = cells.get(li.code) else {
+            continue;
+        };
+        let normed = crate::normalize::normalize_cell(li.code, cell);
+        if let Some(primary) = crate::normalize::primary(&normed) {
+            forms.push(SourceForm {
+                lang_code: li.code.to_string(),
+                branch: li.branch,
+                modern: li.modern,
+                norm: primary.clone(),
+                source_url: url_for(li.code, &primary.original),
+            });
+        }
+    }
+    forms
+}

@@ -15,8 +15,19 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod consensus;
+mod eval;
+mod lang;
+mod model;
+mod morph;
+mod normalize;
+mod official;
+mod orthography;
+mod proto;
+
 const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl";
 const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
+const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 
 const MODERN_CORE: &[&str] = &["ru", "uk", "be", "pl", "cs", "sk", "sl", "sh", "bg", "mk"];
 
@@ -54,6 +65,19 @@ enum Command {
         host: String,
         #[arg(long, default_value_t = 8765)]
         port: u16,
+    },
+    /// Benchmark the candidate generator against the official Interslavic dictionary.
+    Evaluate {
+        /// Official dictionary: full interslavic-dictionary.com export (with
+        /// per-language translations). The metadata TSV lacks translations.
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        /// Optional Wiktextract dump for the Proto-Slavic benchmark path.
+        #[arg(long)]
+        dump: Option<PathBuf>,
+        /// Output directory for the report artifacts.
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
     },
 }
 
@@ -135,6 +159,11 @@ fn main() -> Result<()> {
             max_lexemes,
         } => build(&dump, &output, max_proto, max_lexemes),
         Command::Serve { data, host, port } => serve(&data, &host, port),
+        Command::Evaluate {
+            official,
+            dump,
+            out,
+        } => eval::run(&official, dump.as_deref(), &out),
     }
 }
 
