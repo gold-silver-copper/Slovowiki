@@ -26,10 +26,15 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **34.66%** | +7.28 pp |
-| normalized top-1 | 34.96% | **41.41%** | +6.45 pp |
-| normalized top-3 | 42.89% | **51.29%** | +8.4 pp |
-| mean normalized edit distance | 0.253 | **0.236** | −0.017 |
+| exact top-1 | 27.38% | **34.72%** | +7.34 pp |
+| normalized top-1 | 34.96% | **41.48%** | +6.52 pp |
+| normalized top-3 | 42.89% | **51.35%** | +8.5 pp |
+| mean normalized edit distance | 0.253 | **0.235** | −0.018 |
+
+The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
+(`cargo run --release -- proto-eval`): on the words it confidently links to a
+reconstruction it derives the official lemma with **43.25% exact / 48.04%
+normalized** accuracy (up from 38.6% before the V3 engine work).
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
 
@@ -112,6 +117,9 @@ cargo run --release -- extract-proto --dump /Users/kisaczka/Desktop/code/english
 
 # Reproducible benchmark against the official dictionary (fast, no dump needed):
 cargo run --release -- evaluate --official data/official-isv.csv --out target/eval
+
+# Proto-engine-only benchmark (isolates the rule engine's accuracy on linked words):
+cargo run --release -- proto-eval
 
 # The acceptance-criteria invocation also works (the metadata TSV lacks
 # translations, so it transparently falls back to the bundled full export):
