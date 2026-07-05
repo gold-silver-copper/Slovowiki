@@ -220,6 +220,7 @@ fn build_input(entry: &OfficialEntry) -> MeaningInput {
         gender: entry.noun_traits.gender,
         gloss: entry.english.clone(),
         forms,
+        is_intl_meaning: entry.genesis.trim() == "I",
     }
 }
 

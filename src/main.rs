@@ -94,6 +94,13 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// Data-quality / ceiling audit: classify misses and cognate cohesion.
+    Audit {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -120,6 +127,7 @@ fn main() -> Result<()> {
         Command::ExtractProto { dump, out } => dump::extract(&dump, &out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
+        Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Evaluate {
             official,
             dump,

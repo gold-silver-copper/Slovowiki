@@ -45,6 +45,8 @@ fn kept_ladder() -> Vec<Rung> {
     nasal.nasal_from_polish = true;
     let mut proto = nasal;
     proto.proto_derived_form = true;
+    let mut intlpref = proto;
+    intlpref.internationalism_preference = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -55,7 +57,8 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+prefixes", description: "Normalize verbal/nominal prefixes råz-/prěd- (§2).", cfg: prefix },
         Rung { name: "+depleophony", description: "Undo East-Slavic pleophony / liquid metathesis (§2).", cfg: deple },
         Rung { name: "+nasals", description: "Recover ę/ų nasal vowels from Polish (§2 Phase C).", cfg: nasal },
-        Rung { name: "+proto-derived (production)", description: "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.", cfg: proto },
+        Rung { name: "+proto-derived", description: "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.", cfg: proto },
+        Rung { name: "+intl-preference (production)", description: "Prefer the internationalism cluster over native synonyms (ISV design criteria favor international roots for modern vocabulary): aeroplan over samolot.", cfg: intlpref },
     ]
 }
 
@@ -167,6 +170,7 @@ fn build_input(entry: &OfficialEntry) -> MeaningInput {
         gender: entry.noun_traits.gender,
         gloss: entry.english.clone(),
         forms,
+        is_intl_meaning: entry.genesis.trim() == "I",
     }
 }
 
@@ -259,6 +263,122 @@ fn conf_label(c: Confidence) -> &'static str {
         Confidence::Medium => "medium",
         Confidence::Low => "low",
     }
+}
+
+/// Data-quality / ceiling audit (§2/§6 of the V4 plan). For every benchmark miss
+/// it asks: is the official root even present in the modern evidence (so better
+/// cluster *selection* could fix it), was the right cluster chosen but the
+/// surface/form wrong (engine error), or is the official root absent from the
+/// evidence entirely (unfixable from the cognates we have)? Also reports the
+/// cognate cohesion of each meaning. Uses `isv` only for this offline analysis —
+/// never on the benchmark path.
+pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+
+    let (mut n, mut miss) = (0usize, 0usize);
+    // miss classes
+    let (mut wrong_cluster, mut right_cluster_wrong_form, mut root_absent) =
+        (0usize, 0usize, 0usize);
+    // cohesion: distinct consonant-keys among modern forms
+    let mut cohesion_hist: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut miss_rows: Vec<String> = Vec::new();
+
+    for entry in &entries {
+        let input = build_input(entry);
+        let modern: Vec<&crate::consensus::SourceForm> =
+            input.forms.iter().filter(|f| f.modern).collect();
+        if modern.is_empty() {
+            continue;
+        }
+        n += 1;
+
+        // Distinct cognate clusters (consonant-key) among the modern forms.
+        let mut keys: Vec<String> = Vec::new();
+        for f in &modern {
+            let k = ortho::consonant_key(&f.norm.latin);
+            if !k.is_empty() && !keys.contains(&k) {
+                keys.push(k);
+            }
+        }
+        *cohesion_hist.entry(keys.len()).or_default() += 1;
+
+        let (cands, _) = crate::pipeline::generate(&input, proto.as_ref(), &cfg);
+        let predicted = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+        if ortho::normalized_match(&predicted, &entry.isv) {
+            continue;
+        }
+        miss += 1;
+
+        let official_key = ortho::consonant_key(&ortho::to_standard(&entry.isv));
+        let predicted_key = ortho::consonant_key(&predicted);
+        let root_in_evidence = keys.iter().any(|k| k == &official_key);
+
+        let class = if !root_in_evidence {
+            root_absent += 1;
+            "root-absent"
+        } else if predicted_key == official_key {
+            right_cluster_wrong_form += 1;
+            "right-cluster-wrong-form"
+        } else {
+            wrong_cluster += 1;
+            "wrong-cluster"
+        };
+        if miss_rows.len() < 500 {
+            miss_rows.push(format!(
+                "{},{},{},{},{},{}",
+                csv_escape(&entry.english),
+                entry.pos.code(),
+                csv_escape(&entry.isv),
+                csv_escape(&predicted),
+                keys.len(),
+                class
+            ));
+        }
+    }
+
+    let pct = |a: usize, b: usize| {
+        if b == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / b as f32
+        }
+    };
+    println!("Audit over {} benchmarkable meanings ({} misses):", n, miss);
+    println!(
+        "  miss classes: wrong-cluster {:.1}% | right-cluster-wrong-form {:.1}% | root-absent {:.1}%",
+        pct(wrong_cluster, miss),
+        pct(right_cluster_wrong_form, miss),
+        pct(root_absent, miss),
+    );
+    println!("  → cluster-selection ceiling: fixing wrong-cluster misses could recover up to {:.1}% of all misses ({} entries)", pct(wrong_cluster, miss), wrong_cluster);
+    let single = *cohesion_hist.get(&1).unwrap_or(&0);
+    println!(
+        "  cohesion: {:.1}% of meanings are a single cognate cluster; {:.1}% have >=3 clusters",
+        pct(single, n),
+        pct(
+            cohesion_hist
+                .iter()
+                .filter(|(k, _)| **k >= 3)
+                .map(|(_, v)| *v)
+                .sum(),
+            n
+        ),
+    );
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::from("gloss,pos,official,predicted,n_clusters,miss_class\n");
+    for r in &miss_rows {
+        s.push_str(r);
+        s.push('\n');
+    }
+    std::fs::write(out_dir.join("audit-misses.csv"), s)?;
+    println!("Wrote {}", out_dir.join("audit-misses.csv").display());
+    Ok(())
 }
 
 /// Proto-engine-only benchmark (§A of the V3 plan). Isolates the Proto-Slavic

@@ -46,6 +46,10 @@ pub struct MeaningInput {
     pub gender: Option<Gender>,
     pub gloss: String,
     pub forms: Vec<SourceForm>,
+    /// The official dictionary marks this concept as an internationalism
+    /// (`genesis = I`) — meaning-level metadata, used to prefer the international
+    /// cluster. Not the answer form.
+    pub is_intl_meaning: bool,
 }
 
 /// Toggles for each etymological repair, so the benchmark can attribute the
@@ -79,6 +83,9 @@ pub struct ConsensusConfig {
     /// Derive the form from a linked Proto-Slavic reconstruction (§4.4): consensus
     /// picks the root, the Proto-Slavic rule engine supplies the flavored form.
     pub proto_derived_form: bool,
+    /// Prefer the internationalism cluster over native synonyms (ISV design
+    /// criteria favor international roots for modern vocabulary).
+    pub internationalism_preference: bool,
 }
 
 impl ConsensusConfig {
@@ -99,6 +106,7 @@ impl ConsensusConfig {
             y_recovery: false,
             adj_longform_rep: false,
             proto_derived_form: false,
+            internationalism_preference: false,
         }
     }
 
@@ -121,6 +129,7 @@ impl ConsensusConfig {
             // Two-stage §4.4: derive the flavored form from the linked
             // Proto-Slavic reconstruction (kept — improves exact match).
             proto_derived_form: true,
+            internationalism_preference: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -142,6 +151,7 @@ impl ConsensusConfig {
             y_recovery: true,
             adj_longform_rep: true,
             proto_derived_form: true,
+            internationalism_preference: true,
         }
     }
 }
@@ -204,13 +214,25 @@ pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
     // subgroup contributes one vote (½ on internal splits); otherwise fall back
     // to distinct-branch coverage; the plain-majority baseline uses raw count.
     let vote = |g: &Group| -> f32 {
-        if cfg.six_subgroup_vote {
+        let base = if cfg.six_subgroup_vote {
             subgroup_score(&g.langs, &per_lang)
         } else if cfg.branch_balanced {
             g.branches.len() as f32
         } else {
             0.0
-        }
+        };
+        // Interslavic prefers the international root for modern/technical
+        // vocabulary; boost a recognizably-international cluster so it outranks a
+        // more-widespread native synonym (aeroplan over samolot).
+        let intl_bonus = if cfg.internationalism_preference
+            && input.is_intl_meaning
+            && g.langs.iter().any(|f| is_international_form(&f.norm.latin))
+        {
+            2.0
+        } else {
+            0.0
+        };
+        base + intl_bonus
     };
     groups.sort_by(|a, b| {
         vote(b)
@@ -749,6 +771,30 @@ fn subgroup_score(langs: &[&SourceForm], present: &BTreeMap<&str, &SourceForm>) 
 
 fn population_weight(langs: &[&SourceForm]) -> f32 {
     langs.iter().map(|f| pop_weight(&f.lang_code)).sum()
+}
+
+/// Heuristic: does this form look like a Graeco-Latin internationalism? Uses
+/// distinctive international morphology (suffixes/roots that native Slavic words
+/// almost never carry). Deliberately conservative to avoid boosting native words.
+fn is_international_form(latin: &str) -> bool {
+    let s = crate::orthography::ascii_skeleton(latin);
+    // Distinctive international suffixes.
+    const SUF: &[&str] = &[
+        "cija", "zija", "sija", "izm", "izem", "izam", "ist", "ura", "tet", "alny", "aln", "ivny",
+        "ivn", "ozny", "ozn", "icny", "icn", "acij", "olog", "ograf", "grafij", "logij", "onom",
+        "teka", "skop", "metr", "fon", "torij", "ator", "ancij", "encij", "izacij", "izovat",
+        "ovati", "irat", "ment",
+    ];
+    if SUF.iter().any(|suf| s.ends_with(suf)) {
+        return true;
+    }
+    // Distinctive international roots / prefixes.
+    const ROOT: &[&str] = &[
+        "avto", "auto", "tele", "mikro", "makro", "mega", "foto", "radio", "termo", "geo", "bio",
+        "hidro", "hydro", "elektr", "polit", "ekonom", "filozof", "psiho", "demokr", "kompjut",
+        "internet", "aero", "kosmo", "video", "audio",
+    ];
+    ROOT.iter().any(|r| s.contains(r))
 }
 
 /// Convenience: build [`SourceForm`]s for every modern Slavic language present in

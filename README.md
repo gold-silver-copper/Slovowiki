@@ -26,10 +26,18 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **34.72%** | +7.34 pp |
-| normalized top-1 | 34.96% | **41.48%** | +6.52 pp |
-| normalized top-3 | 42.89% | **51.35%** | +8.5 pp |
+| exact top-1 | 27.38% | **34.80%** | +7.42 pp |
+| normalized top-1 | 34.96% | **41.56%** | +6.60 pp |
+| normalized top-3 | 42.89% | **51.39%** | +8.5 pp |
 | mean normalized edit distance | 0.253 | **0.235** | −0.018 |
+
+A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
+~38% *wrong-cluster* (the official root is in the evidence but a different one
+was chosen — mostly editorial synonym choices Interslavic makes), ~38%
+*right-cluster-wrong-form* (engine/reconstruction error), ~24% *root-absent*
+(the official root is not in any modern cognate — unfixable from evidence).
+84.6% of meanings split across ≥3 cognate clusters. This maps the ceiling for
+future word-selection work.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
 (`cargo run --release -- proto-eval`): on the words it confidently links to a

@@ -1,5 +1,6 @@
 id,gloss,pos,official,baseline_pred,final_pred
 34768,"subscription, season ticket",noun,abonement,abonement,abonament
+24042,apricot,noun,abrikos,abrikos,kajsija
 24054,absorption,noun,absorbcija,absorbcija,absorbacija
 17109,address,noun,adres,adres,adresa
 36719,African,noun,Afrikanėc,afrikanec,afrikanac
@@ -10,6 +11,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 24169,acre,noun,akr,akr,aker
 24180,axiom,noun,aksioma,aksioma,aksiom
 20330,shark,noun,akula,akula,ajkula
+16922,accusative,noun,akuzativ,akuzativ,vinitelen padež
 24219,aquarium,noun,akvarium,akvarium,akvarijum
 24220,aqueduct,noun,akvedukt,akvedukt,akvadukt
 23492,algorithm,noun,algoritm,algoritm,algoritem
@@ -156,7 +158,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 37035,ecosystem,noun,ekosistema,ekosistema,ekosistem
 3582,expansion,noun,ekspansija,ekspansija,ekspansja
 37257,emblem,noun,emblema,emblema,emblem
-485,entity,noun,entitet,entitet,obekt
 3586,enthusiast,noun,entuziast,entuziast,entuzijast
 7452,enthusiasm,noun,entuziazm,entuziazm,entuzijazam
 35019,epicenter,noun,epicentr,epicentr,epicenter
@@ -258,8 +259,8 @@ id,gloss,pos,official,baseline_pred,final_pred
 36448,computer scientist,noun,informatik,informatik,informatyk
 1783,Ingushetia,noun,Ingušetija,ingušetija,ingušetia
 5309,initiative,noun,iniciativa,iniciativa,inicijativa
-35753,innovative,adj,inovativny,inovativny,innovacijny
 26131,institute,noun,institut,institut,inštitut
+16944,instrumental,noun,instrumental,instrumental,tvoritelen padež
 31776,interlinguistics,noun,interlingvistika,interlingvistika,interlingvistike
 7947,so,adv,itak,itak,tako
 26167,"surplus, excess",noun,izbytȯk,izbytok,zbytek
@@ -318,6 +319,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 5139,client,noun,klient,klient,klijent
 32561,"clique, faction, cabal, coterie",noun,klika,klika,kljuka
 17659,climate,noun,klima,klima,klimat
+2986,climax,noun,klimaks,klimaks,kulminacija
 8484,cliche,noun,kliše,kliše,kljusę
 789,"bow, bend, incline",verb,kloniti,kloniti,klanjati
 32136,clown,noun,kloun,kloun,klavn
@@ -346,6 +348,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 19793,consistence,noun,konsistencija,konsistencija,konsystencija
 1984,constitution,noun,konstitucija,konstitucija,konstytucija
 36684,conversion,noun,konversija,konversija,konversja
+839,cooperate,verb,kooperovati,kooperovati,sodelovati
 32080,kopek,noun,kopějka,kopejka,kopjejka
 2113,copy,noun,kopija,kopija,kopije
 26680,wild ginger,noun,kopytnik,kopytnik,kopitnjak
@@ -455,7 +458,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 2218,militia,noun,milicija,milicija,milica
 32741,militarism,noun,militarizm,militarizm,militarizma
 32128,mimic,adj,mimičny,mimičny,mimičany
+9117,blow job,noun,minet,minet,felacija
 35302,miniature,noun,miniatura,miniatura,minijatura
+27613,minibus,noun,minibus,minibus,mikroavtobus
 2730,ministry,noun,ministerstvo,ministerstvo,ministrstvo
 2733,minister,noun,ministr,ministr,minister
 2727,minute,noun,minuta,minuta,minut
@@ -524,6 +529,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 33115,"inevitability, unavoidability",noun,neizběžnosť,neizbežnost,nezibežnosť
 23262,nylon,noun,nejlon,nejlon,najlon
 2172,somewhere,adv,někde,nekde,nakȯde
+37261,necromancy,noun,nekromantija,nekromantija,nekromancija
 1001,some way,adv,někųdy,nekudy,nekuda
 28421,"fall silent, become speechless, grow dumb, be struck dumb",verb,něměti,nemeti,nemiti
 28436,dumbness,noun,němota,nemota,niemota
@@ -535,6 +541,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 23810,"unpleasantness, trouble",noun,neprijatnosť,neprijatnost,neprijetnosti
 28497,inaccessibility,noun,nepristųpnosť,nepristupnost,nepristȯpnosť
 36443,"not seldom, not rarely",adv,nerědko,neredko,nieradko
+23226,nervosity,noun,nervoznosť,nervoznost,nervovist
 23222,nervous,adj,nervozny,nervozny,nervozeny
 17939,shyly,adv,nesmělo,nesmelo,niesmialo
 1161,"carry (on foot), bear",verb,nesti,nesti,nositi
@@ -771,6 +778,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 20659,mileage,noun,proběg,probeg,prebieg
 2406,"percent, percentage",noun,procent,procent,procenat
 4264,"salesperson, salesman, shopkeeper, seller, vendor",noun,prodavec,prodavec,prodavač
+2943,prosecutor,noun,prokuror,prokuror,prokurator
 37184,"get through, climb through, crawl through",verb,prolězati,prolezati,prolaziti
 37183,"get through, climb through, crawl through",verb,prolězti,prolezti,prlazti
 6152,spill over,verb,proliti,proliti,preliti
@@ -834,6 +842,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 2101,"develop (tr.), evolve (tr.)",verb,råzvivati,razvivati,råzvijavati
 17030,regularization,noun,regularizacija,regularizacija,regularyzacija
 36887,Rhine,noun,Rejn,rejn,ren
+2332,"restore, reconstruct",verb,rekonstruovati,rekonstruovati,rekonstrukcija
 33697,requiem,noun,rekviem,rekviem,rekvijem
 2338,"decide, determine",verb,rěšati,rešati,rešiti
 1251,"rest, remnant",noun,rešta,rešta,resto
@@ -992,6 +1001,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 22833,charlatan,noun,šarlatan,šarlatan,šurlatan
 37301,cipher (code),noun,šifr,šifr,šifra
 6225,harmful,adj,škodlivy,škodlivy,škodljivy
+4844,educate,verb,školiti,školiti,školovati
 287,driver,noun,šofer,šofer,šofor
 1585,shock,noun,šok,šok,sok
 3269,spy,noun,špion,špion,špijun
@@ -1084,7 +1094,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 22283,majestic,adj,velebny,velebny,velebany
 31079,"order, command, ordain",verb,velěti,veleti,vleti
 19169,generously,adv,velikodušno,velikodušno,velikodušen
-37111,cyclist,noun,velogonščik,velogonščik,vlegonščik
+37111,cyclist,noun,velogonščik,velogonščik,biciklist
 31123,wild pig,noun,vepŕ,vepr,vepar
 31128,"recruit, enlist",verb,verbovati,verbovati,vrbovati
 31129,verdict,noun,verdikt,verdikt,verdykt
@@ -1112,6 +1122,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 21642,inside,adv,vnųtri,vnutri,vunųtrj
 20816,Aquarius,noun,Vodolěj,vodolej,vodolija
 2535,war,noun,vojna,vojna,vojana
+17061,vocative,noun,vokativ,vokativ,zvatelen padež
 31304,Volapük,noun,volapuk,volapuk,volapik
 456,wolf,noun,vȯlk,volk,vĺk
 31318,voltmeter,noun,voltmetr,voltmetr,voltmeter
@@ -1144,6 +1155,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 31534,westerner,noun,zapadnik,zapadnik,zapadnjak
 6249,note,verb,zapisyvati,zapisyvati,zapisivati
 19401,"initiate, commence, kick off, originate, start up",verb,započinati,započinati,započinjati
+25,register,verb,zaregistrovati,zaregistrovati,registrovati
 19407,sob,verb,zarydati,zarydati,zaridati
 36410,ambush,noun,zasada,zasada,zasjeda
 33240,sow,verb,zasějati,zasejati,zasijati
