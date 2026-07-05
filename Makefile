@@ -1,20 +1,34 @@
 DUMP ?= /Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl
+OFFICIAL ?= data/official-isv.csv
 DATA ?= data/wiktionary-lab.json
+OUT ?= target/eval
 PORT ?= 8765
 
-.PHONY: build full serve clean check
+.PHONY: eval build serve explain check fmt test clean
 
+# Reproducible accuracy benchmark against the official Interslavic dictionary.
+eval:
+	cargo run --release -- evaluate --official "$(OFFICIAL)" --out "$(OUT)"
+
+# Build the website dataset from the official dictionary's Slavic evidence.
 build:
-	cargo run -- build --dump "$(DUMP)" --output "$(DATA)" --max-proto 200 --max-lexemes 10000
-
-full:
-	cargo run --release -- build --dump "$(DUMP)" --output "$(DATA)"
+	cargo run --release -- build --official "$(OFFICIAL)" --output "$(DATA)"
 
 serve:
-	cargo run -- serve --data "$(DATA)" --port $(PORT)
+	cargo run --release -- serve --data "$(DATA)" --port $(PORT)
+
+# Spot-check one word/gloss with a full rule trace, e.g. `make explain W=duša`.
+explain:
+	cargo run -- explain "$(W)"
+
+fmt:
+	cargo fmt
 
 check:
 	cargo check
 
+test:
+	cargo test
+
 clean:
-	rm -f data/*.json data/*.tmp
+	rm -f data/wiktionary-lab.json data/*.tmp
