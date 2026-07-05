@@ -1,8 +1,10 @@
 # Interslavic Wiktionary Lab
 
+**Live site: <https://grift.rs/interslavic-wiktionary-lab/>** (generated statically, deployed by GitHub Actions)
+
 An **evidence-based Interslavic (Medžuslovjansky) candidate-generation engine** with a
 reproducible accuracy benchmark against the official Interslavic dictionary, plus a
-local Wiktionary-style website that shows, for every meaning, the generated candidate,
+Wiktionary-style website that shows, for every meaning, the generated candidate,
 its rule trace, the Slavic evidence by branch, a calibrated confidence, and whether it
 matches the official dictionary.
 
