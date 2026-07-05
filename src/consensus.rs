@@ -76,6 +76,9 @@ pub struct ConsensusConfig {
     pub y_recovery: bool,
     /// Use a long-form-adjective representative (ru/pl/cs) for adjectives.
     pub adj_longform_rep: bool,
+    /// Derive the form from a linked Proto-Slavic reconstruction (§4.4): consensus
+    /// picks the root, the Proto-Slavic rule engine supplies the flavored form.
+    pub proto_derived_form: bool,
 }
 
 impl ConsensusConfig {
@@ -95,6 +98,7 @@ impl ConsensusConfig {
             prefix_normalization: false,
             y_recovery: false,
             adj_longform_rep: false,
+            proto_derived_form: false,
         }
     }
 
@@ -114,6 +118,9 @@ impl ConsensusConfig {
             internationalism: true,
             six_subgroup_vote: true,
             prefix_normalization: true,
+            // Two-stage §4.4: derive the flavored form from the linked
+            // Proto-Slavic reconstruction (kept — improves exact match).
+            proto_derived_form: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -134,6 +141,7 @@ impl ConsensusConfig {
             prefix_normalization: true,
             y_recovery: true,
             adj_longform_rep: true,
+            proto_derived_form: true,
         }
     }
 }

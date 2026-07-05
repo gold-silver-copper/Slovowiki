@@ -198,7 +198,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 35220,comparative,adj,sråvniteljny,sravniteleny,0.083,2,11
 37279,subcontinent,noun,subkontinent,subkontynent,0.083,3,11
 22304,wilful,adj,svojevoljny,svojevoljany,0.083,3,11
-19004,"diligent, industrious",adj,trudoljubivy,trudolubivy,0.083,2,11
 13384,"established, fixed",adj,ustanovjeny,ustanovljeny,0.083,2,11
 22284,majestic,adj,veličstveny,veličestveny,0.083,2,11
 19172,"bountiful, generous, magnanimous",adj,velikodušny,velikodušany,0.083,3,11
@@ -273,7 +272,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 761,"heritage, inheritance, legacy",noun,naslědstvo,nasljedstvo,0.091,2,11
 35664,inconsistently,adv,nedoslědno,nedosljedno,0.091,2,11
 19885,unworthy,adj,nedostojny,nedostojany,0.091,3,11
-33202,"incompetent, ignorant",adj,negramotny,negramoteny,0.091,3,11
 16861,unknown,adj,neizvěstny,neizvesteny,0.091,2,11
 33013,"insatiability, sitomania, voracity",noun,nenasytnosť,nenasitnosť,0.091,3,11
 28446,"hateful, odious",adj,nenavistny,nienavistny,0.091,2,11
@@ -392,10 +390,12 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 1416,insurance,noun,strahovańje,strahovanie,0.091,1,11
 34897,pointsman,noun,strělȯčnik,streločnika,0.091,2,11
 5135,"accompany, escort, convoy",verb,sųprovoditi,soprovoditi,0.091,2,11
-23302,mysterious,adj,tajenstveny,tajanstveny,0.091,2,11
 35973,typological,adj,tipologičny,typologičny,0.091,3,11
 36631,tyrannosaurus,noun,tiranozavr,tiranozaver,0.091,2,11
 34952,tolerant,adj,tolerantny,tolerantany,0.091,3,11
 20223,triumphant,adj,triumfaľny,trijumfalny,0.091,3,11
 19000,"diligence, industriousness",noun,trudoljubje,trudoljubie,0.091,2,11
 1547,university,noun,universitet,universytet,0.091,3,11
+5877,appeasement,noun,uspokojeńje,uspokojenie,0.091,2,11
+36461,utilitarian,adj,utilitarny,utilitarany,0.091,3,11
+31120,ventilate,verb,ventilovati,ventylovati,0.091,2,11

@@ -1,0 +1,188 @@
+//! Shared generation pipeline used by both the benchmark and the website.
+//!
+//! Implements the two-stage model (rule spec §4.4): the modern-Slavic consensus
+//! chooses the *root*; when a confident Proto-Slavic link exists, the
+//! Proto-Slavic rule engine supplies the *form* (with the flavored letters the
+//! consensus cannot recover from modern reflexes). This module is leakage-free —
+//! it never sees the official lemma — so the benchmark can call it directly.
+
+use crate::consensus::{self, ConsensusConfig, MeaningInput};
+use crate::dump::ProtoIndex;
+use crate::model::{
+    Candidate, CandidateSource, Confidence, Evidence, EvidenceRelation, Reconstruction, RuleStep,
+};
+use crate::orthography as ortho;
+use crate::proto_link;
+
+const DOC_DESIGN: &str = "https://interslavic.fun/learn/misc/design-criteria/";
+
+/// Generate ranked candidates for a meaning, plus the linked reconstruction (if
+/// any) for display.
+pub fn generate(
+    input: &MeaningInput,
+    proto: Option<&ProtoIndex>,
+    cfg: &ConsensusConfig,
+) -> (Vec<Candidate>, Option<Reconstruction>) {
+    let mut candidates = consensus::generate(input, cfg);
+    let mut reconstruction = None;
+
+    if cfg.proto_derived_form {
+        if let Some(index) = proto {
+            if let Some(l) = proto_link::link(index, input) {
+                let mut pc = crate::proto::generate(&l.entry.word, input.pos, input.gender);
+                if !pc.form.is_empty() {
+                    // §4.4: the regular derivation is authoritative for the *form*.
+                    // A confidently-linked reconstruction therefore outranks the
+                    // consensus surface (whose flavored letters are guesses). The
+                    // link gate + form-similarity signal keep weak links from
+                    // winning; below the confidence bar the proto form is only a
+                    // scored alternative.
+                    let consensus_top = candidates.iter().map(|c| c.score).fold(0.0_f32, f32::max);
+                    // Guard: a confident link only *overrides* consensus when the
+                    // derivation doesn't drop material the modern languages kept
+                    // (over-eager Havlík yer-fall, e.g. *pьsati → psati vs the
+                    // consensus/ISV pisati). Same-length flavor upgrades (y/i,
+                    // ě, ć) still win.
+                    let cons_len = candidates
+                        .first()
+                        .map(|c| ortho::ascii_skeleton(&c.form).chars().count())
+                        .unwrap_or(0);
+                    let proto_len = ortho::ascii_skeleton(&pc.form).chars().count();
+                    // A shorter proto form is usually an over-dropped tense yer
+                    // for verbs/nouns (wrong), but a correctly-absent fleeting
+                    // vowel for adjectives (right) — so only penalize non-adjs.
+                    let dropped =
+                        proto_len + 1 <= cons_len && input.pos != crate::model::Pos::Adjective;
+                    let base = 0.58 + 0.40 * l.confidence;
+                    let score = if dropped {
+                        // Over-eager yer-fall: the consensus kept a vowel proto
+                        // dropped (*pьsati→psati vs pisati). Demote below consensus.
+                        base.min(consensus_top - 0.03)
+                    } else if l.confidence >= 0.60 {
+                        base.max(consensus_top + 0.02)
+                    } else {
+                        base
+                    }
+                    .clamp(0.05, 0.98);
+                    pc.score = round3(score);
+                    pc.confidence = Confidence::from_score(pc.score);
+                    pc.branch_coverage = (l.desc_membership * 3.0).round() as u8;
+                    pc.trace.insert(
+                        0,
+                        RuleStep::new(
+                            "proto-link",
+                            format!("*{}", l.entry.word),
+                            pc.form.clone(),
+                            format!(
+                                "Praslovjanska rekonstrukcija *{} povezana s dokazom (uvěrjenost {:.2}: {:.0}% naslědnikov, podobnost formy {:.2}, glosa {:.2}).",
+                                l.entry.word,
+                                l.confidence,
+                                100.0 * l.desc_membership,
+                                l.form_similarity,
+                                l.gloss_overlap
+                            ),
+                            Some(DOC_DESIGN),
+                        ),
+                    );
+                    // Etymological evidence on the proto candidate.
+                    pc.evidence.push(Evidence {
+                        lang_code: "sla-pro".to_string(),
+                        lang_name: "praslovjansky".to_string(),
+                        branch: None,
+                        form: format!("*{}", l.entry.word),
+                        normalized_form: l.entry.word.clone(),
+                        relation: EvidenceRelation::ProtoSlavicAncestor,
+                        source_url: format!(
+                            "https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}",
+                            l.entry.word
+                        ),
+                    });
+                    if !l.entry.pbs.is_empty() {
+                        pc.evidence.push(Evidence {
+                            lang_code: "ine-bsl-pro".to_string(),
+                            lang_name: "prabaltoslavjansky".to_string(),
+                            branch: None,
+                            form: l.entry.pbs.clone(),
+                            normalized_form: l.entry.pbs.clone(),
+                            relation: EvidenceRelation::BaltoSlavicAncestor,
+                            source_url: String::new(),
+                        });
+                    }
+                    if !l.entry.pie.is_empty() {
+                        pc.evidence.push(Evidence {
+                            lang_code: "ine-pro".to_string(),
+                            lang_name: "praindoevropejsky".to_string(),
+                            branch: None,
+                            form: l.entry.pie.clone(),
+                            normalized_form: l.entry.pie.clone(),
+                            relation: EvidenceRelation::IndoEuropeanAncestor,
+                            source_url: String::new(),
+                        });
+                    }
+                    reconstruction = Some(Reconstruction {
+                        word: l.entry.word.clone(),
+                        proto_balto_slavic: l.entry.pbs.clone(),
+                        proto_indo_european: l.entry.pie.clone(),
+                        confidence: round3(l.confidence),
+                    });
+                    candidates.push(pc);
+                }
+            }
+        }
+    }
+
+    dedupe(&mut candidates);
+    candidates.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then(a.form.chars().count().cmp(&b.form.chars().count()))
+    });
+    (candidates, reconstruction)
+}
+
+/// Collapse candidates that reduce to the same standard spelling. On a tie, keep
+/// the Proto-Slavic-derived one — it carries the correct flavored letters.
+fn dedupe(candidates: &mut Vec<Candidate>) {
+    candidates.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then(proto_rank(b).cmp(&proto_rank(a)))
+    });
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: Vec<Candidate> = Vec::new();
+    for c in candidates.drain(..) {
+        let key = ortho::to_standard(&c.form.to_lowercase());
+        if seen.contains(&key) {
+            // Already have an equal-or-better representative; but if this one is
+            // Proto-Slavic-derived and the kept one is not, upgrade to flavored.
+            if c.source == CandidateSource::ProtoSlavicRule {
+                if let Some(existing) = out.iter_mut().find(|e| {
+                    ortho::to_standard(&e.form.to_lowercase()) == key
+                        && e.source != CandidateSource::ProtoSlavicRule
+                }) {
+                    // Upgrade to the flavored Proto-Slavic-derived spelling and
+                    // adopt its provenance so the trace/source stay honest.
+                    existing.form = c.form.clone();
+                    existing.trace = c.trace.clone();
+                    existing.source = CandidateSource::ProtoSlavicRule;
+                    existing.score = existing.score.max(c.score);
+                    for ev in c.evidence {
+                        existing.evidence.push(ev);
+                    }
+                }
+            }
+            continue;
+        }
+        seen.push(key);
+        out.push(c);
+    }
+    *candidates = out;
+}
+
+fn proto_rank(c: &Candidate) -> u8 {
+    (c.source == CandidateSource::ProtoSlavicRule) as u8
+}
+
+fn round3(x: f32) -> f32 {
+    (x * 1000.0).round() / 1000.0
+}

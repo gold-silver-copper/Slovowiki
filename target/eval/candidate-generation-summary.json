@@ -646,15 +646,98 @@
           "normalized": 0.35098227858543396
         }
       },
-      "description": "Recover ę/ų nasal vowels from Polish (§2 Phase C). This is the kept production config.",
+      "description": "Recover ę/ų nasal vowels from Polish (§2 Phase C).",
       "exact_top1": 0.32423311471939087,
       "mean_normalized_edit_distance": 0.2376425713300705,
       "n": 16300,
-      "name": "+nasals (production)",
+      "name": "+nasals",
       "normalized_top1": 0.404294490814209,
       "normalized_top3": 0.4922086000442505,
       "normalized_top5": 0.4922086000442505,
       "skeleton_top1": 0.4075460135936737
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.257009357213974,
+          "n": 214,
+          "normalized": 0.322429895401001
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.18685509264469147,
+          "n": 4458,
+          "normalized": 0.22655899822711945
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.29903388023376465,
+          "n": 6521,
+          "normalized": 0.37586259841918945
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.5341687798500061,
+          "n": 5107,
+          "normalized": 0.6101429462432861
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 5820,
+          "normalized": 0.6365979313850403
+        },
+        "low": {
+          "n": 2213,
+          "normalized": 0.09986443817615509
+        },
+        "medium": {
+          "n": 8267,
+          "normalized": 0.3290189802646637
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.22755524516105652,
+          "n": 2896,
+          "normalized": 0.2986878454685211
+        },
+        "adv": {
+          "exact": 0.1887366771697998,
+          "n": 657,
+          "normalized": 0.28158295154571533
+        },
+        "noun": {
+          "exact": 0.4286055862903595,
+          "n": 8362,
+          "normalized": 0.4854101836681366
+        },
+        "num": {
+          "exact": 0.0892857164144516,
+          "n": 112,
+          "normalized": 0.2232142835855484
+        },
+        "pron": {
+          "exact": 0.3636363744735718,
+          "n": 99,
+          "normalized": 0.3737373650074005
+        },
+        "verb": {
+          "exact": 0.27623382210731506,
+          "n": 4174,
+          "normalized": 0.3533780574798584
+        }
+      },
+      "description": "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.",
+      "exact_top1": 0.3414723873138428,
+      "mean_normalized_edit_distance": 0.2382388859987259,
+      "n": 16300,
+      "name": "+proto-derived (production)",
+      "normalized_top1": 0.4077300727367401,
+      "normalized_top3": 0.5117177963256836,
+      "normalized_top5": 0.5139877200126648,
+      "skeleton_top1": 0.41153374314308167
     }
   ]
 }

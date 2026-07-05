@@ -152,6 +152,17 @@ impl Candidate {
     }
 }
 
+/// A Proto-Slavic reconstruction linked to a meaning, shown as the etymological
+/// source on entry pages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Reconstruction {
+    pub word: String,
+    pub proto_balto_slavic: String,
+    pub proto_indo_european: String,
+    /// Link confidence in [0,1] from the leakage-free linker.
+    pub confidence: f32,
+}
+
 /// Whether a generated candidate agrees with the official Interslavic entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchStatus {

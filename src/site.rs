@@ -10,7 +10,7 @@
 use crate::consensus::{ConsensusConfig, MeaningInput};
 use crate::generator;
 use crate::lang::Branch;
-use crate::model::{Candidate, Confidence, Evidence, MatchStatus};
+use crate::model::{Candidate, Confidence, Evidence, MatchStatus, Reconstruction};
 use crate::official::{self, OfficialEntry};
 use crate::overrides::Overrides;
 use anyhow::{Context, Result};
@@ -58,6 +58,7 @@ pub struct SiteEntry {
     pub candidates: Vec<Candidate>,
     pub evidence: Vec<Evidence>,
     pub overridden: bool,
+    pub reconstruction: Option<Reconstruction>,
 }
 
 impl SiteEntry {
@@ -70,6 +71,16 @@ pub fn build(official_path: &Path, output: &Path) -> Result<()> {
     let entries = official::load(official_path)?;
     let overrides = Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
     let cfg = ConsensusConfig::production();
+    let proto_path = Path::new(crate::DEFAULT_PROTO_CACHE);
+    let proto_index = if proto_path.exists() {
+        crate::dump::ProtoIndex::load(proto_path).ok()
+    } else {
+        None
+    };
+    if proto_index.is_some() {
+        println!("Using Proto-Slavic cache for reconstruction-derived forms.");
+    }
+    let proto = proto_index.as_ref();
 
     let mut site_entries = Vec::new();
     let (mut n_match, mut n_diff, mut n_none, mut n_exact, mut n_over) = (0usize, 0, 0, 0, 0);
@@ -89,15 +100,28 @@ pub fn build(official_path: &Path, output: &Path) -> Result<()> {
         } else {
             Some(entry.isv.as_str())
         };
-        let g = generator::generate(&input, official, None, &cfg, &overrides);
+        let g = generator::generate(&input, official, proto, &cfg, &overrides);
         let mut candidates = g.candidates;
-        // Keep the evidence once at entry level; drop the per-candidate copies.
-        let evidence = candidates
-            .first()
-            .map(|c| c.evidence.clone())
+        // Branch evidence comes from the input cognates (always present); keep
+        // the proto candidate's etymological evidence (reconstruction/PBS/PIE).
+        let evidence = branch_evidence(&input);
+        let proto_evidence: Vec<Evidence> = candidates
+            .iter()
+            .find(|c| c.source == crate::model::CandidateSource::ProtoSlavicRule)
+            .map(|c| {
+                c.evidence
+                    .iter()
+                    .filter(|e| e.branch.is_none())
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
         for c in candidates.iter_mut() {
             c.evidence.clear();
+        }
+        // Attach the proto etymological evidence to the top candidate for render.
+        if let Some(top) = candidates.first_mut() {
+            top.evidence = proto_evidence;
         }
         candidates.truncate(5);
 
@@ -125,6 +149,7 @@ pub fn build(official_path: &Path, output: &Path) -> Result<()> {
             candidates,
             evidence,
             overridden: g.overridden,
+            reconstruction: g.reconstruction,
         });
     }
 
@@ -162,6 +187,24 @@ pub fn build(official_path: &Path, output: &Path) -> Result<()> {
         100.0 * dataset.meta.normalized_rate
     );
     Ok(())
+}
+
+/// Branch-cognate evidence built directly from the meaning's modern source
+/// forms, independent of which candidate ends up on top.
+fn branch_evidence(input: &MeaningInput) -> Vec<Evidence> {
+    input
+        .forms
+        .iter()
+        .map(|f| Evidence {
+            lang_code: f.lang_code.clone(),
+            lang_name: crate::lang::lang_name(&f.lang_code).to_string(),
+            branch: Some(f.branch),
+            form: f.norm.original.clone(),
+            normalized_form: f.norm.latin.clone(),
+            relation: crate::model::EvidenceRelation::Cognate,
+            source_url: f.source_url.clone(),
+        })
+        .collect()
 }
 
 fn build_input(entry: &OfficialEntry) -> MeaningInput {

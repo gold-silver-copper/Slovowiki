@@ -21,6 +21,7 @@ pub fn generate(proto_word: &str, pos: Pos, gender: Option<Gender>) -> Candidate
     s = palatals(&s, &mut trace);
     s = liquid_metathesis(&s, &mut trace);
     s = nasals(&s, &mut trace);
+    s = prothesis(&s, &mut trace);
     s = yers(&s, &mut trace);
     s = endings(&s, pos, gender, &mut trace);
     s = finalize(&s, &mut trace);
@@ -151,6 +152,27 @@ fn nasals(input: &str, trace: &mut Vec<RuleStep>) -> String {
         input,
         &out,
         "Nosove glasy: *ę→ę, *ǫ→ų.",
+        PHON,
+    );
+    out
+}
+
+/// Word-initial prothesis: Interslavic prepends j- before a front nasal and v-
+/// before a back nasal/rounded vowel (*ęzykъ → język, *ǫtroba → vųtroba).
+fn prothesis(input: &str, trace: &mut Vec<RuleStep>) -> String {
+    let out = if let Some(rest) = input.strip_prefix('ę') {
+        format!("ję{rest}")
+    } else if let Some(rest) = input.strip_prefix('ų') {
+        format!("vų{rest}")
+    } else {
+        input.to_string()
+    };
+    step(
+        trace,
+        "prothesis",
+        input,
+        &out,
+        "Protetični soglasnik: počętny ę→ję, ų→vų.",
         PHON,
     );
     out

@@ -43,6 +43,8 @@ fn kept_ladder() -> Vec<Rung> {
     deple.depleophony = true;
     let mut nasal = deple;
     nasal.nasal_from_polish = true;
+    let mut proto = nasal;
+    proto.proto_derived_form = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -52,8 +54,19 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+internationalism", description: "Internationalism ending table: -izm/-cija/-ičny/-alny/-ovati (§5.2).", cfg: intl },
         Rung { name: "+prefixes", description: "Normalize verbal/nominal prefixes råz-/prěd- (§2).", cfg: prefix },
         Rung { name: "+depleophony", description: "Undo East-Slavic pleophony / liquid metathesis (§2).", cfg: deple },
-        Rung { name: "+nasals (production)", description: "Recover ę/ų nasal vowels from Polish (§2 Phase C). This is the kept production config.", cfg: nasal },
+        Rung { name: "+nasals", description: "Recover ę/ų nasal vowels from Polish (§2 Phase C).", cfg: nasal },
+        Rung { name: "+proto-derived (production)", description: "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.", cfg: proto },
     ]
+}
+
+/// Load the Proto-Slavic cache if it exists (else the proto-derived rung is a
+/// no-op that equals the +nasals config).
+fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
+    let path = Path::new(crate::DEFAULT_PROTO_CACHE);
+    if !path.exists() {
+        return None;
+    }
+    crate::dump::ProtoIndex::load(path).ok()
 }
 
 /// Rules that were tried and *rejected*: each is the production config plus one
@@ -157,7 +170,11 @@ fn build_input(entry: &OfficialEntry) -> MeaningInput {
     }
 }
 
-fn evaluate_config(entries: &[OfficialEntry], rung: &Rung) -> RunMetrics {
+fn evaluate_config(
+    entries: &[OfficialEntry],
+    rung: &Rung,
+    proto: Option<&crate::dump::ProtoIndex>,
+) -> RunMetrics {
     let mut m = RunMetrics {
         name: rung.name.to_string(),
         description: rung.description.to_string(),
@@ -180,7 +197,8 @@ fn evaluate_config(entries: &[OfficialEntry], rung: &Rung) -> RunMetrics {
         if !input.forms.iter().any(|f| f.modern) {
             continue;
         }
-        let cands: Vec<Candidate> = consensus::generate(&input, &rung.cfg);
+        let (cands, _recon): (Vec<Candidate>, _) =
+            crate::pipeline::generate(&input, proto, &rung.cfg);
         let top = cands.first();
         let predicted = top.map(|c| c.form.clone()).unwrap_or_default();
         let confidence = top.map(|c| c.confidence);
@@ -272,7 +290,15 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
     let input = build_input(entry);
     let overrides = crate::overrides::Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
     let cfg = crate::consensus::ConsensusConfig::production();
-    let gen = crate::generator::generate(&input, Some(&entry.isv), None, &cfg, &overrides);
+    let proto = load_proto_index();
+    let gen =
+        crate::generator::generate(&input, Some(&entry.isv), proto.as_ref(), &cfg, &overrides);
+    if let Some(r) = &gen.reconstruction {
+        println!(
+            "Reconstruction: *{} (link conf {:.2})",
+            r.word, r.confidence
+        );
+    }
 
     println!("Gloss:    {}", entry.english);
     println!("POS:      {} ({})", entry.pos.code(), entry.pos_raw);
@@ -342,11 +368,26 @@ pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result
         official_path.display()
     );
 
+    // Load the Proto-Slavic cache if present; the +proto-derived rung needs it.
+    let proto_index = load_proto_index();
+    if proto_index.is_some() {
+        println!("Loaded Proto-Slavic cache for the proto-derived rung.");
+    } else {
+        println!(
+            "note: no Proto-Slavic cache ({}); run `extract-proto` to enable the proto-derived rung.",
+            crate::DEFAULT_PROTO_CACHE
+        );
+    }
+    let proto = proto_index.as_ref();
+
     let kept = kept_ladder();
-    let runs: Vec<RunMetrics> = kept.iter().map(|r| evaluate_config(&entries, r)).collect();
+    let runs: Vec<RunMetrics> = kept
+        .iter()
+        .map(|r| evaluate_config(&entries, r, proto))
+        .collect();
     let rejected: Vec<RunMetrics> = rejected_experiments()
         .iter()
-        .map(|r| evaluate_config(&entries, r))
+        .map(|r| evaluate_config(&entries, r, proto))
         .collect();
 
     println!("Kept ladder (cumulative):");

@@ -17,6 +17,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod consensus;
+mod dump;
 mod eval;
 mod generator;
 mod lang;
@@ -26,13 +27,16 @@ mod normalize;
 mod official;
 mod orthography;
 mod overrides;
+mod pipeline;
 mod proto;
+mod proto_link;
 mod site;
 
 const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl";
 const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
 const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 const DEFAULT_OVERRIDES: &str = "data/overrides.toml";
+const DEFAULT_PROTO_CACHE: &str = "data/proto-slavic.cache.json";
 
 #[derive(Parser)]
 #[command(
@@ -69,6 +73,13 @@ enum Command {
         #[arg(long, default_value_t = 8765)]
         port: u16,
     },
+    /// Stream the Wiktextract dump once and cache all Proto-Slavic entries.
+    ExtractProto {
+        #[arg(long, default_value = DEFAULT_DUMP)]
+        dump: PathBuf,
+        #[arg(long, default_value = DEFAULT_PROTO_CACHE)]
+        out: PathBuf,
+    },
     /// Explain the generator's output for one word or gloss (manual spot-check).
     Explain {
         /// A gloss (English) or an official Interslavic lemma to look up.
@@ -99,6 +110,7 @@ fn main() -> Result<()> {
             dump: _dump,
         } => site::build(&official, &output),
         Command::Serve { data, host, port } => site::serve(&data, &host, port),
+        Command::ExtractProto { dump, out } => dump::extract(&dump, &out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::Evaluate {
             official,
