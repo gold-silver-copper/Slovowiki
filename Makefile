@@ -4,7 +4,11 @@ DATA ?= data/wiktionary-lab.json
 OUT ?= target/eval
 PORT ?= 8765
 
-.PHONY: eval build serve explain check fmt test clean
+.PHONY: extract-proto eval build serve explain check fmt test clean
+
+# One-time: stream the 23GB dump into the Proto-Slavic cache (enables +proto-derived).
+extract-proto:
+	cargo run --release -- extract-proto --dump "$(DUMP)"
 
 # Reproducible accuracy benchmark against the official Interslavic dictionary.
 eval:

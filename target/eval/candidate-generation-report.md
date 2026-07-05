@@ -98,10 +98,10 @@ Of **9654** misses, **2783** (29%) are near-misses (normalized edit < 0.20 — a
 
 ## Next recommended linguistic rules
 
-Ranked by expected accuracy impact, from the remaining-error analysis and the rule spec (`data/RULE_SPEC.md`):
+The Proto-Slavic-derived-form path (§4.4) is now implemented — consensus picks the root and the Proto-Slavic rule engine supplies the flavored form via a leakage-free descendant+gloss link — which is the source of the `+proto-derived` gain. Ranked next steps, from the remaining-error analysis:
 
-1. **Derive flavored letters (ě, ć/đ, å, y) from a Proto-Slavic form, not modern reflexes.** The palatal/jat/y experiments regress precisely because modern reflexes are ambiguous; §4.4 prescribes deriving the *form* from the reconstruction once the *root* is chosen by consensus. Wiring the Proto-Slavic rule engine into the consensus path (matching each meaning to its `sla-pro` entry via gloss) is the single biggest remaining lever.
-2. **Divergent-root modeling (semantic families, §4.2 step 3).** The ~6871 far-misses are mostly cases where Interslavic picked a different root than the plurality skeleton; scoring candidate *roots* (not surface forms) with the six-subgroup vote would recover many.
-3. **Secondary-imperfective verb stems** (`-yva-/-iva-/-ava-`) and the agentive `-telj`/abstract `-teljstvo` suffixes, seen repeatedly in the verb/noun error tail.
-4. **Fleeting-vowel (yer) reconstruction in derived stems** (e.g. `obråbotyvati`, gen.pl), guided by cross-language vowel presence rather than a fixed rule.
+1. **Expand Proto-Slavic link coverage.** Only meanings with a matched `sla-pro` reconstruction get the flavored derivation; raising cache coverage and loosening the link gate (without admitting bad links) directly grows the proto-derived slice.
+2. **Tense-yer / Havlík refinement.** Pure Havlík over-drops yers that Interslavic vocalizes (`*pьsati`→`pisati`); the current POS-aware length guard is a heuristic. A proper tense-yer rule (yers before *j and in specific stems → i/y) would let the proto form win more verbs safely.
+3. **Divergent-root modeling (semantic families, §4.2 step 3).** The ~6871 far-misses are mostly cases where Interslavic picked a different root than the plurality skeleton; scoring candidate *roots* (not surface forms) over the six subgroups, clustered by the proto descendant graph, would recover many.
+4. **Secondary-imperfective verb stems** (`-yva-/-iva-/-ava-`) and the agentive `-telj`/abstract `-teljstvo` suffixes, seen repeatedly in the verb/noun error tail.
 5. **POS-specific gender/animacy inference** to pick the right nominal ending where the modern citation forms disagree.

@@ -392,13 +392,16 @@ fn entry_page(state: &AppState, id: usize) -> String {
 
     let banner = status_banner(e);
     let headword = format!(
-        "<p class='inflection-head'><span class='Latn headword'>{}</span> <span class='badge'>{}</span> <span class='reliability {}'>uvěrjenost: {}</span></p>",
+        "<p class='inflection-head'><span class='Latn headword'>{}</span> <span class='badge'>{}</span> <span class='pill {}'>{}</span> <span class='reliability {}'>uvěrjenost: {}</span></p>",
         esc(&top.form),
         esc(&e.pos_code),
+        source_class(top.source),
+        esc(top.source.label()),
         conf_class(top.confidence),
         top.confidence.label()
     );
 
+    let etymology = etymology_block(e);
     let alternatives = alternatives_block(e);
     let trace = trace_block(top);
     let evidence = evidence_block(e);
@@ -410,6 +413,7 @@ fn entry_page(state: &AppState, id: usize) -> String {
          {banner}
          <div class='toc' role='navigation'><div class='toc-title'>Sadržanje</div><ol>
            <li><a href='#kandidat'>Kandidat</a></li>
+           <li><a href='#etimologija'>Etimologija</a></li>
            <li><a href='#alternativy'>Alternativy</a></li>
            <li><a href='#sled'>Sled pravil</a></li>
            <li><a href='#dokazy'>Dokazy po větvah</a></li>
@@ -419,6 +423,8 @@ fn entry_page(state: &AppState, id: usize) -> String {
          {headword}
          <p><b>Anglijski smysl:</b> {gloss}</p>
          {calib}
+         <h3><span id='etimologija' class='mw-headline'>Etimologija (praslovjanska rekonstrukcija)</span></h3>
+         {etymology}
          <h3><span id='alternativy' class='mw-headline'>Alternativne kandidaty</span></h3>
          {alternatives}
          <h3><span id='sled' class='mw-headline'>Sled pravil (kako je forma izvedena)</span></h3>
@@ -433,11 +439,49 @@ fn entry_page(state: &AppState, id: usize) -> String {
         headword = headword,
         gloss = esc(&e.gloss),
         calib = calib,
+        etymology = etymology,
         alternatives = alternatives,
         trace = trace,
         evidence = evidence,
         inflection = inflection,
     )
+}
+
+/// The Proto-Slavic reconstruction (with Balto-Slavic / PIE ancestors) that the
+/// top form was derived from, if the meaning was confidently linked.
+fn etymology_block(e: &SiteEntry) -> String {
+    let Some(r) = &e.reconstruction else {
+        return "<p class='muted'>Za sej smysl ne najdena praslovjanska rekonstrukcija; forma je iz medžuvětvovogo konsensusa.</p>".to_string();
+    };
+    let mut s = format!(
+        "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>*{}</a> (uvěrjenost povezanja {:.0}%).</p>",
+        esc(&r.word),
+        esc(&r.word),
+        100.0 * r.confidence
+    );
+    if !r.proto_balto_slavic.is_empty() {
+        s.push_str(&format!(
+            "<p>Prabaltoslavjansky: <span class='mention'>{}</span>.</p>",
+            esc(&r.proto_balto_slavic)
+        ));
+    }
+    if !r.proto_indo_european.is_empty() {
+        s.push_str(&format!(
+            "<p>Praindoevropejsky: <span class='mention'>{}</span>.</p>",
+            esc(&r.proto_indo_european)
+        ));
+    }
+    s.push_str("<p class='muted'>Medžuvětvovy konsensus izbira korenj; praslovjanske pravilo izvodi formu s pravilnymi flavornymi znakami (ě, ć/đ, å, ȯ, y).</p>");
+    s
+}
+
+fn source_class(s: crate::model::CandidateSource) -> &'static str {
+    use crate::model::CandidateSource::*;
+    match s {
+        ProtoSlavicRule => "src-proto",
+        ManualOverride | OfficialDictionary => "src-official",
+        _ => "src-consensus",
+    }
 }
 
 fn status_banner(e: &SiteEntry) -> String {
@@ -770,6 +814,9 @@ const EXTRA_CSS: &str = r#"
 .top-candidate{background:#f3faf3}
 .calib{font-style:italic}
 .doc-ref{font-size:.8em}
+.pill.src-proto{background:#e5dcf7}
+.pill.src-consensus{background:#dbe8fb}
+.pill.src-official{background:#d6f2d6}
 "#;
 
 fn esc(v: &str) -> String {

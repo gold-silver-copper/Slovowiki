@@ -26,9 +26,9 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **32.42%** | +5.04 pp |
-| normalized top-1 | 34.96% | **40.43%** | +5.47 pp |
-| normalized top-3 | 42.89% | **49.2%** | +6.3 pp |
+| exact top-1 | 27.38% | **34.15%** | +6.77 pp |
+| normalized top-1 | 34.96% | **40.77%** | +5.81 pp |
+| normalized top-3 | 42.89% | **51.17%** | +8.3 pp |
 | mean normalized edit distance | 0.253 | **0.238** | −0.015 |
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
@@ -56,13 +56,22 @@ snapshot is under version control).
 6. **De-pleophony** (liquid metathesis) and **nasal recovery** (`ę/ų` from Polish).
 7. **g-preserving representative** — Interslavic keeps *g, so g-languages outrank the
    Czech/Slovak *g→h forms when picking the surface.
+8. **Proto-Slavic-derived form (two-stage, §4.4)** — consensus picks the *root*, then the
+   Proto-Slavic rule engine derives the *form* with the correct flavored letters
+   (`ě/ć/đ/å/ȯ/y`, prothetic `j-/v-`). Each meaning is linked to its `sla-pro`
+   reconstruction by a **leakage-free** signal (descendant membership + derived-form
+   similarity + gloss overlap), and a confident link's derivation outranks the consensus
+   surface — with a POS-aware guard so over-eager yer-fall (`*pьsati`→`psati`) doesn't beat
+   the vocalized `pisati`, while an adjective's absent fleeting vowel (`dobry` vs `dobery`)
+   still wins. This rung alone adds **+1.7 pp exact / +2.0 pp top-3**.
 
 ## What was rejected (regressed the benchmark)
 
 Recovering flavored letters (`ć/đ`, jat `ě`, `*y`) from *modern reflexes* is too noisy —
-each experiment regressed accuracy. The rule spec's own prescription (§4.4) is to derive
-those from a **Proto-Slavic reconstruction** once consensus has chosen the root; that is
-the top item in "next recommended rules".
+each experiment regressed accuracy. The correct source (rule spec §4.4) is the
+**Proto-Slavic reconstruction**, which the `+proto-derived` stage above now uses. The
+consensus-level `palatals`/`jat`/`y-recovery` toggles remain in the report's *rejected
+experiments* table as documented negatives.
 
 ## Architecture
 
@@ -76,19 +85,27 @@ src/
   consensus.rs     branch-balanced modern-Slavic consensus engine (gated rules)
   morph.rs         POS lemma endings + internationalism ending table
   proto.rs         Proto-Slavic → Interslavic ordered rule engine (+ tests)
+  dump.rs          stream the 23 GB dump → Proto-Slavic cache + indexes
+  proto_link.rs    leakage-free meaning → reconstruction linker (3 signals)
+  pipeline.rs      two-stage §4.4 merge (consensus root + proto-derived form)
   overrides.rs     manual curation (TOML), excluded from pure-algorithm accuracy
-  generator.rs     orchestrator: consensus + proto + overrides + match status
+  generator.rs     orchestrator: pipeline + overrides + official match status
   eval.rs          reproducible benchmark, ablation ladder, report writers
   site.rs          build + serve the local Wiktionary-style website
 data/
-  official-isv.csv   the full official dictionary (evidence + gold, self-contained)
-  overrides.toml     manual curation file
-  RULE_SPEC.md       authoritative Proto-Slavic → Interslavic rule specification
+  official-isv.csv        the full official dictionary (evidence + gold)
+  overrides.toml          manual curation file
+  RULE_SPEC.md            authoritative Proto-Slavic → Interslavic rule spec
+  proto-slavic.cache.json Proto-Slavic reconstructions (built by extract-proto)
 ```
 
 ## Commands
 
 ```bash
+# One-time: stream the 23 GB dump into the Proto-Slavic cache (enables the
+# +proto-derived stage). Skip it and the engine falls back to consensus only.
+cargo run --release -- extract-proto --dump /Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl
+
 # Reproducible benchmark against the official dictionary (fast, no dump needed):
 cargo run --release -- evaluate --official data/official-isv.csv --out target/eval
 
@@ -111,7 +128,10 @@ cargo run -- explain "computer"
 
 Each entry page shows:
 
-- the **top candidate** headword with calibrated **reliability**;
+- the **top candidate** headword with a **provenance** pill (proto-derived / consensus /
+  override) and a calibrated **reliability** badge;
+- the **Proto-Slavic reconstruction** it was derived from, with Balto-Slavic / PIE
+  ancestors and the link confidence;
 - **alternative** candidates with scores and branch coverage;
 - the **rule trace** (each transformation, before→after, with a doc citation);
 - the **evidence by Slavic branch** (East / West / South), linking back to Wiktionary;
