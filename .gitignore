@@ -1,0 +1,7 @@
+/target/
+data/*.tmp
+data/wiktionary-lab.json
+data/wiktionary-lab.sample.json
+data/*.cache.json
+__pycache__/
+*.pyc
