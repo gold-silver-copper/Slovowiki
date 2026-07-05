@@ -152,6 +152,27 @@ impl Candidate {
     }
 }
 
+/// Whether a generated candidate agrees with the official Interslavic entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MatchStatus {
+    /// Top candidate equals the official lemma (exact or normalized).
+    OfficialMatch,
+    /// An official entry exists but the top candidate differs from it.
+    DiffersFromOfficial,
+    /// No official entry was found for this meaning.
+    NoOfficialEntry,
+}
+
+impl MatchStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            MatchStatus::OfficialMatch => "oficialno potvŕđeno",
+            MatchStatus::DiffersFromOfficial => "razlikuje se od oficialnogo",
+            MatchStatus::NoOfficialEntry => "nema oficialnogo zapisa",
+        }
+    }
+}
+
 /// Normalized part of speech spanning both the official dictionary's tags
 /// (`m.`, `v.tr. ipf.`, `adj.`) and Wiktextract's (`noun`, `verb`, `adj`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

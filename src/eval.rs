@@ -24,10 +24,9 @@ struct Rung {
     cfg: ConsensusConfig,
 }
 
-fn ladder() -> Vec<Rung> {
-    // Each rung adds exactly one linguistic capability on top of the previous, so
-    // the benchmark attributes the accuracy delta of every rule. Ordered by the
-    // spec's expected value (§6.1).
+/// The cumulative ladder of *kept* rules — each one improved measured accuracy —
+/// ending exactly at [`ConsensusConfig::production`].
+fn kept_ladder() -> Vec<Rung> {
     let base = ConsensusConfig::baseline();
     let mut branch = base;
     branch.branch_balanced = true;
@@ -44,10 +43,6 @@ fn ladder() -> Vec<Rung> {
     deple.depleophony = true;
     let mut nasal = deple;
     nasal.nasal_from_polish = true;
-    let mut palatal = nasal;
-    palatal.palatal_from_south = true;
-    let mut jat = palatal;
-    jat.jat_reconstruction = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -57,9 +52,27 @@ fn ladder() -> Vec<Rung> {
         Rung { name: "+internationalism", description: "Internationalism ending table: -izm/-cija/-ičny/-alny/-ovati (§5.2).", cfg: intl },
         Rung { name: "+prefixes", description: "Normalize verbal/nominal prefixes råz-/prěd- (§2).", cfg: prefix },
         Rung { name: "+depleophony", description: "Undo East-Slavic pleophony / liquid metathesis (§2).", cfg: deple },
-        Rung { name: "+nasals", description: "Recover ę/ų nasal vowels from Polish (§2 Phase C).", cfg: nasal },
-        Rung { name: "+palatals", description: "Recover ć/đ (*tj/*dj) from South Slavic (§2 Phase B).", cfg: palatal },
-        Rung { name: "+jat (full)", description: "Reconstruct jat ě from the cross-branch reflex (§2 Phase D).", cfg: jat },
+        Rung { name: "+nasals (production)", description: "Recover ę/ų nasal vowels from Polish (§2 Phase C). This is the kept production config.", cfg: nasal },
+    ]
+}
+
+/// Rules that were tried and *rejected*: each is the production config plus one
+/// experimental rule, so its (negative) delta is measured in isolation.
+fn rejected_experiments() -> Vec<Rung> {
+    let prod = ConsensusConfig::production();
+    let mut palatal = prod;
+    palatal.palatal_from_south = true;
+    let mut jat = prod;
+    jat.jat_reconstruction = true;
+    let mut adjrep = prod;
+    adjrep.adj_longform_rep = true;
+    let mut yrec = prod;
+    yrec.y_recovery = true;
+    vec![
+        Rung { name: "prod+palatals", description: "Recover ć/đ (*tj/*dj) from South Slavic — modern reflexes are too noisy; derive from Proto-Slavic instead.", cfg: palatal },
+        Rung { name: "prod+jat", description: "Reconstruct jat ě from the cross-branch reflex — unreliable from modern reflexes.", cfg: jat },
+        Rung { name: "prod+adj-longform", description: "Long-form (ru/pl/cs) adjective representative — East/West orthographic quirks outweigh the fleeting-vowel fix.", cfg: adjrep },
+        Rung { name: "prod+y-recovery", description: "Recover *y from East/West where South merged *y→i — too aggressive, flips correct i→y.", cfg: yrec },
     ]
 }
 
@@ -230,6 +243,65 @@ fn conf_label(c: Confidence) -> &'static str {
     }
 }
 
+/// Print the generator's full reasoning for one word/gloss (manual spot-check).
+pub fn explain(official_path: &Path, query: &str) -> Result<()> {
+    let entries = official::load(official_path)?;
+    let ql = query.trim().to_lowercase();
+    let entry = entries
+        .iter()
+        .find(|e| e.isv.to_lowercase() == ql)
+        .or_else(|| {
+            entries
+                .iter()
+                .find(|e| e.english.to_lowercase().split(&[',', ';'][..]).any(|g| g.trim() == ql))
+        })
+        .or_else(|| entries.iter().find(|e| e.english.to_lowercase().contains(&ql)));
+
+    let Some(entry) = entry else {
+        println!("No official entry found matching '{query}'.");
+        return Ok(());
+    };
+
+    let input = build_input(entry);
+    let overrides = crate::overrides::Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
+    let cfg = crate::consensus::ConsensusConfig::production();
+    let gen = crate::generator::generate(&input, Some(&entry.isv), None, &cfg, &overrides);
+
+    println!("Gloss:    {}", entry.english);
+    println!("POS:      {} ({})", entry.pos.code(), entry.pos_raw);
+    println!("Official: {}", entry.isv);
+    println!("Status:   {:?} ({})", gen.match_status, gen.match_status.label());
+    println!("\nEvidence by branch:");
+    for f in &input.forms {
+        println!(
+            "  [{}] {:<3} {:<18} -> {}",
+            f.branch.code().chars().next().unwrap().to_uppercase(),
+            f.lang_code,
+            f.norm.original,
+            f.norm.latin
+        );
+    }
+    println!("\nRanked candidates:");
+    for (i, c) in gen.candidates.iter().enumerate().take(5) {
+        println!(
+            "  {}. {:<20} score {:.3}  conf {:<7} branches {}  [{}]",
+            i + 1,
+            c.form,
+            c.score,
+            c.confidence.label(),
+            c.branch_coverage,
+            c.source.label()
+        );
+        for step in &c.trace {
+            println!("       · {}: {} -> {} ({})", step.id, step.before, step.after, step.explanation);
+        }
+        for w in &c.warnings {
+            println!("       ! {w}");
+        }
+    }
+    Ok(())
+}
+
 pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result<()> {
     let mut entries_all = official::load(official_path)?;
     // The metadata TSV has no per-language translations, so the consensus
@@ -256,26 +328,38 @@ pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result
         official_path.display()
     );
 
-    let rungs = ladder();
-    let runs: Vec<RunMetrics> = rungs.iter().map(|r| evaluate_config(&entries, r)).collect();
+    let kept = kept_ladder();
+    let runs: Vec<RunMetrics> = kept.iter().map(|r| evaluate_config(&entries, r)).collect();
+    let rejected: Vec<RunMetrics> = rejected_experiments()
+        .iter()
+        .map(|r| evaluate_config(&entries, r))
+        .collect();
 
+    println!("Kept ladder (cumulative):");
     for r in &runs {
         println!(
-            "  {:<18} exact {:>6.2}%  norm {:>6.2}%  top3 {:>6.2}%  skel {:>6.2}%  edit {:.3}",
+            "  {:<22} exact {:>6.2}%  norm {:>6.2}%  top3 {:>6.2}%  edit {:.3}",
             r.name,
             100.0 * Bucket::rate(r.exact, r.n),
             100.0 * Bucket::rate(r.normalized, r.n),
             100.0 * Bucket::rate(r.top3, r.n),
-            100.0 * Bucket::rate(r.skeleton, r.n),
             r.sum_norm_edit / r.n.max(1) as f32,
+        );
+    }
+    println!("Rejected experiments (production + one rule, deltas negative):");
+    for r in &rejected {
+        println!(
+            "  {:<22} exact {:>6.2}%  norm {:>6.2}%",
+            r.name,
+            100.0 * Bucket::rate(r.exact, r.n),
+            100.0 * Bucket::rate(r.normalized, r.n),
         );
     }
 
     std::fs::create_dir_all(out_dir)?;
     let baseline = &runs[0];
-    // "Keep only if it improves": the final kept config is the empirically best
-    // cumulative point (by exact top-1, then normalized), NOT simply the last
-    // rung — so rules that regress accuracy are shown but never chosen.
+    // The kept ladder is monotone-improving by construction; the production
+    // config is its last rung. Confirm empirically (by exact, then normalized).
     let best_idx = (0..runs.len())
         .max_by(|&a, &b| {
             let ra = &runs[a];
@@ -286,10 +370,10 @@ pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result
         })
         .unwrap();
     let best = &runs[best_idx];
-    println!("Kept config (best of ladder): {}", best.name);
+    println!("Kept production config: {}", best.name);
 
     write_summary_json(out_dir, &runs)?;
-    write_report_md(out_dir, &runs, best)?;
+    write_report_md(out_dir, &runs, &rejected, best)?;
     write_diffs(out_dir, baseline, best)?;
     write_errors_sample(out_dir, best)?;
 
@@ -370,40 +454,77 @@ fn write_summary_json(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
     Ok(())
 }
 
-fn write_report_md(out_dir: &Path, runs: &[RunMetrics], best: &RunMetrics) -> Result<()> {
+fn write_report_md(
+    out_dir: &Path,
+    runs: &[RunMetrics],
+    rejected: &[RunMetrics],
+    best: &RunMetrics,
+) -> Result<()> {
     let baseline = &runs[0];
     let mut s = String::new();
     writeln!(s, "# Candidate-generation benchmark\n")?;
     writeln!(
         s,
-        "Benchmark: reconstruct the official Interslavic lemma from the modern Slavic cognates in the official dictionary, without showing the generator the answer. Evaluated on **{}** benchmarkable single-word entries.\n",
+        "Benchmark: reconstruct the official Interslavic lemma from the modern Slavic cognates in the official dictionary, **without showing the generator the answer**. Evaluated on **{}** benchmarkable single-word entries. Every rule is kept only if it improved measured accuracy.\n",
         baseline.n
     )?;
-    writeln!(s, "## Ablation ladder (each rule added cumulatively)\n")?;
     writeln!(
         s,
-        "| Rung | exact top-1 | norm top-1 | Δ norm | top-3 | skeleton | mean edit |"
+        "- **Metrics.** *exact*: identical to the official flavored lemma; *normalized*: identical after reducing both to the standard alphabet (§1.3); *skeleton*: identical after an ASCII fold; *top-3/5*: any of the first N candidates matches (normalized); *mean edit*: mean normalized Levenshtein distance to the official lemma.\n"
     )?;
-    writeln!(s, "|---|---:|---:|---:|---:|---:|---:|")?;
+    writeln!(s, "## Kept rules — cumulative ablation ladder\n")?;
+    writeln!(
+        s,
+        "Each rung adds exactly one rule to the previous, so its accuracy delta is attributable. The last rung is the kept **production** configuration.\n"
+    )?;
+    writeln!(
+        s,
+        "| Rung | exact top-1 | norm top-1 | Δ norm | top-3 | mean edit |"
+    )?;
+    writeln!(s, "|---|---:|---:|---:|---:|---:|")?;
     let mut prev_norm = Bucket::rate(baseline.normalized, baseline.n);
     for r in runs {
         let norm = Bucket::rate(r.normalized, r.n);
         let delta = norm - prev_norm;
         writeln!(
             s,
-            "| {} | {:.2}% | {:.2}% | {:+.2} pp | {:.2}% | {:.2}% | {:.3} |",
+            "| {} | {:.2}% | {:.2}% | {:+.2} pp | {:.2}% | {:.3} |",
             r.name,
             100.0 * Bucket::rate(r.exact, r.n),
             100.0 * norm,
             100.0 * delta,
             100.0 * Bucket::rate(r.top3, r.n),
-            100.0 * Bucket::rate(r.skeleton, r.n),
             r.sum_norm_edit / r.n.max(1) as f32,
         )?;
         prev_norm = norm;
     }
     writeln!(s)?;
     for r in runs {
+        writeln!(s, "- **{}** — {}", r.name, r.description)?;
+    }
+
+    writeln!(s, "\n## Rejected rules — tested and reverted\n")?;
+    writeln!(
+        s,
+        "Each is the production config plus one experimental rule. All regress accuracy on the benchmark and are therefore **not** in the production config, per the keep-only-if-it-improves rule.\n"
+    )?;
+    let prod_norm = Bucket::rate(best.normalized, best.n);
+    let prod_exact = Bucket::rate(best.exact, best.n);
+    writeln!(s, "| Experiment | exact top-1 | Δ exact | norm top-1 | Δ norm |")?;
+    writeln!(s, "|---|---:|---:|---:|---:|")?;
+    for r in rejected {
+        writeln!(
+            s,
+            "| {} | {:.2}% | {:+.2} pp | {:.2}% | {:+.2} pp |",
+            r.name,
+            100.0 * Bucket::rate(r.exact, r.n),
+            100.0 * (Bucket::rate(r.exact, r.n) - prod_exact),
+            100.0 * Bucket::rate(r.normalized, r.n),
+            100.0 * (Bucket::rate(r.normalized, r.n) - prod_norm),
+        )?;
+    }
+    writeln!(s)?;
+    for r in rejected {
         writeln!(s, "- **{}** — {}", r.name, r.description)?;
     }
 
@@ -465,8 +586,76 @@ fn write_report_md(out_dir: &Path, runs: &[RunMetrics], best: &RunMetrics) -> Re
         100.0 * (Bucket::rate(best.exact, best.n) - Bucket::rate(baseline.exact, baseline.n)),
     )?;
 
+    // Remaining systematic errors: classify the misses by a cheap heuristic so
+    // the largest remaining buckets are visible.
+    writeln!(s, "\n## Remaining systematic errors (final config)\n")?;
+    let misses: Vec<&EntryResult> = best.results.iter().filter(|r| !r.normalized).collect();
+    let total_miss = misses.len();
+    let near = misses.iter().filter(|r| r.norm_edit < 0.20).count();
+    let far = total_miss - near;
+    let mut by_cause: BTreeMap<&str, usize> = BTreeMap::new();
+    for r in &misses {
+        *by_cause.entry(classify_error(r)).or_default() += 1;
+    }
+    writeln!(
+        s,
+        "Of **{}** misses, **{}** ({:.0}%) are near-misses (normalized edit < 0.20 — an ending/one-letter fix) and **{}** are farther (usually a different root chosen by Interslavic).\n",
+        total_miss,
+        near,
+        100.0 * near as f32 / total_miss.max(1) as f32,
+        far
+    )?;
+    let mut causes: Vec<(&&str, &usize)> = by_cause.iter().collect();
+    causes.sort_by(|a, b| b.1.cmp(a.1));
+    writeln!(s, "| Error class | count | share of misses |")?;
+    writeln!(s, "|---|---:|---:|")?;
+    for (cause, n) in causes {
+        writeln!(
+            s,
+            "| {} | {} | {:.1}% |",
+            cause,
+            n,
+            100.0 * (*n as f32) / total_miss.max(1) as f32
+        )?;
+    }
+
+    writeln!(s, "\n## Next recommended linguistic rules\n")?;
+    writeln!(
+        s,
+        "Ranked by expected accuracy impact, from the remaining-error analysis and the rule spec (`data/RULE_SPEC.md`):\n\n1. **Derive flavored letters (ě, ć/đ, å, y) from a Proto-Slavic form, not modern reflexes.** The palatal/jat/y experiments regress precisely because modern reflexes are ambiguous; §4.4 prescribes deriving the *form* from the reconstruction once the *root* is chosen by consensus. Wiring the Proto-Slavic rule engine into the consensus path (matching each meaning to its `sla-pro` entry via gloss) is the single biggest remaining lever.\n2. **Divergent-root modeling (semantic families, §4.2 step 3).** The ~{far} far-misses are mostly cases where Interslavic picked a different root than the plurality skeleton; scoring candidate *roots* (not surface forms) with the six-subgroup vote would recover many.\n3. **Secondary-imperfective verb stems** (`-yva-/-iva-/-ava-`) and the agentive `-telj`/abstract `-teljstvo` suffixes, seen repeatedly in the verb/noun error tail.\n4. **Fleeting-vowel (yer) reconstruction in derived stems** (e.g. `obråbotyvati`, gen.pl), guided by cross-language vowel presence rather than a fixed rule.\n5. **POS-specific gender/animacy inference** to pick the right nominal ending where the modern citation forms disagree.",
+        far = far
+    )?;
+
     std::fs::write(out_dir.join("candidate-generation-report.md"), s)?;
     Ok(())
+}
+
+/// Cheap heuristic bucketing of a miss into a systematic-error class.
+fn classify_error(r: &EntryResult) -> &'static str {
+    let off = &r.isv;
+    let pred = &r.predicted;
+    if pred.is_empty() {
+        return "no candidate produced";
+    }
+    if r.norm_edit >= 0.34 {
+        return "different root / derivation";
+    }
+    let so = ortho::to_standard(&off.to_lowercase());
+    let sp = ortho::to_standard(&pred.to_lowercase());
+    // Same skeleton but different flavored letters => a flavor-recovery miss.
+    if ortho::ascii_skeleton(off) == ortho::ascii_skeleton(pred) {
+        return "flavored letter (ě/ę/ų/å/ć/đ) not recovered";
+    }
+    if so.len() != sp.len() {
+        if so.chars().count() > sp.chars().count() {
+            return "missing letter (fleeting vowel / cluster)";
+        }
+        return "extra letter (epenthesis / ending)";
+    }
+    if off.contains('y') != pred.contains('y') || off.contains('i') != pred.contains('i') {
+        return "y / i distinction";
+    }
+    "single-letter substitution"
 }
 
 fn write_diffs(out_dir: &Path, baseline: &RunMetrics, best: &RunMetrics) -> Result<()> {

@@ -72,6 +72,10 @@ pub struct ConsensusConfig {
     pub six_subgroup_vote: bool,
     /// Normalize verbal/nominal prefixes (råz-, prěd-).
     pub prefix_normalization: bool,
+    /// Recover *y (kept in ISV) from East/West where South merged it to i.
+    pub y_recovery: bool,
+    /// Use a long-form-adjective representative (ru/pl/cs) for adjectives.
+    pub adj_longform_rep: bool,
 }
 
 impl ConsensusConfig {
@@ -89,6 +93,30 @@ impl ConsensusConfig {
             internationalism: false,
             six_subgroup_vote: false,
             prefix_normalization: false,
+            y_recovery: false,
+            adj_longform_rep: false,
+        }
+    }
+
+    /// The configuration kept after benchmarking: every rule that improved
+    /// measured accuracy, none that regressed (palatals and jat are excluded —
+    /// the ablation ladder shows they regress in the consensus path). This is
+    /// what the production site uses.
+    pub fn production() -> Self {
+        ConsensusConfig {
+            branch_balanced: true,
+            prefer_south_representative: true,
+            nasal_from_polish: true,
+            palatal_from_south: false,
+            depleophony: true,
+            jat_reconstruction: false,
+            lemma_endings: true,
+            internationalism: true,
+            six_subgroup_vote: true,
+            prefix_normalization: true,
+            // Rejected by the benchmark (regress accuracy in the consensus path):
+            y_recovery: false,
+            adj_longform_rep: false,
         }
     }
 
@@ -104,6 +132,8 @@ impl ConsensusConfig {
             internationalism: true,
             six_subgroup_vote: true,
             prefix_normalization: true,
+            y_recovery: true,
+            adj_longform_rep: true,
         }
     }
 }
@@ -116,6 +146,11 @@ const REP_PRIORITY: &[&str] = &[
 ];
 const REP_PRIORITY_NO_SOUTH_BIAS: &[&str] =
     &["ru", "pl", "cs", "uk", "sk", "sl", "hr", "sr", "bg", "mk", "be"];
+/// Adjective representative priority: long-form languages first (they keep the
+/// full -y/-ý ending and the *y vowel), South last.
+const REP_PRIORITY_ADJ: &[&str] = &[
+    "ru", "pl", "cs", "sk", "uk", "be", "hr", "sr", "sl", "bg", "mk",
+];
 
 /// Generate ranked Interslavic candidates from modern-Slavic consensus.
 pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
@@ -261,7 +296,11 @@ fn reconstruct(
     input: &MeaningInput,
     cfg: &ConsensusConfig,
 ) -> (String, Vec<RuleStep>) {
-    let priority = if cfg.prefer_south_representative {
+    let priority = if cfg.adj_longform_rep && input.pos == Pos::Adjective {
+        // Adjectives: East/West cite the full long form (-y/-ý) while South cites
+        // the short predicative form with a fleeting vowel (dober vs dobry).
+        REP_PRIORITY_ADJ
+    } else if cfg.prefer_south_representative {
         REP_PRIORITY
     } else {
         REP_PRIORITY_NO_SOUTH_BIAS
@@ -335,6 +374,23 @@ fn reconstruct(
                     ));
                     form = fixed;
                 }
+            }
+        }
+    }
+
+    // Repair: recover *y (preserved in Interslavic) from East/West cognates
+    // where the South representative merged it to i.
+    if cfg.y_recovery {
+        if let Some((fixed, donor)) = recover_y(&form, per_lang) {
+            if fixed != form {
+                trace.push(RuleStep::new(
+                    "y-recovery",
+                    form.clone(),
+                    fixed.clone(),
+                    format!("*y vȯzstanovljeny iz {donor} (jug slil *y→i, medžuslovjansky drži y)."),
+                    Some("https://interslavic.fun/learn/phonology/"),
+                ));
+                form = fixed;
             }
         }
     }
@@ -505,6 +561,50 @@ fn jat_reconstruction(
                 chars[slot.2] = 'ě';
                 return Some(chars.into_iter().collect());
             }
+        }
+    }
+    None
+}
+
+/// Recover *y where a South-Slavic representative has i but an East/West cognate
+/// (Russian/Polish/Czech, which preserve *y) has y at the aligned slot.
+fn recover_y(
+    word: &str,
+    per_lang: &BTreeMap<&str, &SourceForm>,
+) -> Option<(String, String)> {
+    if !word.contains('i') {
+        return None;
+    }
+    for donor in ["ru", "pl", "cs", "sk", "uk", "be"] {
+        let Some(sf) = per_lang.get(donor) else {
+            continue;
+        };
+        if !sf.norm.latin.contains('y') {
+            continue;
+        }
+        if ortho::consonant_key(&sf.norm.latin) != ortho::consonant_key(word) {
+            continue;
+        }
+        let donor_slots = vowel_slots(&sf.norm.latin);
+        let word_slots = vowel_slots(word);
+        let mut chars: Vec<char> = word.chars().collect();
+        let mut changed = false;
+        for (dc, dv, _) in &donor_slots {
+            if *dv != 'y' {
+                continue;
+            }
+            if let Some((_, _, idx)) = word_slots
+                .iter()
+                .find(|(wc, wv, _)| *wv == 'i' && (*wc as isize - *dc as isize).abs() <= 1)
+            {
+                if *idx < chars.len() && chars[*idx] == 'i' {
+                    chars[*idx] = 'y';
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            return Some((chars.into_iter().collect(), donor.to_string()));
         }
     }
     None
