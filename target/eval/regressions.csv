@@ -210,9 +210,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 25661,become stupid,verb,glupěti,glupeti,glupjeti
 1815,"drive, chase",verb,gnati,gnati,goniti
 1127,"anger, fury, wrath",noun,gněv,gnev,gnjev
-727,nit,noun,gnida,gnida,gnjida
 25683,rottenness,noun,gnilosť,gnilost,gnjilost
-5306,rot,verb,gniti,gniti,gnjiti
 36126,"dwarf, gnome",noun,gnom,gnom,gnome
 401,"burn, be on fire",verb,gorěti,goreti,gorjeti
 25735,pheasant’s eye,noun,goricvět,goricvet,gorocvet
@@ -324,7 +322,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 789,"bow, bend, incline",verb,kloniti,kloniti,klanjati
 32136,clown,noun,kloun,kloun,klavn
 26576,"water closet, toilet, restroom, lavatory",noun,klozet,klozet,toaleta
-1981,book,noun,kniga,kniga,knjiga
 26588,red-footed falcon,noun,kobčik,kobčik,kobčyk
 16951,code,noun,kod,kod,kad
 143,whom,pron,kogo,kogo,koga
@@ -470,7 +467,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 900,modern,adj,moderny,moderny,moderany
 27691,milliner,noun,modistka,modistka,modystka
 37241,modular,adj,modularny,modularny,modulareny
-2178,prayer,noun,molitva,molitva,modlitva
 34073,"monastery, cloister",noun,monastyr,monastyr,manastir
 27740,moral,noun,moral,moral,morala
 2753,Moravia,noun,Moravija,moravija,moravy
@@ -479,7 +475,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 36085,mulberry (fruit),noun,morva,morva,murva
 35452,walrus,noun,morž,morž,mrož
 27767,skein,noun,motȯk,motok,motek
-27769,niddy-noddy,noun,motovilo,motovilo,motovidlo
 27770,motto,noun,motto,motto,moto
 926,"possibly, perhaps, it is possible",adv,možno,možno,možna
 35051,marble,noun,mramor,mramor,marmor
@@ -558,7 +553,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 9709,niche (field of activity),noun,niša,niša,nišo
 36725,niche (architecture),noun,niša,niša,nišo
 17966,thread,noun,nitka,nitka,nit
-956,field,noun,niva,niva,njiva
 9716,low,adv,nizko,nizko,nizka
 3863,spend the night,verb,noćevati,nočevati,noćivati
 2060,"number, numeral",noun,nomer,nomer,numer
@@ -860,12 +854,10 @@ id,gloss,pos,official,baseline_pred,final_pred
 30648,Pisces,noun,Ryby,ryby,ribi
 12062,knight,noun,rycaŕ,rycar,rycer
 18676,sob,verb,rydati,rydati,ridati
-34360,snout,noun,rylo,rylo,rilo
 32132,rhyme,verb,rymovati,rymovati,rimovati
 3821,rice,noun,ryž,ryž,riž
 37310,sabotage,noun,sabotaž,sabotaž,sabotaža
 269,hall,noun,sala,sala,šala
-20723,"fat, grease, lard",noun,salo,salo,sadlo
 20170,"just, merely, only",adv,samo,samo,liš
 35040,self-criticism,noun,samokritika,samokritika,samokritike
 1362,"lonely, solitary",adj,samotny,samotny,samotany
@@ -1108,7 +1100,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 31177,viaduct,noun,viadukt,viadukt,vijadukt
 31194,vicar,noun,vikarij,vikarij,vikar
 35277,Wikipedia,noun,Vikipedija,vikipedija,vikipedia
-31201,pitchfork,noun,vily,vily,vidla
+31201,pitchfork,noun,vily,vily,vila
 31204,vinaigrette,noun,vinegret,vinegret,vinaigrette
 16140,violin,noun,violina,violina,skripka
 1163,hang (intr.),verb,visěti,viseti,visjeti

@@ -3,19 +3,19 @@
 Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive the form straight from the linked reconstruction and compare to the official lemma.
 
 - Benchmark entries with modern evidence: **16300**
-- Confidently linked to a Proto-Slavic entry: **2857** (17.5% coverage)
-- On the linked subset: **exact 42.70%**, **normalized 47.46%**
+- Confidently linked to a Proto-Slavic entry: **2858** (17.5% coverage)
+- On the linked subset: **exact 43.25%**, **normalized 48.04%**
 
 ## Proto-engine accuracy by POS (linked subset)
 
 | POS | linked | exact | normalized |
 |---|---:|---:|---:|
-| adj | 321 | 28.04% | 30.22% |
+| adj | 322 | 28.26% | 30.43% |
 | adv | 65 | 10.77% | 15.38% |
-| noun | 1638 | 48.66% | 55.31% |
+| noun | 1638 | 49.51% | 56.23% |
 | num | 15 | 13.33% | 20.00% |
 | pron | 40 | 75.00% | 77.50% |
-| verb | 778 | 37.79% | 39.72% |
+| verb | 778 | 37.92% | 39.85% |
 
 ## Confident proto-engine errors (sample)
 
@@ -27,8 +27,6 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | to you (sg.), to thee | tobě | tebě | *tebě | 0.89 |
 | trough | žlěb | koryto | *koryto | 0.89 |
 | there | tam | tamo | *tamo | 0.87 |
-| nit | gnida | gnjida | *gňida | 0.86 |
-| death | smŕť | sȯmŕt | *sъmьrtь | 0.85 |
 | worm | črvjak | čŕv | *čьrvь | 0.85 |
 | stupidity | durnosť | glupost | *glupostь | 0.85 |
 | willow | iva | vŕba | *vьrba | 0.85 |
@@ -36,7 +34,6 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | flight | polet | let | *letъ | 0.85 |
 | navel | pųpȯk | pųp | *pǫpъ | 0.85 |
 | brotherhood | bratstvo | bratrstvo | *bratrьstvo | 0.85 |
-| prayer | molitva | modlitva | *modlitva | 0.84 |
 | mill | mlyn | mlin | *mъlinъ | 0.83 |
 | hornbeam | grab | grabr | *grabrъ | 0.81 |
 | yoke | jaŕmo | armo | *arьmo | 0.81 |
@@ -53,7 +50,6 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | basis | zaklad | osnova | *osnova | 0.81 |
 | burn | žegti | paliti | *paliti | 0.81 |
 | grain | žito | zŕno | *zьrno | 0.81 |
-| niddy-noddy | motovilo | motovidlo | *motovidlo | 0.81 |
 | violence | nasiľje | nasilije | *nasilьje | 0.80 |
 | spear | kopje | kopije | *kopьje | 0.79 |
 | star | zvězda | gvězda | *gvězda | 0.79 |
@@ -73,7 +69,6 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | mind | duh | um | *umъ | 0.77 |
 | ready, prepared | gotovy | gotov | *gotovъ | 0.77 |
 | fist | grsť | pęst | *pęstь | 0.77 |
-| queen | krålica | kråljica | *korľica | 0.77 |
 | scab | kråsta | strup | *strupъ | 0.77 |
 | hazel | leščina | lěska | *lěska | 0.77 |
 | hunt | lovitva | lov | *lovъ | 0.77 |
@@ -81,3 +76,8 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | bitch (female dog) | psica | suka | *suka | 0.77 |
 | word | rěč | slovo | *slovo | 0.77 |
 | make turbid | smųćati | mųtiti | *mǫtiti | 0.77 |
+| pine | sosna | bor | *borъ | 0.77 |
+| bottom | spod | dno | *dъno | 0.77 |
+| lighthouse | světiľnik | majak | *majakъ | 0.77 |
+| width | širokosť | širina | *širina | 0.77 |
+| calf | telętko | telę | *telę | 0.77 |

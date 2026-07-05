@@ -843,6 +843,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 36171,"stealthily, furtively, surreptitiously",adv,kradom,kradmo,kradom
 855,"theft, thievery",noun,krađa,kradež,krađa
 25790,caw,verb,krakati,karkati,krakati
+26816,queen,noun,krålica,kraljica,krålica
 1380,king,noun,krålj,korol,krålj
 17697,king (chess),noun,krålj,korol,krålj
 31852,king (cards),noun,krålj,korol,kralj
@@ -864,6 +865,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 23231,"moron, idiot, cretin",noun,kreten,kretin,kreten
 23233,"idiotic, cretinous",adj,kretensky,kretinskij,kretensky
 26943,"winged, alar",adj,krilaty,krylatyj,krilaty
+2637,wing,noun,krilo,krylo,krilo
 23162,crystal,noun,kristal,kristall,kristal
 23163,crystal,adj,kristaľny,kristalnyj,kristalny
 26879,curve,noun,kriva,krivaja,kriva
@@ -1851,6 +1853,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 12372,"mixed, blended",adj,směšany,smešannyj,smešany
 30730,"piece of garbage, piece of junk, piece of trash",noun,smeť,smeti,smet
 20177,stink,verb,smŕditi,smerdeti,smrditi
+2070,death,noun,smŕť,smert,smŕt
 36106,bow (for stringed instruments),noun,smyček,smyčok,smyček
 12390,daughter-in-law,noun,snaha,nevestka,snaha
 5637,"reduction, lowering",noun,snižeńje,sniženie,sniženje

@@ -38,6 +38,7 @@ pub fn generate_with_reflexes(
     s = prothesis(&s, &mut trace);
     s = soft_consonants(&s, &mut trace);
     s = syllabic_liquid(&s, &mut trace);
+    s = simplify_clusters(&s, &mut trace);
     s = yers(&s, reflexes, &mut trace);
     s = endings(&s, pos, gender, &mut trace);
     s = finalize(&s, &mut trace);
@@ -214,7 +215,10 @@ fn soft_consonants(input: &str, trace: &mut Vec<RuleStep>) -> String {
     let mut out = String::new();
     for i in 0..n {
         let next = chars.get(i + 1).copied();
-        let soft_pos = trigger(next);
+        // Before /i/ the softness is redundant (i already palatalizes), so the
+        // sonorant stays plain: *gňida → gnida, not gnjida. Elsewhere before a
+        // vowel or word-finally it surfaces as a digraph.
+        let soft_pos = trigger(next) && next != Some('i');
         let prev = out.chars().last().unwrap_or(' ');
         match chars[i] {
             'ľ' | 'ĺ' => {
@@ -238,6 +242,35 @@ fn soft_consonants(input: &str, trace: &mut Vec<RuleStep>) -> String {
         &out,
         "Mękke soglasniky: ľ→lj, ň→nj, ř→rj prěd glasnikom; labial+lj→labial+j (zemja).",
         PHON,
+    );
+    out
+}
+
+/// South-Slavic cluster simplification adopted by Interslavic: medial *dl/*tl → l
+/// (*modlitva → molitva, *motovidlo → motovilo). Never word-initial (dlanj).
+fn simplify_clusters(input: &str, trace: &mut Vec<RuleStep>) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::new();
+    for (i, &c) in chars.iter().enumerate() {
+        if i > 0
+            && matches!(c, 'd' | 't')
+            && chars.get(i + 1) == Some(&'l')
+            && chars
+                .get(i.wrapping_sub(1))
+                .map(|p| is_full_vowel(*p))
+                .unwrap_or(false)
+        {
+            continue; // drop the d/t before l
+        }
+        out.push(c);
+    }
+    step(
+        trace,
+        "cluster-dl",
+        input,
+        &out,
+        "Uproščenje: medialne *dl/*tl → l.",
+        STEEN,
     );
     out
 }
@@ -307,7 +340,10 @@ fn yers(input: &str, reflexes: &[String], trace: &mut Vec<RuleStep>) -> String {
                 strong[idx] = true;
             }
             counter += 1;
-        } else if is_full_vowel(c) || (is_yer(c) && tense[idx]) {
+        } else if is_full_vowel(c) || matches!(c, 'ŕ' | 'ĺ') || (is_yer(c) && tense[idx]) {
+            // A full vowel, a tense yer, or a syllabic liquid is a syllable
+            // nucleus and resets the Havlík alternation (*sъmьrtь → smŕť, not
+            // sȯmŕt: the ъ is weak because the following ŕ carries the syllable).
             counter = 0;
         }
     }
