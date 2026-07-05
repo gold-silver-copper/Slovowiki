@@ -161,8 +161,16 @@ target/eval/improvements.csv                     newly matched
 target/eval/errors-sample.csv                    nearest remaining misses
 ```
 
-## Provenance / license note
+## License & attribution
 
-Slavic evidence and the official lemmas come from the Interslavic dictionary
-(interslavic-dictionary.com) and English Wiktionary/Wiktextract. Generated data keeps
-source URLs; a public deployment needs a proper attribution/license page.
+- **Source code** — [MIT](LICENSE).
+- **Bundled data & machine-generated content** — CC BY-SA 4.0 (+ GFDL where
+  inherited from Wiktionary), because it derives from ShareAlike sources.
+
+Slavic evidence and official lemmas come from the Interslavic dictionary
+(interslavic-dictionary.com) and Interslavic reference materials by Jan van
+Steenbergen (interslavic.fun, steen.free.fr); etymological data from English
+Wiktionary via Wiktextract (CC BY-SA / GFDL). Generated Interslavic forms are
+**machine-generated reconstructions**, not authoritative standard Interslavic.
+
+Full credits and reuse terms: **[ATTRIBUTION.md](ATTRIBUTION.md)**.
