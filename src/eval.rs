@@ -261,6 +261,133 @@ fn conf_label(c: Confidence) -> &'static str {
     }
 }
 
+/// Proto-engine-only benchmark (§A of the V3 plan). Isolates the Proto-Slavic
+/// rule engine's accuracy from linking/ranking/consensus: for every meaning that
+/// gets a confident proto link, derive the form straight from the reconstruction
+/// and compare to the official lemma. Reports link coverage and proto-only
+/// accuracy by POS so the engine rules can be iterated against a tight signal.
+pub fn run_proto_engine(official_path: &Path, out_dir: &Path) -> Result<()> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let Some(proto) = load_proto_index() else {
+        anyhow::bail!(
+            "no Proto-Slavic cache ({}); run `extract-proto` first.",
+            crate::DEFAULT_PROTO_CACHE
+        );
+    };
+
+    let (mut n, mut linked, mut exact, mut norm) = (0usize, 0usize, 0usize, 0usize);
+    let mut by_pos: BTreeMap<&'static str, (usize, usize, usize)> = BTreeMap::new(); // (linked, exact, norm)
+    let mut errors: Vec<(String, String, String, String, f32)> = Vec::new(); // gloss, official, proto_form, proto_word, conf
+
+    for entry in &entries {
+        let input = build_input(entry);
+        if !input.forms.iter().any(|f| f.modern) {
+            continue;
+        }
+        n += 1;
+        let Some(l) = crate::proto_link::link(&proto, &input) else {
+            continue;
+        };
+        linked += 1;
+        let reflexes: Vec<String> = input
+            .forms
+            .iter()
+            .filter(|f| f.modern)
+            .map(|f| f.norm.latin.clone())
+            .collect();
+        let form =
+            crate::proto::generate_with_reflexes(&l.entry.word, input.pos, input.gender, &reflexes)
+                .form;
+        let e = ortho::exact_match(&form, &entry.isv);
+        let nm = ortho::normalized_match(&form, &entry.isv);
+        exact += e as usize;
+        norm += nm as usize;
+        let bp = by_pos.entry(entry.pos.code()).or_default();
+        bp.0 += 1;
+        bp.1 += e as usize;
+        bp.2 += nm as usize;
+        if !nm {
+            errors.push((
+                entry.english.clone(),
+                entry.isv.clone(),
+                form,
+                l.entry.word.clone(),
+                l.confidence,
+            ));
+        }
+    }
+
+    let rate = |a: usize, b: usize| {
+        if b == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / b as f32
+        }
+    };
+    println!(
+        "Proto-engine benchmark: {} linked / {} ({:.1}% coverage); on linked: exact {:.2}%, normalized {:.2}%",
+        linked,
+        n,
+        rate(linked, n),
+        rate(exact, linked),
+        rate(norm, linked),
+    );
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# Proto-Slavic engine benchmark\n")?;
+    writeln!(
+        s,
+        "Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive the form straight from the linked reconstruction and compare to the official lemma.\n"
+    )?;
+    writeln!(
+        s,
+        "- Benchmark entries with modern evidence: **{}**\n- Confidently linked to a Proto-Slavic entry: **{}** ({:.1}% coverage)\n- On the linked subset: **exact {:.2}%**, **normalized {:.2}%**\n",
+        n,
+        linked,
+        rate(linked, n),
+        rate(exact, linked),
+        rate(norm, linked),
+    )?;
+    writeln!(s, "## Proto-engine accuracy by POS (linked subset)\n")?;
+    writeln!(s, "| POS | linked | exact | normalized |")?;
+    writeln!(s, "|---|---:|---:|---:|")?;
+    for (pos, (ln, ex, nm)) in &by_pos {
+        writeln!(
+            s,
+            "| {} | {} | {:.2}% | {:.2}% |",
+            pos,
+            ln,
+            rate(*ex, *ln),
+            rate(*nm, *ln)
+        )?;
+    }
+    errors.sort_by(|a, b| b.4.total_cmp(&a.4)); // most-confident errors first (most actionable)
+    writeln!(s, "\n## Confident proto-engine errors (sample)\n")?;
+    writeln!(
+        s,
+        "| gloss | official | proto form | *reconstruction | link conf |"
+    )?;
+    writeln!(s, "|---|---|---|---|---:|")?;
+    for (g, off, form, word, conf) in errors.iter().take(60) {
+        writeln!(
+            s,
+            "| {} | {} | {} | *{} | {:.2} |",
+            g.replace('|', "/"),
+            off,
+            form,
+            word,
+            conf
+        )?;
+    }
+    std::fs::write(out_dir.join("proto-engine-report.md"), s)?;
+    println!("Wrote {}", out_dir.join("proto-engine-report.md").display());
+    Ok(())
+}
+
 /// Print the generator's full reasoning for one word/gloss (manual spot-check).
 pub fn explain(official_path: &Path, query: &str) -> Result<()> {
     let entries = official::load(official_path)?;

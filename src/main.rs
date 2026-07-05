@@ -87,6 +87,13 @@ enum Command {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
+    /// Proto-engine-only benchmark: proto derivation vs official on linked words.
+    ProtoEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -112,6 +119,7 @@ fn main() -> Result<()> {
         Command::Serve { data, host, port } => site::serve(&data, &host, port),
         Command::ExtractProto { dump, out } => dump::extract(&dump, &out),
         Command::Explain { query, official } => eval::explain(&official, &query),
+        Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::Evaluate {
             official,
             dump,

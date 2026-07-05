@@ -62,15 +62,17 @@ pub fn generate(
                         .map(|c| c.form.clone())
                         .unwrap_or_default();
                     let agree = flavor_equivalent(&pc.form, &cons_form);
-                    // Reflex-shape agreement (a principled, length-free rule):
-                    // the reconstruction may supply flavored spelling only when it
-                    // agrees with the reflexes on the segments. On any segmental
-                    // disagreement the living evidence wins (empirically the
-                    // reconstruction's *other* rules are unreliable exactly when it
-                    // parts ways with the reflexes). Adjectives are exempt: their
-                    // consensus citation often carries a spurious fleeting vowel
-                    // the reconstruction rightly drops (dobry vs dobery).
-                    let demote = !agree && input.pos != crate::model::Pos::Adjective;
+                    // Reflex-shape agreement, confidence-gated (§F: a trustworthy
+                    // engine earns a looser gate). When the reconstruction agrees
+                    // with the reflexes on the segments it always supplies the
+                    // flavored spelling. On a segmental *disagreement* it now wins
+                    // too — the engine is accurate enough (proto-only benchmark) to
+                    // be trusted — UNLESS the link itself is weak (confidence <
+                    // 0.62), where the living evidence wins instead. Adjectives are
+                    // exempt (their consensus citation often has a spurious fleeting
+                    // vowel the reconstruction rightly drops: dobry vs dobery).
+                    let demote =
+                        !agree && l.confidence < 0.62 && input.pos != crate::model::Pos::Adjective;
                     let base = 0.58 + 0.40 * l.confidence;
                     let score = if demote {
                         base.min(consensus_top - 0.03)
@@ -205,7 +207,16 @@ fn proto_rank(c: &Candidate) -> u8 {
 /// consensus: it refines the spelling of the *same* form rather than changing a
 /// segmental choice the reflexes made.
 fn flavor_equivalent(a: &str, b: &str) -> bool {
-    let fold = |s: &str| ortho::to_standard(&s.to_lowercase()).replace('y', "i");
+    let fold = |s: &str| {
+        ortho::to_standard(&s.to_lowercase())
+            .replace('y', "i")
+            // soft-sonorant palatalization is a flavored refinement, too: the
+            // reconstruction adds the softness (solj, konj, morje) the consensus
+            // citation drops.
+            .replace("lj", "l")
+            .replace("nj", "n")
+            .replace("rj", "r")
+    };
     fold(a) == fold(b)
 }
 

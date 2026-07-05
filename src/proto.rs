@@ -36,6 +36,8 @@ pub fn generate_with_reflexes(
     s = liquid_metathesis(&s, &mut trace);
     s = nasals(&s, &mut trace);
     s = prothesis(&s, &mut trace);
+    s = soft_consonants(&s, &mut trace);
+    s = syllabic_liquid(&s, &mut trace);
     s = yers(&s, reflexes, &mut trace);
     s = endings(&s, pos, gender, &mut trace);
     s = finalize(&s, &mut trace);
@@ -172,9 +174,14 @@ fn nasals(input: &str, trace: &mut Vec<RuleStep>) -> String {
 }
 
 /// Word-initial prothesis: Interslavic prepends j- before a front nasal and v-
-/// before a back nasal/rounded vowel (*ęzykъ → język, *ǫtroba → vųtroba).
+/// before a back nasal/rounded vowel (*ęzykъ → język, *ǫtroba → vųtroba), and
+/// resolves an initial tense yer (*jьgra → igra, *jъ- → y-).
 fn prothesis(input: &str, trace: &mut Vec<RuleStep>) -> String {
-    let out = if let Some(rest) = input.strip_prefix('ę') {
+    let out = if let Some(rest) = input.strip_prefix("jь") {
+        format!("i{rest}")
+    } else if let Some(rest) = input.strip_prefix("jъ") {
+        format!("y{rest}")
+    } else if let Some(rest) = input.strip_prefix('ę') {
         format!("ję{rest}")
     } else if let Some(rest) = input.strip_prefix('ų') {
         format!("vų{rest}")
@@ -188,6 +195,82 @@ fn prothesis(input: &str, trace: &mut Vec<RuleStep>) -> String {
         &out,
         "Protetični soglasnik: počętny ę→ję, ų→vų.",
         PHON,
+    );
+    out
+}
+
+/// Soft consonants: the etymological soft sonorants surface as digraphs before a
+/// vowel or word-finally (ľ→lj, ň→nj, ř→rj: moře→morje, poľe→polje, koňь→konj)
+/// but as a plain consonant before another consonant. After a labial, *lj gives
+/// just labial+j (zemľa→zemja, not zemlja) — the East/South epenthetic l is
+/// dropped.
+fn soft_consonants(input: &str, trace: &mut Vec<RuleStep>) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let n = chars.len();
+    let trigger = |c: Option<char>| match c {
+        None => true, // word-final
+        Some(x) => is_full_vowel(x) || x == 'ь' || x == 'ъ',
+    };
+    let mut out = String::new();
+    for i in 0..n {
+        let next = chars.get(i + 1).copied();
+        let soft_pos = trigger(next);
+        let prev = out.chars().last().unwrap_or(' ');
+        match chars[i] {
+            'ľ' | 'ĺ' => {
+                if matches!(prev, 'p' | 'b' | 'v' | 'm') {
+                    out.push('j'); // labial + *lj -> labial + j (zemja)
+                } else if soft_pos {
+                    out.push_str("lj");
+                } else {
+                    out.push('l');
+                }
+            }
+            'ň' => out.push_str(if soft_pos { "nj" } else { "n" }),
+            'ř' | 'ŕ' => out.push_str(if soft_pos { "rj" } else { "r" }),
+            other => out.push(other),
+        }
+    }
+    step(
+        trace,
+        "soft-consonants",
+        input,
+        &out,
+        "Mękke soglasniky: ľ→lj, ň→nj, ř→rj prěd glasnikom; labial+lj→labial+j (zemja).",
+        PHON,
+    );
+    out
+}
+
+/// Syllabic liquids: a yer + r/l wedged before another consonant becomes a
+/// syllabic liquid (*sьrpъ → sŕp, *sъmьrtь → smŕť, *vьrba → vŕba). Runs after
+/// soft-consonants (so the new ŕ/ĺ survive) and before yer resolution.
+fn syllabic_liquid(input: &str, trace: &mut Vec<RuleStep>) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let n = chars.len();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < n {
+        let c = chars[i];
+        if (c == 'ь' || c == 'ъ')
+            && i + 1 < n
+            && matches!(chars[i + 1], 'r' | 'l')
+            && (i + 2 >= n || is_cons(chars[i + 2]))
+        {
+            out.push(if chars[i + 1] == 'r' { 'ŕ' } else { 'ĺ' });
+            i += 2; // consume the yer and the liquid
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    step(
+        trace,
+        "syllabic-liquid",
+        input,
+        &out,
+        "Slogotvorne plavne: *ьr/*ъr→ŕ, *ьl/*ъl→ĺ prěd soglasnikom (sŕp, smŕť).",
+        STEEN,
     );
     out
 }
@@ -232,30 +315,31 @@ fn yers(input: &str, reflexes: &[String], trace: &mut Vec<RuleStep>) -> String {
     let mut out = String::new();
     let mut cons_before = 0usize; // consonants seen so far, for reflex alignment
     for idx in 0..n {
-        match chars[idx] {
-            'ъ' => {
-                if tense[idx] {
-                    out.push('y');
-                } else if strong[idx] {
-                    out.push('ȯ');
-                } else if reflex_retains(reflexes, cons_before) {
-                    out.push('y');
+        let c = chars[idx];
+        if is_yer(c) {
+            let back = c == 'ъ';
+            if tense[idx] {
+                out.push(if back { 'y' } else { 'i' });
+            } else if strong[idx] {
+                out.push(if back { 'ȯ' } else { 'e' });
+            } else if idx + 1 == n {
+                // Word-final weak yer: drops. If it is a soft (front) yer after a
+                // sonorant it palatalizes it: *solь -> solj, *dьnь -> denj. (Final
+                // yers are not subject to reflex retention — the reflexes are
+                // consonant-final too, e.g. *rajь -> raj.)
+                if !back && matches!(out.chars().last(), Some('l' | 'n' | 'r')) {
+                    out.push('j');
                 }
+            } else if let Some(v) = reflex_vowel_vote(reflexes, cons_before) {
+                // Internal weak yer retained: adopt the reflexes' vowel (o -> ȯ for
+                // a back yer: *dъska -> dȯska; *pьsati keeps i).
+                out.push(map_retained_vowel(v, back));
             }
-            'ь' => {
-                if tense[idx] {
-                    out.push('i');
-                } else if strong[idx] {
-                    out.push('e');
-                } else if reflex_retains(reflexes, cons_before) {
-                    out.push('i');
-                }
-            }
-            other => {
-                out.push(other);
-                if is_cons(other) {
-                    cons_before += 1;
-                }
+            // otherwise the weak yer drops with no trace
+        } else {
+            out.push(c);
+            if is_cons(c) {
+                cons_before += 1;
             }
         }
     }
@@ -290,7 +374,13 @@ fn endings(input: &str, pos: Pos, gender: Option<Gender>, trace: &mut Vec<RuleSt
                     break;
                 }
             }
-            if !out.ends_with('y') && !out.ends_with("ji") && ends_cons(&out) {
+            // Possessive adjectives (*-inъ, *-ovъ, *-jь) stay in the short form:
+            // mamin, ottsov — no -y.
+            let possessive = out.ends_with("in")
+                || out.ends_with("ov")
+                || out.ends_with("ev")
+                || out.ends_with("yn");
+            if !possessive && !out.ends_with('y') && !out.ends_with("ji") && ends_cons(&out) {
                 out.push('y');
             }
         }
@@ -349,36 +439,60 @@ fn debase_vowel(ch: char) -> char {
     }
 }
 
-/// Majority vote: do the reflexes keep a vowel right after `cons_before`
-/// consonants (the aligned yer position)? Reflexes that can't be aligned abstain.
-fn reflex_retains(reflexes: &[String], cons_before: usize) -> bool {
-    let (mut keep, mut drop) = (0i32, 0i32);
+/// Majority vote across reflexes: which vowel (if any) is kept right after
+/// `cons_before` consonants — the aligned yer position? Returns the most common
+/// retained vowel, or `None` when the reflexes drop it. Reflexes that can't be
+/// aligned abstain.
+fn reflex_vowel_vote(reflexes: &[String], cons_before: usize) -> Option<char> {
+    use std::collections::BTreeMap;
+    let mut votes: BTreeMap<char, usize> = BTreeMap::new();
+    let mut drop_votes = 0usize;
     for r in reflexes {
-        match reflex_vowel_after(r, cons_before) {
-            Some(true) => keep += 1,
-            Some(false) => drop += 1,
+        match reflex_vowel_at(r, cons_before) {
+            Some(Some(v)) => *votes.entry(v).or_default() += 1,
+            Some(None) => drop_votes += 1,
             None => {}
         }
     }
-    keep > 0 && keep > drop
+    let keep: usize = votes.values().sum();
+    if keep > 0 && keep > drop_votes {
+        votes.into_iter().max_by_key(|(_, n)| *n).map(|(v, _)| v)
+    } else {
+        None
+    }
 }
 
-/// In one reflex, is the segment right after `cons_before` consonants a vowel?
-fn reflex_vowel_after(r: &str, cons_before: usize) -> Option<bool> {
+/// In one reflex: `None` if it can't be aligned; `Some(None)` if the aligned slot
+/// is a consonant (dropped); `Some(Some(v))` if it is the vowel `v`.
+fn reflex_vowel_at(r: &str, cons_before: usize) -> Option<Option<char>> {
     let cs: Vec<char> = r.chars().collect();
     if cons_before == 0 {
-        return cs.first().map(|&c| is_reflex_vowel(c));
+        return cs
+            .first()
+            .map(|&c| if is_reflex_vowel(c) { Some(c) } else { None });
     }
     let mut cnt = 0;
     for i in 0..cs.len() {
         if is_reflex_cons(cs[i]) {
             cnt += 1;
             if cnt == cons_before {
-                return Some(cs.get(i + 1).map(|&c| is_reflex_vowel(c)).unwrap_or(false));
+                return Some(match cs.get(i + 1) {
+                    Some(&c) if is_reflex_vowel(c) => Some(c),
+                    _ => None,
+                });
             }
         }
     }
     None
+}
+
+/// Map a reflex vowel onto the retained-yer spelling: a back yer whose reflex is
+/// `o` takes the strong-back letter `ȯ` (dъska→dȯska); otherwise keep the vowel.
+fn map_retained_vowel(v: char, back_yer: bool) -> char {
+    match (back_yer, v) {
+        (true, 'o') => 'ȯ',
+        _ => v,
+    }
 }
 
 fn is_reflex_vowel(c: char) -> bool {

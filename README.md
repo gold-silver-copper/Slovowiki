@@ -26,10 +26,10 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **33.83%** | +6.45 pp |
-| normalized top-1 | 34.96% | **40.62%** | +5.66 pp |
-| normalized top-3 | 42.89% | **50.94%** | +8.1 pp |
-| mean normalized edit distance | 0.253 | **0.237** | −0.016 |
+| exact top-1 | 27.38% | **34.66%** | +7.28 pp |
+| normalized top-1 | 34.96% | **41.41%** | +6.45 pp |
+| normalized top-3 | 42.89% | **51.29%** | +8.4 pp |
+| mean normalized edit distance | 0.253 | **0.236** | −0.017 |
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
 

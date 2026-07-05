@@ -42,7 +42,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 36695,morbidity (rate),noun,zabolěvajemosť,zabolevaemost,0.071,2,11
 5175,interested,adj,zainteresovany,zaintersovany,0.071,3,11
 3717,legislative,adj,zakonodateljny,zakonodateleny,0.071,2,11
-24165,accompany,verb,akompanovati,akompaniovati,0.077,2,11
 36758,ambivalent,adj,ambivalentny,ambivalenteny,0.077,3,11
 32728,a posteriori,adj,aposteriorny,aposterioreny,0.077,3,11
 35659,"architectural, architectonic",adj,arhitekturny,arhitektureny,0.077,2,11
@@ -198,7 +197,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 35220,comparative,adj,sråvniteljny,sravniteleny,0.083,2,11
 37279,subcontinent,noun,subkontinent,subkontynent,0.083,3,11
 22304,wilful,adj,svojevoljny,svojevoljany,0.083,3,11
-23302,mysterious,adj,tajenstveny,tajenistveny,0.083,1,11
+23302,mysterious,adj,tajenstveny,tajenystveny,0.083,1,11
 13384,"established, fixed",adj,ustanovjeny,ustanovljeny,0.083,2,11
 22284,majestic,adj,veličstveny,veličestveny,0.083,2,11
 19172,"bountiful, generous, magnanimous",adj,velikodušny,velikodušany,0.083,3,11
@@ -399,3 +398,4 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 1547,university,noun,universitet,universytet,0.091,3,11
 5877,appeasement,noun,uspokojeńje,uspokojenie,0.091,2,11
 36461,utilitarian,adj,utilitarny,utilitarany,0.091,3,11
+31120,ventilate,verb,ventilovati,ventylovati,0.091,2,11
