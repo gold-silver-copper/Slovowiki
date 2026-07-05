@@ -333,7 +333,7 @@ fn noun_lemma(word: &str) -> Option<(String, &'static str, &'static str)> {
             ));
         }
     }
-    for suf in ["nost", "nast", "nosc", "ność", "ность"] {
+    for suf in ["nost", "nast", "nosc", "ность"] {
         if word.ends_with(suf) {
             return Some((
                 swap(word, suf, "nosť"),
@@ -341,6 +341,14 @@ fn noun_lemma(word: &str) -> Option<(String, &'static str, &'static str)> {
                 "Odvlečeny imennik -osť.",
             ));
         }
+    }
+    // Deverbal (verbal) nouns: -nie → -nje (dviženie → dviženje, znanie → znanje).
+    if word.ends_with("nie") && word.chars().count() > 4 {
+        return Some((
+            swap(word, "nie", "nje"),
+            "noun-verbal",
+            "Odglagolny imennik -ńje/-nje.",
+        ));
     }
     None
 }

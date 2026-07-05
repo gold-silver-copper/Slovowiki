@@ -267,7 +267,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 5596,measure,verb,izměriti,izmeriti,izmjeriti
 23729,"suddenly, abruptly, by surprise, all of a sudden",adv,iznenada,iznenada,vdrug
 26239,Israeli,noun,Izraelec,izraelec,izraeltanin
-8115,"term, phrase, expression",noun,izraz,izraz,vyraženie
+8115,"term, phrase, expression",noun,izraz,izraz,vyraženje
 3688,"inform, report",verb,izvěstiti,izvestiti,izvijestiti
 26269,from outside,adv,izvně,izvne,izvana
 282,apple,noun,jablȯko,jabloko,ablko
@@ -443,7 +443,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 32882,metropolis,noun,metropolija,metropolija,metropola
 951,"mist, fog, haze",noun,mgla,mgla,magla
 36338,mussel,noun,midija,midija,mida
-9097,winking,noun,migańje,miganje,mruganie
+9097,winking,noun,migańje,miganje,mruganje
 2180,"wink, blink",verb,migati,migati,morgati
 2218,militia,noun,milicija,milicija,milica
 32741,militarism,noun,militarizm,militarizm,militarizma
@@ -830,7 +830,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 149,rose,noun,roza,roza,ruža
 21531,branch (river),noun,rųkav,rukav,rakav
 16412,manuscript,noun,rųkopis,rukopis,rękopisa
-20694,ordination (priest),noun,rųkopoložeńje,rukopoloženje,posvaščenie
+20694,ordination (priest),noun,rųkopoložeńje,rukopoloženje,posvaščenje
 36648,rune,noun,runa,runa,rune
 1269,Russian,noun,Rus,rus,ruski
 12059,"angler, fisherman",noun,rybaŕ,rybar,rybarj
@@ -1056,7 +1056,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 31007,vampire,noun,vampir,vampir,vųpyrj
 17058,variation,noun,variacija,variacija,varijacija
 17059,variant,noun,variant,variant,varianta
-21211,digestion,noun,varjeńje,varjenje,travienie
+21211,digestion,noun,varjeńje,varjenje,travienje
 13524,"forever, eternally",adv,věčno,večno,vječno
 31064,vegetarian,noun,vegetarianec,vegetarianec,vegetarijanac
 32754,vegetarian,noun,vegetarianka,vegetarianka,vegetarijanka
@@ -1130,7 +1130,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 15210,"flag, ensign, banner (flag)",noun,zastava,zastava,flaga
 1170,"obscure, darken, make dark",verb,zatemniti,zatemniti,zatamniti
 31567,"plug, stop up",verb,zatknųti,zatknuti,zataknuti
-19422,"prison, jail",noun,zatvor,zatvor,vięzienie
+19422,"prison, jail",noun,zatvor,zatvor,vięzienje
 31573,"occiput, nape",noun,zatylȯk,zatylok,zatiljak
 23977,notice,verb,zauvažati,zauvažati,zavvažati
 2901,curtain,noun,zavěsa,zavesa,zavese
