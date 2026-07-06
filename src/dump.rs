@@ -257,7 +257,14 @@ fn proto_ancestor(value: &Value) -> Option<String> {
             continue;
         }
         let form = form.strip_prefix('*').unwrap_or(form);
-        if form.is_empty() {
+        // Reject placeholders ("-") and BOUND morphemes (prefixes/suffixes like
+        // *per-, *orz-, *-ъkъ): they are not standalone roots, so clustering by
+        // them fuses dozens of unrelated lemmas (B9). Require a real word form.
+        if form.is_empty()
+            || form.starts_with('-')
+            || form.ends_with('-')
+            || !form.chars().any(|c| c.is_alphabetic())
+        {
             continue;
         }
         return Some(format!("*{form}"));

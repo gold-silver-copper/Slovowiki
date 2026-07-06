@@ -115,6 +115,17 @@ pub fn build_sets(corpus: &LemmaCorpus) -> Vec<CognateSet> {
             }
             borrowed.push((e, snode, pc));
         } else if !e.proto.is_empty() {
+            // Skip placeholder / bound-morpheme ancestors (B9): they are not roots,
+            // so clustering by them fuses unrelated lemmas. (Also filtered at
+            // extraction; this guards older caches.)
+            let root = e.proto.trim_start_matches('*');
+            if root.is_empty()
+                || root.starts_with('-')
+                || root.ends_with('-')
+                || !root.chars().any(|c| c.is_alphabetic())
+            {
+                continue;
+            }
             inherited
                 .entry((e.proto.clone(), pos_class(&e.pos)))
                 .or_default()
@@ -397,6 +408,14 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
         top.score = score;
         top.branch_coverage = n_branches as u8;
     }
+    // The headword's coverage score must dominate its alternatives, otherwise the
+    // displayed ranking is non-monotone (an alternative outscoring the headword).
+    for c in candidates.iter_mut().skip(1) {
+        if c.score >= score {
+            c.score = (score - 0.01).max(0.01);
+            c.confidence = Confidence::from_score(c.score);
+        }
+    }
 
     GeneratedWord {
         set,
@@ -445,4 +464,84 @@ fn dedupe(candidates: &mut Vec<Candidate>) {
         out.push(c);
     }
     *candidates = out;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dump::{LemmaCorpus, LemmaEntry};
+
+    fn le(lang: &str, word: &str, pos: &str, proto: &str, etymon: &str) -> LemmaEntry {
+        LemmaEntry {
+            lang: lang.into(),
+            word: word.into(),
+            pos: pos.into(),
+            gloss: "x".into(),
+            proto: proto.into(),
+            etymon: etymon.into(),
+        }
+    }
+
+    #[test]
+    fn coverage_confidence_is_monotone_in_langs() {
+        let mut prev = -1.0;
+        for nl in 1..=8 {
+            let (_, s) = coverage_confidence(nl, 2);
+            assert!(s >= prev, "score not monotone at {nl} langs");
+            prev = s;
+        }
+        assert!(matches!(coverage_confidence(6, 3).0, Confidence::High));
+        assert!(matches!(coverage_confidence(3, 2).0, Confidence::Medium));
+        assert!(matches!(coverage_confidence(1, 1).0, Confidence::Low));
+    }
+
+    #[test]
+    fn headword_outscores_its_alternatives() {
+        let members = vec![
+            le("ru", "вода", "noun", "*voda", ""),
+            le("pl", "woda", "noun", "*voda", ""),
+            le("cs", "voda", "noun", "*voda", ""),
+        ];
+        let set = CognateSet {
+            proto: "*voda".into(),
+            etymon: "*voda".into(),
+            borrowed: false,
+            pos: Pos::Noun,
+            gloss: "water".into(),
+            members,
+        };
+        let g = generate_set(set, &ConsensusConfig::production());
+        let top = g.candidates[0].score;
+        assert!(
+            g.candidates.iter().skip(1).all(|c| c.score <= top),
+            "an alternative outscores the headword: {:?}",
+            g.candidates.iter().map(|c| c.score).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn build_sets_skips_placeholder_and_bound_proto() {
+        let corpus = LemmaCorpus {
+            source: String::new(),
+            entry_count: 3,
+            entries: vec![
+                le("ru", "x", "noun", "*-", ""),
+                le("pl", "y", "noun", "*per-", ""),
+                le("cs", "voda", "noun", "*voda", ""),
+            ],
+        };
+        let sets = build_sets(&corpus);
+        assert!(
+            sets.iter()
+                .all(|s| !s.proto.starts_with("*-") && !s.proto.ends_with('-')),
+            "a placeholder/bound-morpheme ancestor formed a cognate set"
+        );
+        assert_eq!(sets.iter().filter(|s| !s.borrowed).count(), 1); // only *voda
+    }
+
+    #[test]
+    fn intl_key_ignores_the_j_glide() {
+        // kompjuter and komputer must share an internationalism key.
+        assert_eq!(intl_key("kompjuter"), intl_key("komputer"));
+    }
 }
