@@ -76,25 +76,44 @@ fn pos_class(pos: &str) -> &'static str {
 }
 
 /// Group the corpus into cognate sets: inherited lemmas by their Proto-Slavic
-/// ancestor, borrowings by the shared phonemic skeleton of the Slavic form (so
-/// `компьютер` / `komputer` / `komputer` cluster as one internationalism).
+/// ancestor; borrowings by **union-find** over two signals — the phonemic
+/// skeleton of the Slavic form *and* the skeleton of the (Latin-script) source
+/// etymon. Merging on the shared etymon connects variants the Slavic-form
+/// skeleton alone splits (avtomobil ≍ automobil via the Latin `automobile`),
+/// lifting internationalisms out of the low-confidence singleton tail.
 pub fn build_sets(corpus: &LemmaCorpus) -> Vec<CognateSet> {
     let mut inherited: BTreeMap<(String, &'static str), Vec<LemmaEntry>> = BTreeMap::new();
-    let mut borrowed: BTreeMap<(String, &'static str), Vec<LemmaEntry>> = BTreeMap::new();
+    let mut borrowed: Vec<(&LemmaEntry, String, &'static str)> = Vec::new(); // (lemma, slav_key, pos_class)
+    let mut uf = UnionFind::default();
+
     for e in &corpus.entries {
         if branch_of(&e.lang).is_none() {
             continue;
         }
         if e.is_borrowed() {
             let latin = normalize::to_phonemic_latin(&e.lang, &e.word);
-            let key = intl_key(&latin);
-            if key.len() < 2 {
-                continue;
+            let sk = intl_key(&latin);
+            let pc = pos_class(&e.pos);
+            // A 2-consonant skeleton (rn, rm, pp) collides unrelated short words
+            // (urna≠arena≠ajran), so cluster short words by their full normalized
+            // form instead; only ≥3-consonant skeletons cluster by skeleton.
+            let node_key = if sk.chars().count() >= 3 {
+                sk
+            } else {
+                let full: String = latin.chars().filter(|c| c.is_alphanumeric()).collect();
+                if full.chars().count() < 2 {
+                    continue;
+                }
+                format!("w:{full}")
+            };
+            let snode = format!("S:{node_key}/{pc}");
+            uf.touch(&snode);
+            // Merge on the shared Latin etymon only for a substantial skeleton
+            // (≥4), since this edge is transitive and short etymons over-connect.
+            if let Some(ek) = etymon_key(&e.etymon) {
+                uf.union(&snode, &format!("E:{ek}/{pc}"));
             }
-            borrowed
-                .entry((key, pos_class(&e.pos)))
-                .or_default()
-                .push(e.clone());
+            borrowed.push((e, snode, pc));
         } else if !e.proto.is_empty() {
             inherited
                 .entry((e.proto.clone(), pos_class(&e.pos)))
@@ -109,13 +128,79 @@ pub fn build_sets(corpus: &LemmaCorpus) -> Vec<CognateSet> {
             sets.push(set);
         }
     }
-    for ((key, _), members) in borrowed {
+
+    // Assemble borrowed cognate sets from the union-find components.
+    let mut comps: BTreeMap<String, Vec<LemmaEntry>> = BTreeMap::new();
+    for (e, snode, _) in &borrowed {
+        comps.entry(uf.find(snode)).or_default().push((*e).clone());
+    }
+    for (root, members) in comps {
         let etymon = most_common_etymon(&members);
-        if let Some(set) = finish_set(format!("bor:{key}"), etymon, true, members) {
+        if let Some(set) = finish_set(format!("bor:{root}"), etymon, true, members) {
             sets.push(set);
         }
     }
     sets
+}
+
+/// The etymon's skeleton, usable as a merge key only when the source word is
+/// Latin-script (Greek/Cyrillic/Arabic etymons can't align with Latin ones, so
+/// those borrowings merge on the Slavic-form skeleton alone).
+fn etymon_key(etymon: &str) -> Option<String> {
+    let word = etymon
+        .split_once(' ')
+        .map(|(_, w)| w)
+        .unwrap_or(etymon)
+        .trim();
+    if word.is_empty()
+        || word
+            .chars()
+            .any(|c| c.is_alphabetic() && (c as u32) >= 0x250)
+    {
+        return None;
+    }
+    let key = intl_key(word);
+    if key.chars().count() < 4 {
+        None
+    } else {
+        Some(key)
+    }
+}
+
+/// Minimal union-find over string node ids (path-halving).
+#[derive(Default)]
+struct UnionFind {
+    parent: std::collections::HashMap<String, String>,
+}
+impl UnionFind {
+    fn touch(&mut self, x: &str) {
+        self.parent
+            .entry(x.to_string())
+            .or_insert_with(|| x.to_string());
+    }
+    fn find(&mut self, x: &str) -> String {
+        let mut cur = x.to_string();
+        loop {
+            let p = self
+                .parent
+                .entry(cur.clone())
+                .or_insert_with(|| cur.clone())
+                .clone();
+            if p == cur {
+                return cur;
+            }
+            let gp = self.parent.get(&p).cloned().unwrap_or_else(|| p.clone());
+            self.parent.insert(cur.clone(), gp.clone());
+            cur = gp;
+        }
+    }
+    fn union(&mut self, a: &str, b: &str) {
+        let ra = self.find(a);
+        let rb = self.find(b);
+        if ra != rb {
+            self.parent.insert(ra, rb);
+        }
+    }
 }
 
 fn finish_set(
