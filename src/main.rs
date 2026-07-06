@@ -116,6 +116,15 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// Cluster-selection headroom: measure how much of the editorial wrong-cluster
+    /// error a *leakage-free* recognizability rule (max languages/branches,
+    /// internationalism-first) recovers vs the answer-reading oracle-cluster.
+    SelectEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -151,6 +160,7 @@ fn main() -> Result<()> {
         Command::CorpusEval { official, out } => eval::run_corpus_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),
+        Command::SelectEval { official, out } => eval::run_select_eval(&official, &out),
         Command::Evaluate {
             official,
             dump,

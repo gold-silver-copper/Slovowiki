@@ -802,6 +802,7 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
                     cluster: cl,
                     representative: rep,
                     proto_link: pl,
+                    force_cluster_key: None,
                 };
                 crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
             };
@@ -876,6 +877,207 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
     )?;
     std::fs::write(out_dir.join("oracle-ladder.md"), s)?;
     println!("Wrote {}", out_dir.join("oracle-ladder.md").display());
+    Ok(())
+}
+
+/// Cluster-selection headroom (Measurement #2). The wrong-cluster miss bucket is
+/// mostly the official dictionary choosing a different (editorial) root than our
+/// vote's plurality — the oracle-cluster stage showed ~+3.9pp is *there* if we
+/// pick the official root, but most of that reads the answer. This measures how
+/// much a **leakage-free recognizability rule** recovers: force the winning
+/// cluster by an answer-blind rule (most distinct languages / branches, or an
+/// internationalism-first preference) and score the real downstream pipeline. If
+/// the blind rules barely beat production, the editorial slice is a genuine
+/// human-judgment ceiling; whatever they *do* recover is a concrete answer-free
+/// fix. Also reports each rule's cluster-selection precision on the meanings
+/// whose official root is present in the evidence (the recoverable slice).
+pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+
+    struct Clus {
+        key: String,
+        langs: usize,
+        branches: usize,
+        intl: bool,
+    }
+    // Cluster stats for a meaning: for each consonant-key group among the primary
+    // modern cognates, how many distinct languages/branches attest it and whether
+    // any member looks international.
+    let clusters = |input: &MeaningInput| -> Vec<Clus> {
+        let mut per_lang: BTreeMap<&str, &SourceForm> = BTreeMap::new();
+        for f in &input.forms {
+            if f.modern && f.primary {
+                per_lang.entry(f.lang_code.as_str()).or_insert(f);
+            }
+        }
+        let mut map: BTreeMap<String, (Vec<&str>, Vec<crate::lang::Branch>, bool)> =
+            BTreeMap::new();
+        for f in per_lang.values() {
+            let k = ortho::consonant_key(&f.norm.latin);
+            if k.is_empty() {
+                continue;
+            }
+            let e = map.entry(k).or_default();
+            if !e.0.contains(&f.lang_code.as_str()) {
+                e.0.push(f.lang_code.as_str());
+            }
+            if !e.1.contains(&f.branch) {
+                e.1.push(f.branch);
+            }
+            e.2 |= consensus::is_international_form(&f.norm.latin);
+        }
+        map.into_iter()
+            .map(|(key, (l, b, i))| Clus {
+                key,
+                langs: l.len(),
+                branches: b.len(),
+                intl: i,
+            })
+            .collect()
+    };
+
+    // Leakage-free selection rules (except `oracle-cluster`, the upper bound).
+    // Return the cluster key to force, or None = leave the real vote (production).
+    let pick = |name: &str, cs: &[Clus], official: &str| -> Option<String> {
+        match name {
+            "max-langs" => cs
+                .iter()
+                .max_by_key(|c| (c.langs, c.branches))
+                .map(|c| c.key.clone()),
+            "max-branches" => cs
+                .iter()
+                .max_by_key(|c| (c.branches, c.langs))
+                .map(|c| c.key.clone()),
+            "intl-first" => cs
+                .iter()
+                .filter(|c| c.intl)
+                .max_by_key(|c| (c.langs, c.branches))
+                .map(|c| c.key.clone()),
+            "oracle-cluster" => {
+                let ok = ortho::consonant_key(&ortho::to_standard(&official.to_lowercase()));
+                cs.iter().find(|c| c.key == ok).map(|c| c.key.clone())
+            }
+            _ => None, // "production"
+        }
+    };
+
+    let rule_names = [
+        "production",
+        "max-langs",
+        "max-branches",
+        "intl-first",
+        "oracle-cluster",
+    ];
+    let mut results: Vec<(String, f32, f32, f32)> = Vec::new(); // (name, exact%, norm%, cluster-hit%)
+    let mut denom_ref = 0usize;
+    for name in rule_names {
+        let (mut ex, mut nm, mut denom) = (0usize, 0usize, 0usize);
+        let (mut hit, mut hit_denom) = (0usize, 0usize);
+        for entry in &entries {
+            let input = build_input(entry);
+            if !input.forms.iter().any(|f| f.modern) {
+                continue;
+            }
+            denom += 1;
+            let cs = clusters(&input);
+            let official_key = ortho::consonant_key(&ortho::to_standard(&entry.isv.to_lowercase()));
+            let official_present = cs.iter().any(|c| c.key == official_key);
+            let forced = pick(name, &cs, &entry.isv);
+            let (cands, _) = if let Some(k) = &forced {
+                let oracle = consensus::Oracle {
+                    official: &entry.isv,
+                    cluster: false,
+                    representative: false,
+                    proto_link: false,
+                    force_cluster_key: Some(k.as_str()),
+                };
+                crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
+            } else {
+                crate::pipeline::generate(&input, proto.as_ref(), &cfg)
+            };
+            let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+            ex += ortho::exact_match(&pred, &entry.isv) as usize;
+            nm += ortho::normalized_match(&pred, &entry.isv) as usize;
+            if official_present {
+                hit_denom += 1;
+                // Approximate cluster-selection precision: does the top candidate's
+                // root fingerprint match the official one? (For proto-derived tops a
+                // dropped/added consonant can shift the surface key, so this slightly
+                // under-counts — it is a floor.)
+                if winning_root_key(cands.first().unwrap()) == official_key {
+                    hit += 1;
+                }
+            }
+        }
+        denom_ref = denom;
+        let pct = |a: usize, b: usize| {
+            if b == 0 {
+                0.0
+            } else {
+                100.0 * a as f32 / b as f32
+            }
+        };
+        results.push((
+            name.to_string(),
+            pct(ex, denom),
+            pct(nm, denom),
+            pct(hit, hit_denom),
+        ));
+    }
+
+    let base_ex = results[0].1;
+    let base_nm = results[0].2;
+    println!(
+        "Cluster-selection headroom (Measurement #2 — leakage-free rules vs production vs oracle; {denom_ref} meanings):"
+    );
+    println!(
+        "  {:<16} {:>7}  {:>8}  {:>7}  {:>8}  {:>10}",
+        "rule", "exact", "Δexact", "norm", "Δnorm", "cluster-hit"
+    );
+    for (name, exr, nmr, hitr) in &results {
+        println!(
+            "  {:<16} {:>6.2}%  {:>+7.2}  {:>6.2}%  {:>+7.2}  {:>9.1}%",
+            name,
+            exr,
+            exr - base_ex,
+            nmr,
+            nmr - base_nm,
+            hitr
+        );
+    }
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# Cluster-selection headroom (Measurement #2)\n")?;
+    writeln!(
+        s,
+        "The wrong-cluster miss bucket is mostly the official dictionary choosing a different (editorial) root than our plurality vote. This forces the winning cluster by a **leakage-free** rule (except `oracle-cluster`, which reads the answer as the ceiling) and scores the real pipeline over {denom_ref} meanings. `cluster-hit%` is the share of meanings whose official root is in the evidence where the rule's top candidate lands on that root.\n"
+    )?;
+    writeln!(
+        s,
+        "| Rule | exact | Δ exact | norm | Δ norm | cluster-hit |"
+    )?;
+    writeln!(s, "|---|---:|---:|---:|---:|---:|")?;
+    for (name, exr, nmr, hitr) in &results {
+        writeln!(
+            s,
+            "| {} | {:.2}% | {:+.2}pp | {:.2}% | {:+.2}pp | {:.1}% |",
+            name,
+            exr,
+            exr - base_ex,
+            nmr,
+            nmr - base_nm,
+            hitr
+        )?;
+    }
+    writeln!(s, "\n- **production** — the real branch-balanced six-subgroup vote (reference).\n- **max-langs / max-branches** — force the cluster attested by the most distinct languages / branches (a raw recognizability proxy).\n- **intl-first** — force any internationalism cluster (tests extending the genesis=I preference to every meaning).\n- **oracle-cluster** — force the official cluster (upper bound; reads the answer).")?;
+    std::fs::write(out_dir.join("cluster-selection.md"), s)?;
+    println!("Wrote {}", out_dir.join("cluster-selection.md").display());
     Ok(())
 }
 

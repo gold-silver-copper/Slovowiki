@@ -238,6 +238,11 @@ pub struct Oracle<'a> {
     /// Force the reconstruction whose derived form is closest to official (used
     /// by the pipeline, carried here so one struct threads all three oracles).
     pub proto_link: bool,
+    /// Force the vote to a specific cluster key. Unlike `cluster` (which reads the
+    /// answer), this key may be computed by a *leakage-free* selection rule, so
+    /// the `select-eval` path can measure how much of the oracle-cluster ceiling a
+    /// real answer-blind recognizability heuristic recovers.
+    pub force_cluster_key: Option<&'a str>,
 }
 
 /// Generate ranked Interslavic candidates from modern-Slavic consensus.
@@ -319,11 +324,17 @@ pub fn generate_oracle(
             .then(a.key.cmp(&b.key))
     });
 
-    // Oracle cluster choice (diagnostic only): force the group whose key matches
-    // the official lemma's consonant key to the front, so the representative +
-    // repairs run on the *right* cluster and we can measure selection headroom.
-    if let Some(o) = oracle.filter(|o| o.cluster) {
-        let key = ortho::consonant_key(&ortho::to_standard(&o.official.to_lowercase()));
+    // Cluster choice override: force a chosen cluster to the front so the
+    // representative + repairs run on it and we can measure selection headroom.
+    // The key is either the official one (oracle-cluster — reads the answer) or a
+    // leakage-free rule-computed key (select-eval).
+    let forced_key: Option<String> = oracle.and_then(|o| {
+        o.force_cluster_key.map(|k| k.to_string()).or_else(|| {
+            o.cluster
+                .then(|| ortho::consonant_key(&ortho::to_standard(&o.official.to_lowercase())))
+        })
+    });
+    if let Some(key) = forced_key {
         if let Some(p) = groups.iter().position(|g| g.key == key) {
             let g = groups.remove(p);
             groups.insert(0, g);
