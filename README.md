@@ -35,10 +35,10 @@ Two kinds of etymological group are collected:
   (~47k lemmas: ~25k inherited + ~22k borrowings, across 15+ Slavic lects incl. OCS).
 - `cargo run -- export` — generate the cognate-set site (~22.4k words; falls back to the
   dictionary-seeded site if the lemma cache is absent).
-- Independent validation: **~5.2k generated words already exist as official Interslavic
+- Independent validation: **~6.0k generated words already exist as official Interslavic
   lemmas** (of ~22.4k), with no leakage from the dictionary into the generation.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
-  **55.3% exact / 59.4% normalized** on the ~6.9k entries with a known ancestor.
+  **56.6% exact / 61.0% normalized** on the ~7.4k entries with a known ancestor.
 - `data/novel-words.tsv` — 2,066 high/medium-confidence words the engine derived that
   are **not** in the official dictionary (candidate new vocabulary, with ancestors).
 
@@ -62,37 +62,43 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **38.42%** | +11.04 pp |
-| normalized top-1 | 34.96% | **45.50%** | +10.54 pp |
-| normalized top-3 | 42.89% | **56.9%** | +14.0 pp |
-| normalized top-5 | — | **59.6%** | — |
-| mean normalized edit distance | 0.253 | **0.229** | −0.024 |
+| exact top-1 | 27.52% | **39.92%** | +12.40 pp |
+| normalized top-1 | 35.23% | **47.09%** | +11.86 pp |
+| normalized top-3 | 43.26% | **57.90%** | +14.64 pp |
+| normalized top-5 | — | **60.62%** | — |
+| mean normalized edit distance | 0.252 | **0.226** | −0.026 |
 
 The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
-(`cargo run -- corpus-eval`): **56.9% exact / 61.1% normalized** on the ~6.9k entries
+(`cargo run -- corpus-eval`): **56.6% exact / 61.0% normalized** on the ~7.4k entries
 where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
 headline because it only scores words the site actually derives from a known ancestor.
 
-A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
-~47% *wrong-cluster* (the official root is in the evidence but a different one
-was chosen — mostly editorial synonym choices Interslavic makes), ~32%
-*right-cluster-wrong-form* (engine/reconstruction error), ~21% *root-absent*
-(the official root is not in any modern cognate — unfixable from evidence).
-89.5% of meanings split across ≥3 cognate clusters. This maps the ceiling for
-future word-selection work.
+A data-quality **audit** (`cargo run --release -- audit`) classifies every miss and
+attributes it to the pipeline **stage** that lost the official form (a full
+`RuleStep`-trace replay — see `target/eval/stage-attribution.md`): ~31%
+*cluster/vote* (a different, usually editorial, root was chosen), ~21%
+*merge/rank* (a correct candidate was generated but demoted — of which only ~2.6%
+of all misses are a genuine same-cluster ranking bug, the rest being synonym
+word-choice), ~21% *root-absent* (unfixable from evidence), ~18%
+*normalize/representative*, ~7% *endings*, and only **~1.6%** the Proto-Slavic
+*rule engine*. 89.5% of meanings split across ≥3 cognate clusters. A companion
+**oracle ladder** (`cargo run --release -- oracle`, diagnostic-only) measures each
+stage's upper-bound headroom: cluster +3.9pp / representative +3.7pp / proto-link
++2.6pp exact — the single biggest *non-editorial* lever is representative
+selection.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
-(`cargo run --release -- proto-eval`): on the words it confidently links to a
-reconstruction it derives the official lemma with **43.98% exact / 49.36%
+(`cargo run --release -- proto-eval`): on the 20.1% of words it confidently links
+to a reconstruction it derives the official lemma with **46.68% exact / 52.74%
 normalized** accuracy.
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
 
 | confidence | n | normalized match |
 |---|---:|---:|
-| high | 6,826 | 64% |
-| medium | 7,248 | 35% |
-| low | 2,226 | 11% |
+| high | 6,996 | 68% |
+| medium | 7,089 | 37% |
+| low | 2,215 | 12% |
 
 Full metrics, POS-specific accuracy, branch-coverage analysis, regression/improvement
 lists and the remaining-error breakdown are regenerated into `target/eval/` (a committed
@@ -210,8 +216,12 @@ cargo run --release -- extract-lemmas
 # Benchmark the SITE's generation path (corpus::generate_set) against the dictionary:
 cargo run --release -- corpus-eval
 
-# Data-quality / ceiling audit (classifies every miss):
+# Data-quality / ceiling audit (classifies every miss + per-stage attribution):
 cargo run --release -- audit
+
+# Diagnostic-only oracle ladder (per-stage upper-bound headroom; reads the answer,
+# never feeds production):
+cargo run --release -- oracle
 
 # Generate the static website locally (no server; not published anywhere):
 cargo run --release -- export --out site
@@ -243,10 +253,17 @@ Each entry page shows:
 ```
 target/eval/candidate-generation-summary.json   per-rung metrics (machine-readable)
 target/eval/candidate-generation-report.md      full human-readable report
+target/eval/stage-attribution.md                 per-stage blame histogram (audit)
+target/eval/oracle-ladder.md                     per-stage upper-bound headroom (oracle)
+target/eval/audit-misses.csv                     misses with stage + stage_detail columns
+target/eval/proto-engine-report.md               proto-engine per-rule error worklist
 target/eval/regressions.csv                      matched before, not after
 target/eval/improvements.csv                     newly matched
 target/eval/errors-sample.csv                    nearest remaining misses
 ```
+
+The V7 full-pipeline review (stage-attribution histogram, oracle ladder, and the
+ranked list of kept/reverted fixes) is written up in **[IMPROVEMENT_REPORT_V7.md](IMPROVEMENT_REPORT_V7.md)**.
 
 ## License & attribution
 

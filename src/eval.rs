@@ -13,7 +13,7 @@
 //! metrics and the regression/improvement diffs are written under `target/eval/`.
 
 use crate::consensus::{self, ConsensusConfig, MeaningInput, SourceForm};
-use crate::model::{Candidate, Confidence, Pos};
+use crate::model::{Candidate, CandidateSource, Confidence, Pos, RuleStep};
 use crate::official::{self, OfficialEntry};
 use crate::orthography as ortho;
 use anyhow::Result;
@@ -395,6 +395,201 @@ fn conf_label(c: Confidence) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Stage-attribution harness (V7 §2.3).
+//
+// For each normalized miss, name the *last pipeline stage whose output still
+// folded to the official form* — i.e. the stage that destroyed (or never
+// produced) the correct answer. This converts the coarse three-way miss
+// classification and the "1-letter substitution" buckets into per-stage blame,
+// which is the map for where to spend effort. The winning candidate carries a
+// full `RuleStep` trace; we replay it, folding each intermediate form to the
+// standard alphabet, and find where the correct answer was lost.
+// ---------------------------------------------------------------------------
+
+/// The coarse pipeline stage a trace-step id belongs to. `is_proto` disambiguates
+/// the few ids shared between the consensus repairs and the Proto-Slavic rule
+/// engine (notably `liquid-metathesis`).
+fn stage_of_step(id: &str, is_proto: bool) -> &'static str {
+    match id {
+        "<input>" => "1-normalize/representative",
+        "proto-link" => "5-proto-link",
+        _ if is_proto => "6-proto-rule",
+        "consensus-vote" | "synonym-alt" => "3-cluster/vote",
+        "pick-representative" => "1-normalize/representative",
+        // Consensus etymological repairs (Stage 4).
+        "liquid-metathesis" | "tj-dj-palatal" | "nasal-vowel" | "y-recovery" | "jat-reflex"
+        | "adj-fleeting-vowel" | "loan-y-i" | "loan-epenthesis" | "loan-ac-ec" | "loan-ija"
+        | "loan-masc-a" | "loan-fem-a" | "loan-ok-suffix" | "loan-yvati" | "verb-husing-a"
+        | "verb-stative-eti" | "prefix-voicing" | "loan-ns" => "4-repair",
+        // Morphology / endings (Stage 7).
+        "prefix-orz" | "prefix-perd" | "intl-diphthong" | "intl-ic-ical" | "intl-al"
+        | "intl-ative" | "intl-ive" | "intl-ous" | "intl-ijny" | "intl-ism" | "intl-ist"
+        | "intl-tion" | "intl-sion" | "intl-ssion" | "intl-verb" | "verb-inf-ti" | "adj-hard-y"
+        | "adj-soft-i" | "adv-alno" | "noun-alnost" | "noun-ost" | "noun-verbal" | "noun-telj" => {
+            "7-endings"
+        }
+        _ => "4-repair",
+    }
+}
+
+/// The consonant-key fingerprint of the *root the winning candidate chose*. For a
+/// Proto-Slavic-derived candidate that is the linked reconstruction (so a surface
+/// letter the engine mis-derived — e.g. a dropped epenthetic l — does not read as
+/// a wrong cluster); otherwise it is the candidate surface itself.
+fn winning_root_key(top: &Candidate) -> String {
+    if top.source == CandidateSource::ProtoSlavicRule {
+        if let Some(st) = top.trace.iter().find(|s| s.id == "proto-link") {
+            let w = st.before.trim().trim_start_matches('*');
+            return ortho::consonant_key(&ortho::to_standard(&w.to_lowercase()));
+        }
+    }
+    ortho::consonant_key(&top.form)
+}
+
+/// Attribute one normalized miss to the pipeline stage responsible. Returns
+/// `(stage, detail)` where `stage` is a coarse bucket and `detail` names the
+/// specific step/cause.
+fn attribute_miss(
+    cands: &[Candidate],
+    modern_keys: &[String],
+    official: &str,
+) -> (&'static str, String) {
+    let target = ortho::to_standard(&official.trim().to_lowercase());
+    let official_key = ortho::consonant_key(&target);
+
+    let Some(top) = cands.first() else {
+        return ("0-no-candidate", "empty".into());
+    };
+
+    // Merge/rank: a correct *primary* candidate was generated but demoted below
+    // the winner (e.g. a wrong proto spelling outranked the correct consensus
+    // form — sablja). A correct *synonym-alternative* does NOT count: those are
+    // deliberately scored below every primary, so the official form being a
+    // secondary translation is an editorial word-choice (wrong-cluster), not a
+    // ranking bug.
+    if let Some(correct) = cands.iter().find(|c| {
+        ortho::normalized_match(&c.form, official) && !c.trace.iter().any(|s| s.id == "synonym-alt")
+    }) {
+        // A same-root demotion (correct surface of the SAME cluster lost to the
+        // winner — e.g. a wrong proto spelling outranking the right consensus
+        // form) is a genuine ranking bug; a different-root demotion is the
+        // official picking a synonym we ranked as a non-top primary (editorial).
+        let detail = if winning_root_key(correct) == winning_root_key(top) {
+            "same-root-surface"
+        } else {
+            "diff-root-editorial"
+        };
+        return ("8-merge-rank", detail.into());
+    }
+
+    // Root absent from the modern evidence entirely: nothing downstream could
+    // recover it (extraction/evidence gap).
+    if !modern_keys.iter().any(|k| k == &official_key) {
+        return ("0-root-absent", "evidence-gap".into());
+    }
+
+    // Wrong cluster: the winner chose a different root than the official one.
+    if winning_root_key(top) != official_key {
+        return ("3-cluster/vote", "wrong-cluster".into());
+    }
+
+    // Right cluster, wrong form. Walk the winning candidate's trace.
+    let is_proto = top.source == CandidateSource::ProtoSlavicRule;
+    if is_proto {
+        // The reconstruction (root) is right; the engine derived a wrong surface.
+        // Blame the last engine step that changed the folded form.
+        let mut culprit = "proto-rule-residual".to_string();
+        let mut prev = String::new();
+        for (i, st) in top.trace.iter().enumerate() {
+            if st.id == "proto-link" {
+                continue;
+            }
+            let after = ortho::to_standard(&st.after.trim().to_lowercase());
+            let before = if i == 0 {
+                ortho::to_standard(&st.before.trim().to_lowercase())
+            } else {
+                prev.clone()
+            };
+            if after != before {
+                culprit = st.id.clone();
+            }
+            prev = after;
+        }
+        return ("6-proto-rule", culprit);
+    }
+
+    // Consensus candidate: did some stage break a correct intermediate?
+    attribute_within_consensus(&top.trace, &target)
+}
+
+/// Walk a consensus candidate's trace as a linear before→after chain and locate
+/// the stage that destroyed a correct intermediate, or — if the form was never
+/// correct — bucket by where the residual difference lands.
+fn attribute_within_consensus(trace: &[RuleStep], target: &str) -> (&'static str, String) {
+    if trace.is_empty() {
+        return ("1-normalize/representative", "no-trace".into());
+    }
+    let mut ids: Vec<&str> = Vec::with_capacity(trace.len() + 1);
+    let mut forms: Vec<String> = Vec::with_capacity(trace.len() + 1);
+    ids.push("<input>");
+    forms.push(ortho::to_standard(&trace[0].before.trim().to_lowercase()));
+    for st in trace {
+        ids.push(st.id.as_str());
+        forms.push(ortho::to_standard(&st.after.trim().to_lowercase()));
+    }
+    // Last index that folded to the target.
+    let last_ok = forms.iter().rposition(|f| f == target);
+    if let Some(i) = last_ok {
+        if i + 1 < ids.len() {
+            let culprit = ids[i + 1];
+            return (stage_of_step(culprit, false), culprit.to_string());
+        }
+    }
+    // Never correct: attribute by residual. An ending-only difference is a
+    // morphology miss; otherwise the surface never got close (representative /
+    // missing repair), sub-classified by the kind of residual difference.
+    let pred = &forms[forms.len() - 1];
+    if diff_is_ending(pred, target) {
+        ("7-endings", "ending-residual".into())
+    } else {
+        (
+            "1-normalize/representative",
+            format!("residual:{}", residual_kind(pred, target)),
+        )
+    }
+}
+
+/// The kind of a stem-level residual difference, so the representative bucket is
+/// further broken down (flavored-letter vs y/i vs length vs substitution).
+fn residual_kind(pred: &str, target: &str) -> &'static str {
+    if ortho::ascii_skeleton(pred) == ortho::ascii_skeleton(target) {
+        return "flavored-letter";
+    }
+    let py = pred.contains('y');
+    let ty = target.contains('y');
+    let pi = pred.contains('i');
+    let ti = target.contains('i');
+    if (py != ty) || (pi != ti) {
+        return "y/i";
+    }
+    if pred.chars().count() != target.chars().count() {
+        return "length";
+    }
+    "substitution"
+}
+
+/// True when two folded forms differ only in a short word-final region (an
+/// ending/citation-form difference rather than a stem/root difference).
+fn diff_is_ending(a: &str, b: &str) -> bool {
+    let ca: Vec<char> = a.chars().collect();
+    let cb: Vec<char> = b.chars().collect();
+    let common = ca.iter().zip(cb.iter()).take_while(|(x, y)| x == y).count();
+    let tail = ca.len().max(cb.len()) - common;
+    // Shared stem of >=3 chars and a divergent tail of <=3 chars.
+    common >= 3 && tail <= 3
+}
+
 /// Data-quality / ceiling audit (§2/§6 of the V4 plan). For every benchmark miss
 /// it asks: is the official root even present in the modern evidence (so better
 /// cluster *selection* could fix it), was the right cluster chosen but the
@@ -417,6 +612,11 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
     // cohesion: distinct consonant-keys among modern forms
     let mut cohesion_hist: BTreeMap<usize, usize> = BTreeMap::new();
     let mut miss_rows: Vec<String> = Vec::new();
+    // Stage-attribution histograms (V7 §2.3): coarse stage → count, and the
+    // (stage, detail) pair → count, computed over ALL misses (not just the
+    // capped CSV sample) so the blame map is complete.
+    let mut stage_hist: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut detail_hist: BTreeMap<(&'static str, String), usize> = BTreeMap::new();
 
     for entry in &entries {
         let input = build_input(entry);
@@ -458,15 +658,23 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
             wrong_cluster += 1;
             "wrong-cluster"
         };
+
+        // Per-stage blame (V7 §2.3): which stage lost the official form.
+        let (stage, detail) = attribute_miss(&cands, &keys, &entry.isv);
+        *stage_hist.entry(stage).or_default() += 1;
+        *detail_hist.entry((stage, detail.clone())).or_default() += 1;
+
         if miss_rows.len() < 500 {
             miss_rows.push(format!(
-                "{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{}",
                 csv_escape(&entry.english),
                 entry.pos.code(),
                 csv_escape(&entry.isv),
                 csv_escape(&predicted),
                 keys.len(),
-                class
+                class,
+                stage,
+                csv_escape(&detail),
             ));
         }
     }
@@ -500,14 +708,174 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
         ),
     );
 
+    // ---- Stage-attribution histogram (V7 §2.3) ----
+    println!(
+        "\n  Stage-attribution histogram ({} misses, per-stage blame):",
+        miss
+    );
+    let mut stages: Vec<(&&'static str, &usize)> = stage_hist.iter().collect();
+    stages.sort_by(|a, b| b.1.cmp(a.1));
+    for (stage, cnt) in &stages {
+        println!("    {:<26} {:>5}  {:>5.1}%", stage, cnt, pct(**cnt, miss));
+        // Top detail causes within this stage.
+        let mut details: Vec<(&(&'static str, String), &usize)> = detail_hist
+            .iter()
+            .filter(|((st, _), _)| st == *stage)
+            .collect();
+        details.sort_by(|a, b| b.1.cmp(a.1));
+        for ((_, d), c) in details.iter().take(4) {
+            println!("        · {:<24} {:>5}", d, c);
+        }
+    }
+
     std::fs::create_dir_all(out_dir)?;
-    let mut s = String::from("gloss,pos,official,predicted,n_clusters,miss_class\n");
+    let mut s =
+        String::from("gloss,pos,official,predicted,n_clusters,miss_class,stage,stage_detail\n");
     for r in &miss_rows {
         s.push_str(r);
         s.push('\n');
     }
     std::fs::write(out_dir.join("audit-misses.csv"), s)?;
     println!("Wrote {}", out_dir.join("audit-misses.csv").display());
+
+    // Machine + human readable stage-attribution report.
+    let mut sa = String::new();
+    writeln!(sa, "# Stage-attribution histogram (V7 §2.3)\n")?;
+    writeln!(
+        sa,
+        "For each of the **{}** normalized misses (of {} benchmarkable meanings), the last pipeline stage whose output still folded to the official form — i.e. the stage that destroyed, or never produced, the correct answer. Computed by replaying the winning candidate's `RuleStep` trace.\n",
+        miss, n
+    )?;
+    writeln!(sa, "| Stage | misses | share |")?;
+    writeln!(sa, "|---|---:|---:|")?;
+    for (stage, cnt) in &stages {
+        writeln!(sa, "| {} | {} | {:.1}% |", stage, cnt, pct(**cnt, miss))?;
+    }
+    writeln!(sa, "\n## Top causes within each stage\n")?;
+    writeln!(sa, "| Stage | detail | misses |")?;
+    writeln!(sa, "|---|---|---:|")?;
+    let mut all_details: Vec<(&(&'static str, String), &usize)> = detail_hist.iter().collect();
+    all_details.sort_by(|a, b| b.1.cmp(a.1));
+    for ((stage, detail), cnt) in all_details.iter().take(30) {
+        writeln!(sa, "| {} | {} | {} |", stage, detail, cnt)?;
+    }
+    std::fs::write(out_dir.join("stage-attribution.md"), sa)?;
+    println!("Wrote {}", out_dir.join("stage-attribution.md").display());
+    Ok(())
+}
+
+/// Diagnostic oracle ladder (V7 §2.4): the upper bound each stage would deliver
+/// if it were made perfect while everything downstream stayed real. Every oracle
+/// READS THE OFFICIAL ANSWER, so this path can NEVER feed production — it exists
+/// only to rank stages by recoverable headroom (stage → headroom in pp of exact
+/// top-1 over production).
+pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+
+    // (name, cluster, representative, proto_link) — each flips exactly one oracle,
+    // then "oracle-all" flips them together.
+    let variants: &[(&str, bool, bool, bool)] = &[
+        ("oracle-cluster", true, false, false),
+        ("oracle-representative", false, true, false),
+        ("oracle-proto-link", false, false, true),
+        ("oracle-all", true, true, true),
+    ];
+
+    let run_pass = |cl: bool, rep: bool, pl: bool| -> (usize, usize, usize) {
+        let (mut ex, mut nm, mut denom) = (0usize, 0usize, 0usize);
+        for entry in &entries {
+            let input = build_input(entry);
+            if !input.forms.iter().any(|f| f.modern) {
+                continue;
+            }
+            denom += 1;
+            let (cands, _) = if !cl && !rep && !pl {
+                crate::pipeline::generate(&input, proto.as_ref(), &cfg)
+            } else {
+                let oracle = consensus::Oracle {
+                    official: &entry.isv,
+                    cluster: cl,
+                    representative: rep,
+                    proto_link: pl,
+                };
+                crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
+            };
+            let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+            ex += ortho::exact_match(&pred, &entry.isv) as usize;
+            nm += ortho::normalized_match(&pred, &entry.isv) as usize;
+        }
+        (ex, nm, denom)
+    };
+
+    let (base_ex, base_nm, denom) = run_pass(false, false, false);
+    let pct = |a: usize| {
+        if denom == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / denom as f32
+        }
+    };
+    println!(
+        "Diagnostic oracle ladder (DIAGNOSTIC ONLY — reads the answer, never production; {denom} meanings):"
+    );
+    println!(
+        "  baseline (production)   exact {:.2}%   norm {:.2}%",
+        pct(base_ex),
+        pct(base_nm)
+    );
+
+    let mut rows: Vec<(String, f32, f32, f32, f32)> = Vec::new();
+    for (name, cl, rep, pl) in variants {
+        let (ex, nm, _) = run_pass(*cl, *rep, *pl);
+        let (dex, dnm) = (pct(ex) - pct(base_ex), pct(nm) - pct(base_nm));
+        println!(
+            "  {:<23} exact {:.2}% ({:+.2}pp)   norm {:.2}% ({:+.2}pp)",
+            name,
+            pct(ex),
+            dex,
+            pct(nm),
+            dnm
+        );
+        rows.push((name.to_string(), pct(ex), dex, pct(nm), dnm));
+    }
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# Oracle ladder (V7 §2.4) — DIAGNOSTIC ONLY\n")?;
+    writeln!(
+        s,
+        "Each row makes ONE pipeline stage perfect (by reading the official answer) while everything downstream stays the real production engine, over **{}** benchmarkable meanings. This path can never feed production; it exists only to rank stages by recoverable headroom. Spend effort top-down by Δ exact.\n",
+        denom
+    )?;
+    writeln!(
+        s,
+        "| Stage oracle | exact top-1 | Δ exact | norm top-1 | Δ norm |"
+    )?;
+    writeln!(s, "|---|---:|---:|---:|---:|")?;
+    writeln!(
+        s,
+        "| baseline (production) | {:.2}% | — | {:.2}% | — |",
+        pct(base_ex),
+        pct(base_nm)
+    )?;
+    for (name, ex, dex, nm, dnm) in &rows {
+        writeln!(
+            s,
+            "| {} | {:.2}% | {:+.2}pp | {:.2}% | {:+.2}pp |",
+            name, ex, dex, nm, dnm
+        )?;
+    }
+    writeln!(
+        s,
+        "\n- **oracle-cluster** — force the vote to the cluster whose consonant key matches the official lemma; representative + repairs then run on the right cluster.\n- **oracle-representative** — pick the winning group's member whose folded form is closest to the official lemma.\n- **oracle-proto-link** — link the reconstruction whose derived form is closest to the official lemma (linker upper bound).\n- **oracle-all** — all three at once (an approximate ceiling for the stages below word-selection)."
+    )?;
+    std::fs::write(out_dir.join("oracle-ladder.md"), s)?;
+    println!("Wrote {}", out_dir.join("oracle-ladder.md").display());
     Ok(())
 }
 
@@ -544,11 +912,13 @@ pub fn run_proto_engine(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         };
         linked += 1;
+        let recon_key = ortho::consonant_key(&ortho::to_standard(&l.entry.word.to_lowercase()));
         let reflexes: Vec<String> = input
             .forms
             .iter()
             .filter(|f| f.modern)
             .map(|f| f.norm.latin.clone())
+            .filter(|r| ortho::shares_consonant_root(&ortho::consonant_key(r), &recon_key))
             .collect();
         let form =
             crate::proto::generate_with_reflexes(&l.entry.word, input.pos, input.gender, &reflexes)

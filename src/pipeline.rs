@@ -23,12 +23,28 @@ pub fn generate(
     proto: Option<&ProtoIndex>,
     cfg: &ConsensusConfig,
 ) -> (Vec<Candidate>, Option<Reconstruction>) {
-    let mut candidates = consensus::generate(input, cfg);
+    generate_oracle(input, proto, cfg, None)
+}
+
+/// As [`generate`], but with diagnostic oracle hints (V7 §2.4). Never used in
+/// production; only the `--diagnostic-oracle` eval path passes a non-`None`
+/// oracle, which reads the official answer to measure a stage's headroom.
+pub fn generate_oracle(
+    input: &MeaningInput,
+    proto: Option<&ProtoIndex>,
+    cfg: &ConsensusConfig,
+    oracle: Option<&consensus::Oracle>,
+) -> (Vec<Candidate>, Option<Reconstruction>) {
+    let mut candidates = consensus::generate_oracle(input, cfg, oracle);
     let mut reconstruction = None;
 
     if cfg.proto_derived_form {
         if let Some(index) = proto {
-            let linked = if cfg.explicit_etymology {
+            let linked = if let Some(o) = oracle.filter(|o| o.proto_link) {
+                // Oracle proto link (diagnostic): the reconstruction whose derived
+                // form is closest to the official lemma — the linker's upper bound.
+                proto_link::link_oracle(index, input, o.official)
+            } else if cfg.explicit_etymology {
                 proto_link::link_explicit(index, input)
                     .or_else(|| proto_link::link(index, input, cfg.proto_prefix_stripping))
             } else {
@@ -37,12 +53,19 @@ pub fn generate(
             if let Some(l) = linked {
                 // Feed the modern reflexes to the yer resolver so lexicalized
                 // weak-yer retentions (pьsati→pisati) are derived correctly rather
-                // than papered over downstream.
+                // than papered over downstream. Only reflexes that are actually
+                // cognate with the linked reconstruction feed the vote: a meaning
+                // whose cell mixes synonyms of different roots (staruška for
+                // *babъka "old woman") would otherwise pollute the yer alignment
+                // and inject a spurious vowel (babka→babaka).
+                let recon_key =
+                    ortho::consonant_key(&ortho::to_standard(&l.entry.word.to_lowercase()));
                 let reflexes: Vec<String> = input
                     .forms
                     .iter()
                     .filter(|f| f.modern && f.primary)
                     .map(|f| f.norm.latin.clone())
+                    .filter(|r| ortho::shares_consonant_root(&ortho::consonant_key(r), &recon_key))
                     .collect();
                 let mut pc = crate::proto::generate_with_reflexes(
                     &l.entry.word,

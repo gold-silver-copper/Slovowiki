@@ -313,6 +313,21 @@ fn translit_latin(lang: &str, s: &str) -> String {
     out
 }
 
+/// Transliterate a descendant form (often native-script and stress-accented, e.g.
+/// Cyrillic `вода́`) to its phonemic-Latin ASCII skeleton, so proto-descendant
+/// matching aligns with the Latin-normalized modern cognates. Without this the
+/// 54% of cached descendants stored in Cyrillic/Glagolitic never match a cognate
+/// skeleton, silently capping the fuzzy proto-link's descendant-membership signal.
+pub fn desc_skeleton(lang: &str, word: &str) -> String {
+    let latin = to_phonemic_latin(lang, word);
+    // Drop combining accent marks left by stress notation (вода́ → voda).
+    let stripped: String = latin
+        .chars()
+        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .collect();
+    crate::orthography::ascii_skeleton(&stripped)
+}
+
 /// Choose the single most representative form from a normalized cell: the first
 /// non-flagged variant, else the first variant.
 pub fn primary<'a>(forms: &'a [NormForm]) -> Option<&'a NormForm> {
@@ -359,6 +374,19 @@ mod tests {
         // Church Slavonic оу = /u/ (B15): моужь->muž, оучити->učiti.
         assert_eq!(tr("cu", "моужь"), "muž");
         assert_eq!(tr("cu", "оучити"), "učiti");
+    }
+
+    #[test]
+    fn descendant_skeleton_transliterates_and_strips_accents() {
+        use super::desc_skeleton;
+        // A Cyrillic descendant folds to the same skeleton as the Latin cognate,
+        // so proto-descendant matching aligns across scripts.
+        assert_eq!(
+            desc_skeleton("ru", "вода"),
+            crate::orthography::ascii_skeleton("voda")
+        );
+        // Stress accents (combining marks) are stripped.
+        assert_eq!(desc_skeleton("ru", "вода\u{0301}"), "voda");
     }
 
     #[test]

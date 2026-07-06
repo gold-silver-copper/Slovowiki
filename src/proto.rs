@@ -49,7 +49,14 @@ pub fn generate_with_reflexes(
     let mut reflexes = reflexes;
     if pos == Pos::Adjective && s.ends_with('ъ') && !s.ends_with("ъjь") {
         let stem = &s[..s.len() - 'ъ'.len_utf8()];
-        let possessive = ["in", "ov", "ev", "yn"].iter().any(|p| stem.ends_with(p));
+        // A denominal possessive (*materinъ, *bratrovъ) keeps the short form — but
+        // the -in/-ov/-ev/-yn string also ends many *qualitative* roots (*novъ,
+        // *gotovъ, *zdravъ) that DO continue the long definite -y. Disambiguate by
+        // the modern reflexes: if any is cited in a long-form (vowel- or -yj-final)
+        // shape, the adjective is qualitative and takes the definite ending.
+        let looks_possessive = ["in", "ov", "ev", "yn"].iter().any(|p| stem.ends_with(p));
+        let long_reflex = reflexes.iter().any(|r| adj_reflex_long(r));
+        let possessive = looks_possessive && !long_reflex;
         if !possessive {
             let before = s.clone();
             s.push_str("jь");
@@ -64,6 +71,7 @@ pub fn generate_with_reflexes(
             );
         }
     }
+    s = collective_je(&s, &mut trace);
     s = yers(&s, reflexes, &mut trace);
     s = endings(&s, pos, gender, &mut trace);
     s = finalize(&s, &mut trace);
@@ -74,6 +82,18 @@ pub fn generate_with_reflexes(
     let mut cand = Candidate::new(s, CandidateSource::ProtoSlavicRule, score);
     cand.trace = trace;
     cand
+}
+
+/// True when a modern adjective reflex is cited in its long (definite/attributive)
+/// form — vowel-final, or ending in a long-form vowel + `j` (Russian -yj/-ij/-oj) —
+/// rather than the short predicative/possessive form.
+fn adj_reflex_long(r: &str) -> bool {
+    let mut it = r.chars().rev();
+    match it.next() {
+        Some(c) if is_full_vowel(c) => true,
+        Some('j') => it.next().map(is_full_vowel).unwrap_or(false),
+        _ => false,
+    }
 }
 
 fn step(trace: &mut Vec<RuleStep>, id: &str, before: &str, after: &str, why: &str, doc: &str) {
@@ -242,6 +262,13 @@ fn prothesis(input: &str, trace: &mut Vec<RuleStep>) -> String {
         // Word-initial *e- takes a prothetic j: *edinъ → jedin, *ezero →
         // jezero, *elenь → jelenj.
         format!("je{rest}")
+    } else if let Some(rest) = input.strip_prefix('a') {
+        // Word-initial *a- takes a prothetic j: *avorъ → javor, *agoda →
+        // jagoda, *arьmo → jaŕmo. Interslavic has ~80 native ja- lemmas and no
+        // native bare a- lemma (Slavic avoided initial a-), so this is safe on
+        // the reconstructions that reach the engine (later loans are not stored
+        // as *a- Proto-Slavic entries).
+        format!("ja{rest}")
     } else {
         input.to_string()
     };
@@ -365,6 +392,29 @@ fn syllabic_liquid(input: &str, trace: &mut Vec<RuleStep>) -> String {
         STEEN,
     );
     out
+}
+
+/// The collective/abstract suffix *-ьje: the weak front yer drops before *j,
+/// giving a word-final `-je` (*kopьje→kopje, *znanьje→znanje, *zdorvьje→zdravje),
+/// not the tense `-ije` the generic yer-before-*j rule would produce. Targets
+/// ONLY the word-final `ьje` suffix, so *čьjь (→čij) and other tense yers are
+/// untouched. The dictionary has no native `-ije` lemma, so this is near-lossless.
+fn collective_je(input: &str, trace: &mut Vec<RuleStep>) -> String {
+    if let Some(stem) = input.strip_suffix("ьje") {
+        if !stem.is_empty() {
+            let out = format!("{stem}je");
+            step(
+                trace,
+                "collective-je",
+                input,
+                &out,
+                "Zbirny/odvlečeny sufiks *-ьje → -je (kopje, znanje), ne -ije.",
+                STEEN,
+            );
+            return out;
+        }
+    }
+    input.to_string()
 }
 
 /// Yer resolution. Three fates:
@@ -552,7 +602,13 @@ fn reflex_vowel_vote(reflexes: &[String], cons_before: usize) -> Option<char> {
         }
     }
     let keep: usize = votes.values().sum();
-    if keep > 0 && keep > drop_votes {
+    // Require CORROBORATION (>=2 reflexes agree on a vowel) before retaining a
+    // weak yer. A single reflex showing a vowel at the aligned slot is usually a
+    // misalignment — a cognate with an epenthetic/pleophonic/different segment
+    // shifts the consonant index and injects a spurious vowel (*babъka→babka, not
+    // babaka; *čajьka→čajka, not čajeka). Genuine lexicalized retentions are
+    // corroborated across reflexes (*pьsati→pisati has three, *dъska→dȯska two).
+    if keep >= 2 && keep > drop_votes {
         votes.into_iter().max_by_key(|(_, n)| *n).map(|(v, _)| v)
     } else {
         None
@@ -816,6 +872,63 @@ mod tests {
         )
         .form;
         assert!(normalized_match(&out, "vojna"), "got {out}");
+    }
+
+    #[test]
+    fn collective_je_suffix_drops_yer() {
+        // The collective/abstract *-ьje suffix: the weak front yer drops before j
+        // → -je (kopje, znanje), not the tense -ije.
+        assert_eq!(gen("*kopьje", Pos::Noun), "kopje");
+        assert!(normalized_match(&gen("*znanьje", Pos::Noun), "znanje"));
+    }
+
+    #[test]
+    fn word_initial_a_takes_prothetic_j() {
+        // *a- → ja-: *avorъ→javor, *agoda→jagoda (Slavic avoided initial a-).
+        assert!(normalized_match(&gen("*avorъ", Pos::Noun), "javor"));
+        assert!(normalized_match(&gen("*agoda", Pos::Noun), "jagoda"));
+    }
+
+    #[test]
+    fn qualitative_adjective_takes_definite_y() {
+        // A qualitative root ending -ov/-in is NOT a possessive when the reflexes
+        // cite the long form: *novъ→novy, *gotovъ→gotovy (not short nov/gotov).
+        let novy = generate_with_reflexes(
+            "*novъ",
+            Pos::Adjective,
+            None,
+            &["novyj".into(), "novy".into(), "novy".into()],
+        )
+        .form;
+        assert!(normalized_match(&novy, "novy"), "got {novy}");
+        let gotovy = generate_with_reflexes(
+            "*gotovъ",
+            Pos::Adjective,
+            None,
+            &["gotovyj".into(), "gotovy".into()],
+        )
+        .form;
+        assert!(normalized_match(&gotovy, "gotovy"), "got {gotovy}");
+        // A true possessive (short reflexes) keeps the short form.
+        let materin =
+            generate_with_reflexes("*materinъ", Pos::Adjective, None, &["materin".into()]).form;
+        assert!(!materin.ends_with('y'), "got {materin}");
+    }
+
+    #[test]
+    fn weak_yer_retention_requires_corroboration() {
+        // Two agreeing reflexes retain the weak yer (*dъska→dȯska)...
+        let two =
+            generate_with_reflexes("*dъska", Pos::Noun, None, &["doska".into(), "deska".into()])
+                .form;
+        assert!(
+            !normalized_match(&two, "dska"),
+            "two-reflex retention: {two}"
+        );
+        // ...but a single (possibly misaligned) reflex is not enough: the yer
+        // drops rather than injecting a spurious vowel (babka, not babaka).
+        let one = generate_with_reflexes("*dъska", Pos::Noun, None, &["doska".into()]).form;
+        assert!(normalized_match(&one, "dska"), "single-reflex guard: {one}");
     }
 
     #[test]

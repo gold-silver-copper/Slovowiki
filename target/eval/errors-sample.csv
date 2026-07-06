@@ -1,7 +1,6 @@
 id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 37320,national socialist,adj,nacionalsocialističny,nacionalsocijalističny,0.045,1,11
 5171,representation,noun,prědstaviteljstvo,prědstavitelstvo,0.059,2,20
-31776,interlinguistics,noun,interlingvistika,interlingvistike,0.062,3,11
 35202,"improbable, unlikely",adj,nepravdopodobny,niepravdopodobny,0.062,2,18
 19635,Anglo-Saxon,adj,anglosaksonsky,anglo-saksonsky,0.067,2,11
 35974,exponential,adj,eksponenciaľny,eksponencijalny,0.067,2,11
@@ -42,7 +41,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 17193,Czecho-Slovak,adj,čehoslovačsky,čehoslovačky,0.077,3,11
 25092,fingerspelling,noun,daktylologija,daktilologija,0.077,3,12
 36242,complementary,adj,dopȯlniteljny,dopȯlnitelny,0.077,2,18
-32498,physiotherapy,noun,fizioterapija,fizioterapijo,0.077,3,13
 227,function,verb,funkcionovati,funkcjonovati,0.077,2,11
 19712,heterogeneity,noun,heterogennosť,heterogenosť,0.077,3,22
 16948,simultaneously,adv,jednovrěmenno,ednovremenno,0.077,2,16
@@ -58,15 +56,12 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 28497,inaccessibility,noun,nepristųpnosť,nepristȯpnosť,0.077,3,18
 33821,waterproof,adj,nepromokajemy,nepromokaemy,0.077,2,14
 17950,"discontented, displeased, dissatisfied",adj,nezadovoljeny,nezadovoljny,0.077,3,18
-20595,subcategory,noun,podkategorija,podkategorije,0.077,3,11
 1199,prehistory,noun,prědhistorija,predistorija,0.077,2,16
 3131,"president, chairman",noun,prědsědatelj,prědsjedatelj,0.077,2,16
-1203,"spokesman, representative",noun,prědstavitelj,prědstavitel,0.077,2,26
 1524,"present, introduce, represent",verb,prědstavjati,prědstavljati,0.077,2,22
 4291,persecution,noun,prěslědovańje,presladovanje,0.077,3,13
 36563,Transnistria,noun,Pridněstrovje,pridnestrovie,0.077,2,13
 20657,affiliation,noun,prinaležnosť,prinadležnosť,0.077,2,16
-35569,manufacturer,noun,proizvoditelj,proizvoditel,0.077,2,16
 20669,equability,noun,råvnoměrnosť,ravnomjernosť,0.077,3,13
 2409,"exasperation, irritation",noun,råzdražnjeńje,råzdražnienje,0.077,2,21
 30160,partition,noun,råzdrobjeńje,råzdrobljenje,0.077,2,27
@@ -75,7 +70,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 35519,republican,noun,republikanec,respublikanec,0.077,1,11
 12259,confiscate,verb,skonfiskovati,konfiskovati,0.077,2,16
 36706,"concentrated, focused, intent",adj,sųsrědotočeny,sȯsredotočeny,0.077,2,16
-23638,thermodynamics,noun,termodinamika,termodinamike,0.077,3,11
 262,terrorist,adj,terorističny,terrorističny,0.077,3,11
 31064,vegetarian,noun,vegetarianec,vegetarijanec,0.077,2,11
 32754,vegetarian,noun,vegetarianka,vegetarijanka,0.077,3,11
@@ -111,7 +105,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 34650,"lighting, illumination",noun,osvětljeńje,osvjetljenje,0.083,3,18
 36456,subset (mathematics),noun,podmnožstvo,podmnožestvo,0.083,2,11
 22778,"eavesdrop, wiretap",verb,podslušivati,podsluhivati,0.083,2,10
-32059,pornography,noun,pornografija,pornografijo,0.083,3,11
 4373,potential,adj,potenciaľny,potencijalny,0.083,3,16
 5653,superstition,noun,pråzdnověŕje,praznoverje,0.083,1,18
 5408,pay in advance,verb,prědplatiti,predoplatiti,0.083,2,16
@@ -167,7 +160,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 36380,southeast,adj,jugoiztočny,jugoistočny,0.091,1,11
 8462,keyboard,noun,klaviatura,klavijatura,0.091,3,14
 1856,consumerism,noun,konsumerizm,konsumeryzm,0.091,2,15
-32026,xenophobia,noun,ksenofobija,ksenofobiji,0.091,3,11
 2687,Liechtenstein,noun,Lihtenštejn,lihtenštajn,0.091,3,11
 33371,massage,verb,masirovati,massirovati,0.091,2,9
 27449,material,adj,materiaľny,materijalny,0.091,3,11
@@ -218,20 +210,18 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 25756,visitor,noun,posětitelj,posjetitelj,0.091,2,16
 33385,silver-plated,adj,posrěbrjeny,posrebreny,0.091,3,12
 22335,"agent, trustee, commissioner",noun,pověrjennik,poverjenik,0.091,2,33
-3158,grandparent,noun,praroditelj,praroditel,0.091,2,23
 11254,preside,verb,prědsědati,prědsjedati,0.091,2,11
 31909,"outsmart, outfox",verb,prěhytrjati,prehytrati,0.091,2,16
-6230,"move (transitive), relocate, shift, transfer",verb,prěměstiti,premjestiti,0.091,3,11
 36601,"revalue, reassess",verb,prěocěniti,pereoceniti,0.091,2,26
 5529,"rewrite, copy",verb,prěpisyvati,prepisivati,0.091,3,9
 3528,cross,verb,prěpravjati,prepravlati,0.091,1,13
 23360,respawning,noun,prěrođeńje,prerodzenje,0.091,2,13
 1358,press release,noun,presa-reliz,press-reliz,0.091,1,13
 2931,reshuffle,verb,prěstavjati,prestavlati,0.091,1,16
+1709,"afraid, scared, frightened, terrified",adj,prěstrašeny,prěstrašny,0.091,2,27
 32336,"criminality, crime rate",noun,prěstųpnosť,prestapnosť,0.091,2,17
 22149,transform,verb,prětvarjati,pretvarati,0.091,2,18
 4342,"friend, girlfriend",noun,prijateljka,prijatelka,0.091,2,18
-5208,"come (by transport), arrive",verb,priježđati,pryježdžati,0.091,2,12
 18487,"attribute, ascribe",verb,pripisyvati,pripisivati,0.091,3,11
 21076,season,verb,pripravjati,pripravlati,0.091,1,19
 21483,tie (to smth.),verb,privęzyvati,privezivati,0.091,3,11
@@ -241,11 +231,10 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 36579,"glorify, extol",verb,proslavjati,proslavlati,0.091,1,33
 361,protestant,noun,protestant,protestanti,0.091,3,14
 4623,air out,verb,provětriti,provjetriti,0.091,3,10
-23287,radiology,noun,radiologija,radiologijo,0.091,3,11
 23780,"steadily, evenly",adv,råvnoměrno,ravnomjerno,0.091,3,17
 20670,"even, uniform, steady, equable",adj,råvnoměrny,ravnomjerny,0.091,3,19
 35356,"enrage, infuriate",verb,råzběsniti,råzbjesniti,0.091,2,25
-11771,"exasperate, irritate, annoy",verb,råzdražniti,råzdražiti,0.091,1,18
+11771,"exasperate, irritate, annoy",verb,råzdražniti,råzdražiti,0.091,2,18
 23924,"vexed, angry",adj,råzgněvany,råzgnievany,0.091,3,22
 33826,"throw around, scatter",verb,råzkydyvati,råzkidyvati,0.091,1,16
 33894,"spread, smear, smudge",verb,råzmazyvati,råzmazivati,0.091,3,14
@@ -253,15 +242,12 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 1262,"place, situate, deploy, arrange, distribute",verb,råzměšćati,råzmieščati,0.091,2,23
 3004,mix up,verb,råzměšivati,råzmešavati,0.091,3,18
 32599,scatter,verb,råzmetyvati,råzmotyvati,0.091,2,19
-30324,"multiply, duplicate, replicate, manifold",verb,råzmnožiti,råzmȯnožiti,0.091,3,17
-30441,destroyer,noun,råzrušitelj,råzrušitel,0.091,2,14
 30464,"examine, consider",verb,råzsmotriti,råzsmotreti,0.091,1,25
 21782,distance,noun,råzstojańje,råztojanje,0.091,2,18
 21918,"disturb, upset, put out of tune, disorganise, disorganize",verb,råzstrojiti,råztrojiti,0.091,2,21
 1866,scatter,verb,råzsypyvati,råzsypavati,0.091,1,13
 22153,dissolve (in a liquid),verb,råztvarjati,råztvarati,0.091,2,15
 22199,"untie, unbind, unlace",verb,råzvęzyvati,råzvezivati,0.091,3,23
-35040,self-criticism,noun,samokritika,samokritike,0.091,2,11
 21557,"wilful, unauthorized, wayward",adj,samovoljny,samovoljeny,0.091,3,20
 37379,Slavophile,noun,slovjanofil,slovanofil,0.091,3,15
 4719,"Slavdom, Slavic world",noun,slovjanstvo,slovanstvo,0.091,3,17
@@ -280,7 +266,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 21643,imagination,noun,vȯobražeńje,vyobraženje,0.091,3,20
 31339,"be resurrected, rise from the dead",verb,vȯzkresnųti,vȯzkrisnųti,0.091,3,15
 22724,"high-flown, pompous",adj,vysokoparny,visokoparny,0.091,2,29
-23715,cough,verb,zakašljati,zakašȯljati,0.091,2,9
+23715,cough,verb,zakašljati,zakašȯljati,0.091,3,9
 33665,wedge,verb,zaklinovati,zaklinivati,0.091,2,23
 20306,conclusion,noun,zaključeńje,zaklučenje,0.091,2,22
 9026,slowdown,noun,zamedljeńje,zamedlenje,0.091,1,16
@@ -322,9 +308,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 32902,flirt,verb,flirtovati,flertovati,0.100,3,13
 23430,piano,noun,fortepiano,fortepian,0.100,3,17
 35155,Glagolitic alphabet,noun,glagolica,glagoljica,0.100,3,12
-2572,chemical,noun,hemikalija,hemikalije,0.100,2,12
 17449,surgical,adj,hirugičny,hirurgičny,0.100,2,11
-7968,elector,noun,izbiratelj,izbiratel,0.100,2,14
 482,"exclude, except",verb,izključiti,isključiti,0.100,2,16
 35758,"destruction, annihilation",noun,izniščeńje,zniščenje,0.100,2,16
 20869,test,verb,izpytyvati,ispytyvati,0.100,1,22
@@ -352,7 +336,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 34780,alms,noun,milostynja,milostinja,0.100,2,14
 35302,miniature,noun,miniatura,minijatura,0.100,3,11
 5131,"perennial, long-years, long-term, long standing, lasting many years",adj,mnogolětny,mnoguletny,0.100,2,25
-9374,bloodiest,adj,najkrvavši,najkrvavšy,0.100,2,12
 3841,"newest, state-of-the-art",adj,najnovějši,nejnovejši,0.100,2,21
 19876,"inclination, tendency",noun,naklonnosť,naklonosť,0.100,3,16
 32865,dig up,verb,nakopyvati,nakapyvati,0.100,2,9
@@ -399,3 +382,20 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 4372,"scare off, frighten away",verb,odstrašiti,odsrašiti,0.100,1,24
 29253,shear away,verb,odstrigati,odstrygati,0.100,2,10
 36386,untie (sth./sbd. from sth.),verb,odvęzyvati,odvezivati,0.100,2,13
+291,official,adj,oficiaľny,oficijalny,0.100,3,15
+19988,limited,adj,ograničeny,ograničny,0.100,3,15
+37268,olympiad,noun,olimpiada,olimpijada,0.100,3,11
+36006,packaging,noun,opakovańje,pakovanje,0.100,3,16
+10231,"mourn, grieve, cry over, lament over",verb,oplakyvati,oplakivati,0.100,3,9
+10290,weakening,noun,oslabjeńje,oslabienje,0.100,1,19
+29638,"blinding, dazzlement",noun,oslěpjeńje,oslepienje,0.100,1,13
+505,"leave, leave behind, abandon",verb,ostavjati,ostavljati,0.100,2,18
+3201,left,adj,ostavjeny,ostavljeny,0.100,2,18
+22491,"master, gain proficiency in",verb,ovladyvati,ovladavati,0.100,2,21
+10401,cure,verb,ozdravjati,ozdravlati,0.100,1,22
+36819,"health resort, sanatorium",noun,ozdråvnica,zdravnica,0.100,1,30
+32097,periphery,noun,periferija,pariferija,0.100,3,12
+4318,perversion,noun,perversija,perverzija,0.100,2,16
+32492,pianist,noun,pianistka,pijanistka,0.100,3,12
+36367,pedestal,noun,piedestal,pijedestal,0.100,3,15
+35729,brewery,noun,pivovarnja,pivovarna,0.100,2,17

@@ -107,6 +107,15 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// DIAGNOSTIC-ONLY oracle ladder (V7 §2.4): per-stage headroom upper bounds.
+    /// Reads the official answer to make one stage perfect at a time — this can
+    /// never feed production; it only ranks where the recoverable error lives.
+    Oracle {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -141,6 +150,7 @@ fn main() -> Result<()> {
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::CorpusEval { official, out } => eval::run_corpus_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
+        Command::Oracle { official, out } => eval::run_oracle(&official, &out),
         Command::Evaluate {
             official,
             dump,

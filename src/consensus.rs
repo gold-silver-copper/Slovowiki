@@ -223,8 +223,34 @@ const REP_PRIORITY_ADJ: &[&str] = &[
     "ru", "pl", "cs", "sk", "uk", "be", "hr", "sr", "sl", "bg", "mk",
 ];
 
+/// Diagnostic-only oracle hints (V7 §2.4). Every field READS THE OFFICIAL ANSWER
+/// and must never feed production — this type exists solely so the eval can
+/// measure each stage's upper-bound headroom by making it perfect while
+/// everything downstream stays real. Only the `--diagnostic-oracle` eval path
+/// ever constructs one.
+#[derive(Clone, Copy)]
+pub struct Oracle<'a> {
+    pub official: &'a str,
+    /// Force the vote to choose the cluster whose key matches the official key.
+    pub cluster: bool,
+    /// Pick the group member whose folded form is closest to the official lemma.
+    pub representative: bool,
+    /// Force the reconstruction whose derived form is closest to official (used
+    /// by the pipeline, carried here so one struct threads all three oracles).
+    pub proto_link: bool,
+}
+
 /// Generate ranked Interslavic candidates from modern-Slavic consensus.
 pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
+    generate_oracle(input, cfg, None)
+}
+
+/// As [`generate`], but with diagnostic oracle hints (never used in production).
+pub fn generate_oracle(
+    input: &MeaningInput,
+    cfg: &ConsensusConfig,
+    oracle: Option<&Oracle>,
+) -> Vec<Candidate> {
     // The top-1 vote uses only each language's primary (canonical) translation;
     // secondary variants are kept aside to seed alternatives (see below).
     let mut per_lang: BTreeMap<&str, &SourceForm> = BTreeMap::new();
@@ -293,6 +319,17 @@ pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
             .then(a.key.cmp(&b.key))
     });
 
+    // Oracle cluster choice (diagnostic only): force the group whose key matches
+    // the official lemma's consonant key to the front, so the representative +
+    // repairs run on the *right* cluster and we can measure selection headroom.
+    if let Some(o) = oracle.filter(|o| o.cluster) {
+        let key = ortho::consonant_key(&ortho::to_standard(&o.official.to_lowercase()));
+        if let Some(p) = groups.iter().position(|g| g.key == key) {
+            let g = groups.remove(p);
+            groups.insert(0, g);
+        }
+    }
+
     let total_langs = per_lang.len();
     let mut candidates = Vec::new();
     for (rank, g) in groups.iter().enumerate().take(3) {
@@ -300,7 +337,7 @@ pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
         let agreement = g.langs.len() as f32 / total_langs as f32;
         let subvote = subgroup_score(&g.langs, &per_lang);
 
-        let (form, mut trace) = reconstruct(g.langs.as_slice(), &per_lang, input, cfg);
+        let (form, mut trace) = reconstruct(g.langs.as_slice(), &per_lang, input, cfg, oracle);
         if form.is_empty() {
             continue;
         }
@@ -394,7 +431,7 @@ pub fn generate(input: &MeaningInput, cfg: &ConsensusConfig) -> Vec<Candidate> {
             if candidates.len() >= 6 {
                 break;
             }
-            let (form, mut trace) = reconstruct(langs.as_slice(), &per_lang, input, cfg);
+            let (form, mut trace) = reconstruct(langs.as_slice(), &per_lang, input, cfg, oracle);
             if form.is_empty() {
                 continue;
             }
@@ -439,6 +476,7 @@ fn reconstruct(
     per_lang: &BTreeMap<&str, &SourceForm>,
     input: &MeaningInput,
     cfg: &ConsensusConfig,
+    oracle: Option<&Oracle>,
 ) -> (String, Vec<RuleStep>) {
     let priority = if cfg.adj_longform_rep && input.pos == Pos::Adjective {
         // Adjectives: East/West cite the full long form (-y/-ý) while South cites
@@ -449,12 +487,25 @@ fn reconstruct(
     } else {
         REP_PRIORITY_NO_SOUTH_BIAS
     };
-    // Pick representative by priority; fall back to first in group.
-    let rep = priority
-        .iter()
-        .find_map(|code| group.iter().find(|f| &f.lang_code == code))
-        .or_else(|| group.first())
-        .copied();
+    // Pick representative by priority; fall back to first in group. Under the
+    // (diagnostic) representative oracle, instead pick the group member whose
+    // folded form is closest to the official lemma — the upper bound of a perfect
+    // representative choice while the repairs downstream stay real.
+    let rep = if let Some(o) = oracle.filter(|o| o.representative) {
+        let target = ortho::to_standard(&o.official.to_lowercase());
+        group
+            .iter()
+            .min_by_key(|f| {
+                ortho::levenshtein(&ortho::to_standard(&f.norm.latin.to_lowercase()), &target)
+            })
+            .copied()
+    } else {
+        priority
+            .iter()
+            .find_map(|code| group.iter().find(|f| &f.lang_code == code))
+            .or_else(|| group.first())
+            .copied()
+    };
     let Some(rep) = rep else {
         return (String::new(), Vec::new());
     };

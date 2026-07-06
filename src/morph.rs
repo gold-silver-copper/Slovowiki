@@ -309,6 +309,16 @@ fn verb_infinitive(word: &str) -> Option<(String, &'static str, &'static str)> {
 fn adjective_lemma(word: &str) -> (String, &'static str, &'static str) {
     // Already a hard/soft adjective ending.
     if word.ends_with('y') {
+        // A hushing/soft stem before the final -y takes the soft ending -i, not
+        // hard -y (staršy→starši, božy→boži): the dictionary has 60 -ši / 72 -ji /
+        // 7 -či lemmas and zero in -šy/-žy/-čy/-jy. `c` is excluded (proper noun
+        // Jangcy), matching stem_is_soft's own hard-`c` treatment.
+        if matches!(word.chars().rev().nth(1), Some('š' | 'ž' | 'č' | 'j')) {
+            let mut s = word.to_string();
+            s.pop();
+            s.push('i');
+            return (s, "adj-soft-i", "Mękky pridavnik -i po šumnom sųglasniku.");
+        }
         return (word.to_string(), "adj-hard-y", "Tvŕdy pridavnik -y.");
     }
     // Strip a final adjectival vowel (from various languages: -i, -ý, -í, -o, -e,
@@ -356,6 +366,44 @@ fn adverb_lemma(word: &str) -> Option<(String, &'static str, &'static str)> {
 }
 
 fn noun_lemma(word: &str) -> Option<(String, &'static str, &'static str)> {
+    // Agentive/instrumental *-teljь nouns: East/Bulgarian cite the bare -tel
+    // (ru -тель, bg -тел), but Interslavic keeps the soft l as -telj (učitelj,
+    // izbiratelj, proizvoditelj). The dictionary has 122 lemmas in -telj against
+    // only four native nouns that genuinely end in a hard -tel (hotel, kotel,
+    // kostel, dětel), so the rule is near-lossless behind that closed skip list.
+    if word.ends_with("tel")
+        && word.chars().count() > 4
+        && !["hotel", "kotel", "kostel", "dětel"]
+            .iter()
+            .any(|x| word.ends_with(x))
+    {
+        return Some((
+            format!("{word}j"),
+            "noun-telj",
+            "Sufiks dějatelja *-teljь: mękke -telj (učitelj), ne tvŕde -tel.",
+        ));
+    }
+    // Feminine ja-stem citation: Slovene/Czech oblique or vowel-shifted
+    // representatives end -ijo/-ije/-iji where Interslavic cites the nominative
+    // -ija (fizioterapijo→fizioterapija, podkategorije→podkategorija); likewise
+    // -ike→-ika. The dictionary has 668 -ija / 90 -ika lemmas and effectively no
+    // singular lemma in -ij[oei]/-ike, so this is near-lossless.
+    for suf in ["ijo", "ije", "iji"] {
+        if word.ends_with(suf) && word.chars().count() > 4 {
+            return Some((
+                swap(word, suf, "ija"),
+                "noun-ija",
+                "Žensky imennik: nom.sg -ija (ne -ijo/-ije/-iji).",
+            ));
+        }
+    }
+    if word.ends_with("ike") && word.chars().count() > 4 {
+        return Some((
+            swap(word, "ike", "ika"),
+            "noun-ika",
+            "Žensky imennik: nom.sg -ika (ne -ike).",
+        ));
+    }
     // Abstract nouns in -ost take the soft ť; -alnost → -aľnosť.
     for suf in ["alnost", "aljnost", "alnosť", "aľnost"] {
         if word.ends_with(suf) {
@@ -462,6 +510,33 @@ mod tests {
         assert_eq!(w, "licencija");
         let (w, _) = super::normalize_lemma("aroganca", crate::model::Pos::Noun, true, true, false);
         assert_eq!(w, "arogancija");
+    }
+
+    #[test]
+    fn agent_noun_and_feminine_nominative_endings() {
+        use crate::model::Pos;
+        let n = |w: &str| super::normalize_lemma(w, Pos::Noun, true, true, false).0;
+        // Agentive *-teljь: bare -tel gains the soft l.
+        assert_eq!(n("izbiratel"), "izbiratelj");
+        assert_eq!(n("proizvoditel"), "proizvoditelj");
+        // The closed set of native hard -tel nouns is protected.
+        assert_eq!(n("hotel"), "hotel");
+        assert_eq!(n("kostel"), "kostel");
+        // Feminine ja-stem: oblique/vowel-shifted reps fold to nom.sg -ija/-ika.
+        assert_eq!(n("fizioterapijo"), "fizioterapija");
+        assert_eq!(n("podkategorije"), "podkategorija");
+        assert_eq!(n("gimnastike"), "gimnastika");
+    }
+
+    #[test]
+    fn soft_stem_adjective_takes_i() {
+        use crate::model::Pos;
+        let a = |w: &str| super::normalize_lemma(w, Pos::Adjective, false, true, false).0;
+        // A hushing stem before -y takes the soft ending -i.
+        assert_eq!(a("staršy"), "starši");
+        assert_eq!(a("božy"), "boži");
+        // A hard stem keeps -y.
+        assert_eq!(a("dobry"), "dobry");
     }
 
     #[test]

@@ -374,7 +374,17 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             search.push_str(",\n");
         }
         first_search = false;
-        let keys = search_keys(&p.g.candidates, &p.display);
+        let mut keys = search_keys(&p.g.candidates, &p.display);
+        // On an official-headword (matched) entry, make the official English gloss
+        // searchable too — it is already searchable on official-only pages, so
+        // this closes the parity gap without touching the entry HTML.
+        if let Some((_, _, en)) = &p.matched {
+            for tok in crate::dump::gloss_tokens(en) {
+                if tok.chars().count() >= 3 && !keys.iter().any(|(k, _)| k == &tok) {
+                    keys.push((tok, 6));
+                }
+            }
+        }
         let _ = write!(
             search,
             "[{},{},{},{},{},{},{:.2},{}]",
@@ -402,10 +412,13 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
 
     // Official lemmas no candidate generates: still searchable, clearly badged
     // as official-but-not-yet-derivable, with the official cognate evidence.
+    // Multi-word lemmas (`pęt na desęte`) and reflexives (`… sę`) are included
+    // (the single-token generator never produces them, so they would otherwise
+    // have no page at all) — display-only parity, generation is untouched.
     let mut official_only = 0usize;
     for e in &official_entries {
         let isv = e.isv.trim();
-        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
+        if isv.is_empty() || isv.contains('#') {
             continue;
         }
         let fold = crate::orthography::to_standard(&isv.to_lowercase());

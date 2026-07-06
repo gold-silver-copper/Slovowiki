@@ -551,9 +551,11 @@ impl ProtoIndex {
                     by_gloss_token.entry(tok).or_default().push(i);
                 }
             }
-            for (_, form) in &e.descendants {
+            for (lang, form) in &e.descendants {
                 for word in form.split_whitespace() {
-                    let sk = crate::orthography::ascii_skeleton(word);
+                    // Transliterate native-script (mostly Cyrillic) descendants so
+                    // they share a skeleton space with the Latin-normalized cognates.
+                    let sk = crate::normalize::desc_skeleton(lang, word);
                     if sk.len() >= 2 {
                         by_desc_skeleton.entry(sk).or_default().push(i);
                     }

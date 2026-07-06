@@ -108,6 +108,22 @@ pub fn consonant_key(word: &str) -> String {
     out
 }
 
+/// True when two consonant-key fingerprints plausibly belong to the same root —
+/// one is a prefix of the other, or they share their first two consonants. Used
+/// to keep only genuine reflexes of a linked reconstruction in the yer vote, so a
+/// meaning cell that mixes synonyms of different roots doesn't pollute alignment.
+pub fn shares_consonant_root(a: &str, b: &str) -> bool {
+    if a.is_empty() || b.is_empty() {
+        return true;
+    }
+    if a.starts_with(b) || b.starts_with(a) {
+        return true;
+    }
+    let a2: String = a.chars().take(2).collect();
+    let b2: String = b.chars().take(2).collect();
+    a2.chars().count() == 2 && a2 == b2
+}
+
 /// Case-insensitive exact equality on the flavored spelling.
 pub fn exact_match(a: &str, b: &str) -> bool {
     a.trim().to_lowercase() == b.trim().to_lowercase()
@@ -215,6 +231,14 @@ mod tests {
         assert_eq!(ascii_skeleton("běly"), "bely");
         assert_eq!(ascii_skeleton("žaba"), "zaba");
         assert_eq!(ascii_skeleton("moře"), "more");
+    }
+
+    #[test]
+    fn shares_consonant_root_detects_cognates() {
+        assert!(shares_consonant_root("bbk", "bbk")); // equal
+        assert!(shares_consonant_root("bb", "bbk")); // prefix (baba ⊂ babka)
+        assert!(shares_consonant_root("prstr", "prst")); // prefix (prefixed form)
+        assert!(!shares_consonant_root("strc", "bbk")); // different root (starica vs babka)
     }
 
     #[test]

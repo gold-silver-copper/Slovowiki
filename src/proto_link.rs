@@ -68,6 +68,62 @@ pub fn link_explicit<'a>(index: &'a ProtoIndex, input: &MeaningInput) -> Option<
     })
 }
 
+/// Diagnostic-only oracle linker (V7 §2.4b): among the reconstructions the real
+/// linker would consider (the gloss + descendant candidate set), return the one
+/// whose *derived form* is closest to the official lemma. This READS THE ANSWER
+/// and must never feed production — it measures the linking stage's upper bound.
+pub fn link_oracle<'a>(
+    index: &'a ProtoIndex,
+    input: &MeaningInput,
+    official: &str,
+) -> Option<ProtoLink<'a>> {
+    let target = ortho::to_standard(&official.trim().to_lowercase());
+    let mut candidates: Vec<usize> = index.gloss_candidates(&input.gloss);
+    for f in &input.forms {
+        if !f.modern || !f.primary || f.norm.skeleton.is_empty() {
+            continue;
+        }
+        let sk = ortho::ascii_skeleton(&f.norm.latin);
+        if let Some(v) = index.desc_candidates(&sk) {
+            for &i in v {
+                if !candidates.contains(&i) {
+                    candidates.push(i);
+                }
+            }
+        }
+    }
+    let mut best: Option<(&ProtoEntry, f32)> = None;
+    for idx in candidates {
+        let e = &index.entries[idx];
+        let e_pos = Pos::parse(&e.pos);
+        if e_pos != Pos::Other && input.pos != Pos::Other && !pos_compatible(e_pos, input.pos) {
+            continue;
+        }
+        let derived = crate::proto::generate(&e.word, input.pos, input.gender).form;
+        if derived.is_empty() {
+            continue;
+        }
+        let d =
+            ortho::normalized_edit_distance(&ortho::to_standard(&derived.to_lowercase()), &target);
+        if best.as_ref().map(|(_, bd)| d < *bd).unwrap_or(true) {
+            best = Some((e, d));
+        }
+    }
+    // A *perfect* linker also knows when NOT to link: only take the reconstruction
+    // when its derived form is genuinely close to the official lemma (else the
+    // consensus surface is the better source and forcing a proto override hurts).
+    // This makes the oracle measure the true linking headroom, not "always trust
+    // the closest of a bad set".
+    best.filter(|(_, d)| *d < 0.20).map(|(e, d)| ProtoLink {
+        entry: e,
+        confidence: 0.95,
+        desc_membership: 1.0,
+        form_similarity: 1.0 - d,
+        gloss_overlap: 0.0,
+        prefix: None,
+    })
+}
+
 pub fn link<'a>(
     index: &'a ProtoIndex,
     input: &MeaningInput,
@@ -160,7 +216,11 @@ fn link_core<'a>(
         let desc_sks: Vec<String> = e
             .descendants
             .iter()
-            .flat_map(|(_, w)| w.split_whitespace().map(ortho::ascii_skeleton))
+            .flat_map(|(lang, w)| {
+                w.split_whitespace()
+                    .map(|x| crate::normalize::desc_skeleton(lang, x))
+                    .collect::<Vec<_>>()
+            })
             .collect();
         let hits = skeletons
             .iter()
