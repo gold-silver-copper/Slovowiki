@@ -242,17 +242,23 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         corpus.entry_count
     );
 
-    // Cross-reference the official dictionary purely as a validation badge: does
-    // the generated form already exist as an official Interslavic lemma?
-    let official_forms: std::collections::HashSet<String> =
-        match official::load(Path::new(crate::DEFAULT_OFFICIAL)) {
-            Ok(entries) => entries
-                .iter()
-                .filter(|e| !e.isv.trim().is_empty())
-                .map(|e| crate::orthography::to_standard(&e.isv.to_lowercase()))
-                .collect(),
-            Err(_) => std::collections::HashSet::new(),
-        };
+    // The official dictionary is the authoritative display layer: any generated
+    // word whose candidate reproduces an official lemma is shown under the
+    // official headword, and official lemmas the corpus never generates still
+    // get searchable pages (§V6 Front B). Display-only — generation never reads
+    // this map.
+    let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap_or_default();
+    let mut official_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for e in &official_entries {
+        let isv = e.isv.trim();
+        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
+            continue;
+        }
+        official_map
+            .entry(crate::orthography::to_standard(&isv.to_lowercase()))
+            .or_insert_with(|| (isv.to_string(), e.english.clone()));
+    }
 
     let entry_dir = out_dir.join("entry");
     let _ = std::fs::remove_dir_all(&entry_dir); // clear any stale pages
@@ -263,6 +269,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     let mut rows: Vec<HomeRow> = Vec::new();
     let (mut n, mut high, mut med, mut low, mut official, mut borrowed) = (0usize, 0, 0, 0, 0, 0);
     let mut lemma_total = 0usize;
+    // Folded spellings covered by any generated candidate, so official-only
+    // pages are emitted exactly for the rest.
+    let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let mut id = 0usize;
     for set in sets {
@@ -283,8 +292,18 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Confidence::Medium => med += 1,
             Confidence::Low => low += 1,
         }
-        let in_official =
-            official_forms.contains(&crate::orthography::to_standard(&form.to_lowercase()));
+        // Authoritative match: ANY ranked candidate reproducing an official
+        // lemma (folded) puts the entry under the official headword.
+        let matched: Option<(usize, &(String, String))> =
+            g.candidates.iter().take(5).enumerate().find_map(|(i, c)| {
+                official_map
+                    .get(&crate::orthography::to_standard(&c.form.to_lowercase()))
+                    .map(|o| (i + 1, o))
+            });
+        for c in g.candidates.iter().take(5) {
+            covered.insert(crate::orthography::to_standard(&c.form.to_lowercase()));
+        }
+        let in_official = matched.is_some();
         if in_official {
             official += 1;
         }
@@ -293,20 +312,28 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         } else {
             MatchStatus::NoOfficialEntry
         };
+        let display = matched
+            .map(|(_, (isv, _))| isv.clone())
+            .unwrap_or_else(|| form.clone());
 
-        let html = corpus_entry_page(id, &g, status);
+        let html = corpus_entry_page(
+            id,
+            &g,
+            status,
+            matched.map(|(r, (isv, en))| (r, isv.as_str(), en.as_str())),
+        );
         std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
         if !first_search {
             search.push_str(",\n");
         }
         first_search = false;
-        let keys = search_keys(&g.candidates, &form);
+        let keys = search_keys(&g.candidates, &display);
         let _ = write!(
             search,
             "[{},{},{},{},{},{},{:.2},{}]",
             id,
-            json_str(&form),
+            json_str(&display),
             json_str(&truncate(&g.set.gloss, 70)),
             json_str(g.set.pos.code()),
             json_str(if in_official { "O" } else { "N" }),
@@ -318,13 +345,56 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             // sort the home list by coverage (n_langs) so the best-attested show first
             freq: g.n_langs as f32 + g.n_branches as f32 / 10.0,
             id,
-            form,
+            form: display,
             gloss: g.set.gloss.clone(),
             pos: g.set.pos.code().to_string(),
             status,
             conf: g.confidence,
             score: g.score,
         });
+    }
+
+    // Official lemmas no candidate generates: still searchable, clearly badged
+    // as official-but-not-yet-derivable, with the official cognate evidence.
+    let mut official_only = 0usize;
+    for e in &official_entries {
+        let isv = e.isv.trim();
+        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
+            continue;
+        }
+        let fold = crate::orthography::to_standard(&isv.to_lowercase());
+        if !covered.insert(fold.clone()) {
+            continue; // generated, or an official homograph already emitted
+        }
+        id += 1;
+        official_only += 1;
+        let html = official_only_page(isv, e);
+        std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
+        let mut keys: Vec<(String, usize)> = Vec::new();
+        for k in [fold.clone(), crate::orthography::ascii_skeleton(isv)] {
+            if k.chars().count() >= 2
+                && k != isv.to_lowercase()
+                && !keys.iter().any(|(kk, _)| kk == &k)
+            {
+                keys.push((k, 1));
+            }
+        }
+        if !first_search {
+            search.push_str(",\n");
+        }
+        first_search = false;
+        let _ = write!(
+            search,
+            "[{},{},{},{},{},{},{:.2},{}]",
+            id,
+            json_str(isv),
+            json_str(&truncate(&e.english, 70)),
+            json_str(&e.pos.code()),
+            json_str("O"),
+            json_str("V"),
+            1.0,
+            keys_json(&keys),
+        );
     }
     search.push_str("\n]\n");
 
@@ -333,7 +403,17 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     std::fs::write(out_dir.join(".nojekyll"), "")?;
 
     rows.sort_by(|a, b| b.freq.total_cmp(&a.freq));
-    let home = corpus_home(n, lemma_total, high, med, low, official, borrowed, &rows);
+    let home = corpus_home(
+        n,
+        lemma_total,
+        high,
+        med,
+        low,
+        official,
+        official_only,
+        borrowed,
+        &rows,
+    );
     std::fs::write(out_dir.join("index.html"), home)?;
     std::fs::write(
         out_dir.join("about.html"),
@@ -342,15 +422,25 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
 
     let panics = INFLECTION_PANICS.load(std::sync::atomic::Ordering::Relaxed);
     println!(
-        "wrote {n} cognate-word pages ({high} high / {med} medium / {low} low confidence; {official} match an official ISV form){}",
+        "wrote {n} cognate-word pages + {official_only} official-only pages ({high} high / {med} medium / {low} low confidence; {official} match an official ISV form){}",
         if panics > 0 { format!("; {panics} inflection cells blank") } else { String::new() }
     );
     Ok(())
 }
 
-fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchStatus) -> String {
+fn corpus_entry_page(
+    id: usize,
+    g: &crate::corpus::GeneratedWord,
+    status: MatchStatus,
+    official: Option<(usize, &str, &str)>,
+) -> String {
     let top = g.candidates.first().unwrap();
     let pos_code = g.set.pos.code();
+    // The official lemma is the authoritative headword when any candidate
+    // reproduces it; the generated form stays visible as the reconstruction.
+    let headword = official
+        .map(|(_, isv, _)| isv.to_string())
+        .unwrap_or_else(|| top.form.clone());
     let coverage = format!(
         "<span class='reliability {}'>uvěrjenost: {}</span> <span class='muted'>({} językov, {} větvi)</span>",
         conf_class(g.confidence),
@@ -358,6 +448,21 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
         g.n_langs,
         g.n_branches
     );
+    let recon_line = if headword != top.form {
+        format!(
+            "<p class='def'><b>Rekonstrukcija generatora:</b> <span class='mention'>{}</span></p>",
+            esc(&top.form)
+        )
+    } else {
+        String::new()
+    };
+    let official_gloss = match official {
+        Some((_, _, en)) if !en.trim().is_empty() && en.trim() != g.set.gloss.trim() => format!(
+            "<p class='def'><b>Oficialny smysl:</b> {}</p>",
+            esc(&truncate(en, 120))
+        ),
+        _ => String::new(),
+    };
     let headline = format!(
         "<div class='headword-block'>
            <div class='headmeta'>
@@ -367,6 +472,8 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
              {}
            </div>
            <p class='def'><b>Anglijski smysl:</b> {}</p>
+           {official_gloss}
+           {recon_line}
          </div>",
         esc(&pos_heading(g.set.pos.code())),
         source_class(top.source),
@@ -375,6 +482,19 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
         esc(&g.set.gloss),
     );
 
+    let official_note = match official {
+        Some((1, isv, _)) => {
+            if crate::orthography::exact_match(&top.form, isv) {
+                "Oficialna forma; rekonstrukcija ju <b>točno</b> reproduktuje.".to_string()
+            } else {
+                "Oficialna forma; rekonstrukcija ju reproduktuje (normalizovano — pravopisne znaky sę različajų).".to_string()
+            }
+        }
+        Some((r, _, _)) => {
+            format!("Oficialna forma; generator ju daje kako <a href='#cand-{r}'>kandidat {r}</a>.")
+        }
+        None => "Forma je generovana iz cognatov; ne v oficialnom slovniku.".to_string(),
+    };
     let banner = format!(
         "<div class='banner {}'><b>Podpŕto {} językami v {} slovjanskyh větvah.</b> {}</div>",
         match g.confidence {
@@ -384,11 +504,7 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
         },
         g.n_langs,
         g.n_branches,
-        match status {
-            MatchStatus::OfficialMatch =>
-                "Toj forma takože postoji v oficialnom medžuslovjanskom slovniku.",
-            _ => "Forma je generovana iz cognatov; ne v oficialnom slovniku.",
-        }
+        official_note,
     );
 
     let etymology = if g.set.borrowed {
@@ -406,11 +522,16 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
         )
     };
 
-    let inflection = inflection_table(&top.form, pos_code);
+    let inflection = inflection_table(&headword, pos_code);
     let cognates = cognate_block(g);
     let alternatives = alternatives_block(&g.candidates);
     let trace = trace_block(top);
 
+    let foot = if official.is_some() {
+        "Oficialne slovo medžuslovjanskogo slovnika; rekonstrukcija i dokazy sų mašinno generovane (Wiktionary, CC BY-SA)."
+    } else {
+        "Mašinno generovana rekonstrukcija iz cognatov (Wiktionary, CC BY-SA). Ne oficialny standard."
+    };
     let body = format!(
         "<article class='entry'>
            <h1 class='page-title firstHeading'>{}</h1>
@@ -421,13 +542,55 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
            <details class='sec' open><summary>Prěgibanje</summary>{inflection}</details>
            <details class='sec'><summary>Alternativne kandidaty</summary>{alternatives}</details>
            <details class='sec'><summary>Sled pravil</summary>{trace}</details>
-           <p class='foot'>Mašinno generovana rekonstrukcija iz cognatov (Wiktionary, CC BY-SA). Ne oficialny standard.</p>
+           <p class='foot'>{foot}</p>
          </article>",
-        esc(&top.form),
+        esc(&headword),
         g.n_langs,
     );
     let _ = id;
-    page(&format!("{} — medžuslovjansky", top.form), &body, 1)
+    page(&format!("{headword} — medžuslovjansky"), &body, 1)
+}
+
+/// A page for an official lemma the generator does not (yet) derive from the
+/// cognate evidence: authoritative headword, gloss, inflection — clearly badged.
+fn official_only_page(isv: &str, e: &OfficialEntry) -> String {
+    let input = build_input(e);
+    let evidence = branch_evidence(&input);
+    let mut cog = String::new();
+    if !evidence.is_empty() {
+        cog.push_str("<table class='wikitable compact-table'><tbody>");
+        for ev in &evidence {
+            let _ = write!(
+                cog,
+                "<tr><td class='lc'>{}</td><td>{}</td></tr>",
+                esc(&ev.lang_name),
+                esc(&ev.form)
+            );
+        }
+        cog.push_str("</tbody></table>");
+    } else {
+        cog.push_str("<p class='muted'>Bez slovjanskogo cognatnogo dokaza v slovniku.</p>");
+    }
+    let inflection = inflection_table(isv, e.pos.code());
+    let body = format!(
+        "<article class='entry'>
+           <h1 class='page-title firstHeading'>{}</h1>
+           <div class='banner info'><b>Oficialne slovo</b> medžuslovjanskogo slovnika. Generator ješče ne izvodi jego iz cognatnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>
+           <div class='headword-block'>
+             <div class='headmeta'><span class='badge pos'>{}</span> <span class='pill src-official'>oficialny slovnik</span></div>
+             <p class='def'><b>Anglijski smysl:</b> {}</p>
+           </div>
+           <details class='sec' open><summary>Slovjanski dokaz (iz oficialnogo slovnika)</summary>{}</details>
+           <details class='sec' open><summary>Prěgibanje</summary>{}</details>
+           <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>
+         </article>",
+        esc(isv),
+        esc(&pos_heading(e.pos.code())),
+        esc(&e.english),
+        cog,
+        inflection,
+    );
+    page(&format!("{isv} — medžuslovjansky"), &body, 1)
 }
 
 /// Human-readable borrowing source: `la computare` → `latinsky computare`.
@@ -497,6 +660,7 @@ fn corpus_home(
     med: usize,
     low: usize,
     official: usize,
+    official_only: usize,
     borrowed: usize,
     rows: &[HomeRow],
 ) -> String {
@@ -539,6 +703,7 @@ fn corpus_home(
                  <tr><th>Srědnja</th><td>{med}</td></tr>
                  <tr><th>Nizka</th><td>{low}</td></tr>
                  <tr><th>V oficialnom slovniku</th><td>{official}</td></tr>
+                 <tr><th>Oficialne bez rekonstrukcije</th><td>{official_only}</td></tr>
                </table>
              </div>
              <div class='portal-box'><h3>Kako radi</h3><ul class='compact-list'>
@@ -557,6 +722,7 @@ fn corpus_home(
         med = compact(med),
         low = compact(low),
         official = compact(official),
+        official_only = compact(official_only),
         list = list,
         js = SEARCH_JS,
     );
