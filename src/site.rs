@@ -296,7 +296,6 @@ fn entry_page(id: usize, entry: &OfficialEntry, g: &Generation, evidence: &[Evid
 
     let headline = format!(
         "<div class='headword-block'>
-           <div class='headword'>{}</div>
            <div class='headmeta'>
              <span class='badge pos'>{}</span>
              <span class='pill {}'>{}</span>
@@ -305,7 +304,6 @@ fn entry_page(id: usize, entry: &OfficialEntry, g: &Generation, evidence: &[Evid
            </div>
            <p class='def'><b>Anglijski smysl:</b> {}</p>
          </div>",
-        esc(&top.form),
         esc(&pos_heading(&entry.pos_raw)),
         source_class(top.source),
         esc(top.source.label()),
@@ -329,7 +327,7 @@ fn entry_page(id: usize, entry: &OfficialEntry, g: &Generation, evidence: &[Evid
 
     let body = format!(
         "<article class='entry'>
-           <h1 class='page-title'>{}</h1>
+           <h1 class='page-title firstHeading'>{}</h1>
            {banner}
            {headline}
            {calib}{freq}
@@ -712,71 +710,96 @@ fn css() -> String {
 }
 
 const BASE_CSS: &str = include_str!("../static/wiktionary.css");
+// Wiktionary/MediaWiki look for the generated pages (light theme, one column).
 const EXTRA_CSS: &str = r#"
-:root{--bg:#fff;--fg:#202122;--muted:#72777d;--line:#c8ccd1;--accent:#36c;--ok:#d5f4d5;--warn:#fbeecb;--info:#dbe8fb}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1113;--fg:#e6e6e6;--muted:#9aa0a6;--line:#2a2f34;--accent:#7aa7ff;--ok:#1e3a1e;--warn:#3a331a;--info:#1a2a3a}}
-body{background:var(--bg);color:var(--fg);margin:0;font:16px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-main{max-width:900px;margin:0 auto;padding:1.2em}
-.site-header{display:flex;align-items:baseline;gap:.8em;padding:.7em 1.2em;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.brand{font-weight:700;font-size:1.15em;color:var(--fg);text-decoration:none}
-.tagline{color:var(--muted);font-size:.85em}
-.nav{margin-left:auto;display:flex;gap:1em}
-.nav a{color:var(--muted);text-decoration:none;font-size:.9em}
-.nav a:hover{color:var(--accent)}
-.entry h2{margin-top:1.4em;border-bottom:1px solid var(--line);padding-bottom:.2em}
-.site-footer{max-width:900px;margin:2em auto;padding:1em 1.2em;color:var(--muted);font-size:.85em;border-top:1px solid var(--line)}
-a{color:var(--accent)}
-.hero h1{margin:.2em 0}
-.lede{color:var(--muted);max-width:60ch}
-.searchbox{position:relative;margin:1em 0}
-#q{width:100%;box-sizing:border-box;padding:.7em .9em;font-size:1.05em;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
-.results{margin-top:.4em}
-.hit{display:block;padding:.45em .6em;border:1px solid var(--line);border-top:none;text-decoration:none;color:var(--fg)}
-.hit:first-child{border-top:1px solid var(--line);border-radius:6px 6px 0 0}
-.hit:hover{background:var(--info)}
-.hit .hp{color:var(--muted);font-size:.8em;margin:0 .4em}
-.hit .hg{color:var(--muted)}
-.statgrid{display:flex;gap:.7em;flex-wrap:wrap;margin:1.4em 0}
-.stat{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:.7em .9em;text-align:center}
-.stat.ok{background:var(--ok)}
-.statnum{font-size:1.5em;font-weight:700}
-.statlbl{color:var(--muted);font-size:.82em}
-.page-title{font-size:1.1em;color:var(--muted);font-weight:400;margin:.2em 0}
-.headword-block{border:1px solid var(--line);border-radius:10px;padding:1em 1.1em;margin:.6em 0}
-.headword{font-size:2.2em;font-weight:700;line-height:1.1}
-.headmeta{display:flex;gap:.5em;flex-wrap:wrap;align-items:center;margin:.5em 0}
-.def{margin:.5em 0 0}
-.badge.pos{background:#eef1f4;color:#333;padding:.15em .6em;border-radius:6px;font-size:.85em}
-@media (prefers-color-scheme:dark){.badge.pos{background:#23272b;color:#ccc}}
-.pill{font-size:.78em;padding:.12em .55em;border-radius:11px;white-space:nowrap}
-.pill.ok{background:var(--ok)}.pill.warn{background:var(--warn)}.pill.info{background:var(--info)}
-.pill.src-proto{background:#e5dcf7}.pill.src-consensus{background:var(--info)}.pill.src-official{background:var(--ok)}
-@media (prefers-color-scheme:dark){.pill.src-proto{background:#33285a}}
-.reliability{font-size:.82em;padding:.12em .55em;border-radius:11px}
-.reliability.conf-high{background:var(--ok)}.reliability.conf-med{background:var(--warn)}.reliability.conf-low{background:#f6dada}
-@media (prefers-color-scheme:dark){.reliability.conf-low{background:#4a2020}}
-.banner{padding:.7em 1em;border-radius:8px;margin:1em 0;border:1px solid var(--line)}
-.banner.ok{background:var(--ok)}.banner.warn{background:var(--warn)}.banner.info{background:var(--info)}
-.mention{font-weight:600}
-.muted{color:var(--muted)}
-.sec{border:1px solid var(--line);border-radius:8px;margin:.7em 0;padding:.2em .9em}
-.sec>summary{cursor:pointer;font-weight:600;padding:.5em 0}
-.wikitable{border-collapse:collapse;width:100%;margin:.5em 0;font-size:.95em}
-.wikitable th,.wikitable td{border:1px solid var(--line);padding:.35em .55em;text-align:left}
-.wikitable thead th{background:#f2f4f7}
-@media (prefers-color-scheme:dark){.wikitable thead th{background:#1a1e22}}
+:root{--border:#a2a9b1;--line:#c8ccd1;--link:#36c;--visited:#6b4ba1;--text:#202122;--muted:#54595d;--page:#f8f9fa;--th:#eaecf0}
+html,body{margin:0;padding:0;background:var(--page);color:var(--text);font:14px/1.6 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif}
+a{color:var(--link);text-decoration:none}
+a:visited{color:var(--visited)}
+a:hover{text-decoration:underline}
+main{max-width:1160px;margin:0 auto;background:#fff;padding:1.1rem 1.6rem 2.4rem;border-left:1px solid var(--line);border-right:1px solid var(--line);min-height:70vh}
+.serif{font-family:Georgia,'Linux Libertine','Times New Roman',serif}
+.site-header{background:#fff;border-bottom:1px solid var(--border);padding:.45rem 1.2rem;display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}
+.brand{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-size:1.4rem;font-weight:normal;color:var(--text);text-decoration:none}
+.tagline{color:var(--muted);font-size:.88rem}
+.nav{margin-left:auto;display:flex;gap:1.1rem}
+.nav a{color:var(--link);font-size:.92rem}
+.site-footer{max-width:1160px;margin:0 auto;background:#fff;border-left:1px solid var(--line);border-right:1px solid var(--line);border-top:1px solid var(--line);padding:.9rem 1.6rem 1.4rem;color:var(--muted);font-size:.88rem}
+
+/* Headings — serif with the MediaWiki underline. */
+h1.firstHeading,.page-title,.hero h1,.entry>h1,.about h1{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-weight:normal;font-size:1.9rem;line-height:1.25;margin:0 0 .35rem;border-bottom:1px solid var(--border);padding-bottom:.12em;color:var(--text)}
+h2{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-weight:normal;font-size:1.5rem;margin:1.1em 0 .3em;border-bottom:1px solid var(--border);padding-bottom:.08em}
+h3,h4{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-weight:normal;margin:.7em 0 .2em}
+
+/* Tables. */
+.wikitable{background:var(--page);color:var(--text);border:1px solid var(--border);border-collapse:collapse;width:100%;margin:.6em 0;font-size:.95em}
+.wikitable th,.wikitable td{border:1px solid var(--border);padding:.3em .55em;text-align:left;vertical-align:top}
+.wikitable th,.wikitable thead th{background:var(--th);font-weight:bold}
 .inflection-table th{white-space:nowrap}
 .compact-table td.lc{color:var(--muted);white-space:nowrap}
-.branch-grid{display:flex;flex-wrap:wrap;gap:1em}
-.branch-box{flex:1;min-width:240px}
-.branch-box h4{margin:.4em 0}
-.rule-trace li{margin:.4em 0}
-.rule-id{background:#eef1f4;padding:.05em .35em;border-radius:3px;font-size:.85em}
-@media (prefers-color-scheme:dark){.rule-id{background:#23272b}}
-.top-candidate{background:rgba(120,200,120,.12)}
+.top-candidate{background:#eafaef}
 .score{font-variant-numeric:tabular-nums}
-.foot{color:var(--muted);font-size:.85em;margin-top:1.5em}
+
+/* Search. */
+.hero{border-bottom:1px solid var(--border);padding-bottom:1rem;margin-bottom:1rem}
+.lede{color:var(--muted);max-width:72ch}
+.searchbox{margin:.9rem 0}
+#q{width:100%;box-sizing:border-box;padding:.45rem .55rem;font-size:1.05rem;border:1px solid var(--border);border-radius:2px;background:#fff;color:var(--text)}
+.results{margin-top:.3rem}
+.hit{display:block;padding:.35em .55em;border:1px solid var(--line);border-top:none;text-decoration:none;color:var(--text)}
+.hit:first-child{border-top:1px solid var(--line)}
+.hit:hover{background:#eaf3ff;text-decoration:none}
+.hit b{color:var(--link)}
+.hit .hp{color:var(--muted);font-size:.8em;margin:0 .4em}
+.hit .hg{color:var(--muted)}
+
+/* Stat cards. */
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem;margin:1rem 0}
+.stat{border:1px solid var(--border);background:var(--page);padding:.6rem .7rem;text-align:center}
+.stat.ok{background:#eafaef}
+.statnum{font-size:1.45rem;font-family:Georgia,'Linux Libertine','Times New Roman',serif}
+.statlbl{color:var(--muted);font-size:.85em}
+
+/* Entry header line. */
+.page-title{margin-bottom:.4rem}
+.headword-block{border:1px solid var(--line);background:var(--page);padding:.55rem .8rem;margin:.4rem 0 1rem}
+.headmeta{display:flex;gap:.45em;flex-wrap:wrap;align-items:center}
+.def{margin:.55em 0 0}
+.badge{display:inline-block;background:var(--th);border:1px solid var(--line);border-radius:2px;padding:.05rem .35rem;font-size:.85em;color:var(--text)}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:2px;padding:.03rem .4rem;font-size:.8em;background:var(--th);white-space:nowrap}
+.pill.ok{background:#d5f4d5;border-color:#9cce9c}
+.pill.warn{background:#fbeecb;border-color:#e3cd86}
+.pill.info,.pill.src-consensus{background:#dbe8fb;border-color:#a7c4ee}
+.pill.src-proto{background:#ece3fb;border-color:#c1abef}
+.pill.src-official{background:#d5f4d5;border-color:#9cce9c}
+.reliability{display:inline-block;border:1px solid var(--line);border-radius:2px;padding:.03rem .4rem;font-size:.8em}
+.reliability.conf-high{background:#d5f4d5}
+.reliability.conf-med{background:#fbeecb}
+.reliability.conf-low{background:#f6dada}
+
+/* Banners → MediaWiki notice look. */
+.banner{border:1px solid var(--border);border-left:6px solid var(--border);background:var(--page);padding:.6rem .8rem;margin:.85rem 0}
+.banner.ok{border-left-color:#14866d}
+.banner.warn{border-left-color:#f2a900}
+.banner.info{border-left-color:var(--link)}
+
+/* Collapsible sections. */
+.sec{border:1px solid var(--line);margin:.7em 0;padding:0 .8rem .55rem}
+.sec>summary{margin:0 -.8rem;padding:.4em .8rem;background:var(--page);border-bottom:1px solid var(--line);cursor:pointer;font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-size:1.15rem}
+.sec[open]>summary{margin-bottom:.5em}
+
+/* Evidence. */
+.branch-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+.branch-box h4{margin:.3em 0;font-size:1.05rem}
+
+.mention,.Latn{font-style:italic;font-weight:bold}
+.muted,.qualifier{color:var(--muted)}
 .calib{font-style:italic}
+.foot{color:var(--muted);font-size:.88em;margin-top:1.4rem;border-top:1px solid var(--line);padding-top:.6rem}
+.rule-trace li{margin:.35em 0}
+.rule-id{background:var(--th);border:1px solid var(--line);padding:.02em .3em;font-size:.85em}
+.notice{border:1px solid var(--border);background:var(--page);padding:.6rem .8rem;margin:.6rem 0}
+@media (max-width:720px){main,.site-footer{padding-left:.8rem;padding-right:.8rem;border-left:none;border-right:none}.wikitable{font-size:.9em}}
 "#;
 
 fn esc(v: &str) -> String {
