@@ -62,11 +62,11 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **36.98%** | +9.60 pp |
-| normalized top-1 | 34.96% | **44.04%** | +9.08 pp |
-| normalized top-3 | 42.89% | **55.4%** | +12.5 pp |
-| normalized top-5 | — | **57.0%** | — |
-| mean normalized edit distance | 0.253 | **0.231** | −0.022 |
+| exact top-1 | 27.38% | **38.42%** | +11.04 pp |
+| normalized top-1 | 34.96% | **45.50%** | +10.54 pp |
+| normalized top-3 | 42.89% | **56.9%** | +14.0 pp |
+| normalized top-5 | — | **59.6%** | — |
+| mean normalized edit distance | 0.253 | **0.229** | −0.024 |
 
 The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
 (`cargo run -- corpus-eval`): **55.3% exact / 59.4% normalized** on the ~6.9k entries
@@ -74,9 +74,9 @@ where a Proto-Slavic ancestor or internationalism is known — higher than the p
 headline because it only scores words the site actually derives from a known ancestor.
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
-~44% *wrong-cluster* (the official root is in the evidence but a different one
-was chosen — mostly editorial synonym choices Interslavic makes), ~35%
-*right-cluster-wrong-form* (engine/reconstruction error), ~20% *root-absent*
+~47% *wrong-cluster* (the official root is in the evidence but a different one
+was chosen — mostly editorial synonym choices Interslavic makes), ~32%
+*right-cluster-wrong-form* (engine/reconstruction error), ~21% *root-absent*
 (the official root is not in any modern cognate — unfixable from evidence).
 89.5% of meanings split across ≥3 cognate clusters. This maps the ceiling for
 future word-selection work.
