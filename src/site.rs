@@ -120,10 +120,34 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             search.push_str(",\n");
         }
         first_search = false;
-        // row: [id, form, gloss, pos, statuschar, strengthLetter, score]
+        // row: [id, form, gloss, pos, statuschar, strengthLetter, score, keys]
+        let mut keys = search_keys(&g.candidates, &form);
+        if let Some(off) = official {
+            // The official lemma is searchable even when no candidate spells it:
+            // point it at the candidate that agrees (normalized), else the top.
+            let rank = g
+                .candidates
+                .iter()
+                .position(|c| crate::orthography::normalized_match(&c.form, off))
+                .map(|i| i + 1)
+                .unwrap_or(1);
+            let lower = off.to_lowercase();
+            for k in [
+                lower.clone(),
+                crate::orthography::to_standard(&lower),
+                crate::orthography::ascii_skeleton(off),
+            ] {
+                if k.chars().count() >= 2
+                    && !keys.iter().any(|(kk, _)| kk == &k)
+                    && k != form.to_lowercase()
+                {
+                    keys.push((k, rank));
+                }
+            }
+        }
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2}]",
+            "[{},{},{},{},{},{},{:.2},{}]",
             id,
             json_str(&form),
             json_str(&truncate(&entry.english, 70)),
@@ -131,6 +155,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             json_str(statuschar),
             json_str(conf_letter(top.confidence)),
             top.score,
+            keys_json(&keys),
         );
         let freq = entry.frequency.unwrap_or(0.0);
         top_rows.push(HomeRow {
@@ -276,9 +301,10 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             search.push_str(",\n");
         }
         first_search = false;
+        let keys = search_keys(&g.candidates, &form);
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2}]",
+            "[{},{},{},{},{},{},{:.2},{}]",
             id,
             json_str(&form),
             json_str(&truncate(&g.set.gloss, 70)),
@@ -286,6 +312,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             json_str(if in_official { "O" } else { "N" }),
             json_str(conf_letter(g.confidence)),
             g.score,
+            keys_json(&keys),
         );
         rows.push(HomeRow {
             // sort the home list by coverage (n_langs) so the best-attested show first
@@ -711,6 +738,43 @@ fn home_page(
     page("Medžuslovjansky generator", &body, 0)
 }
 
+/// Deduplicated searchable keys for one entry: every ranked candidate's form
+/// plus its standard-alphabet and ASCII folds, tagged with the candidate rank
+/// (1-based) so the client can deep-link an alternative hit (`#cand-2`). The
+/// display form itself is excluded (the client already matches it), but its
+/// folds are included so `kratoky` finds `kråtȯky`.
+fn search_keys(candidates: &[Candidate], display: &str) -> Vec<(String, usize)> {
+    let mut keys: Vec<(String, usize)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(display.to_lowercase());
+    for (i, c) in candidates.iter().take(5).enumerate() {
+        let lower = c.form.to_lowercase();
+        for k in [
+            lower.clone(),
+            crate::orthography::to_standard(&lower),
+            crate::orthography::ascii_skeleton(&c.form),
+        ] {
+            if k.chars().count() >= 2 && seen.insert(k.clone()) {
+                keys.push((k, i + 1));
+            }
+        }
+    }
+    keys
+}
+
+/// JSON-encode the key list as `[["kratky",2],…]` for the search index row.
+fn keys_json(keys: &[(String, usize)]) -> String {
+    let mut s = String::from("[");
+    for (i, (k, r)) in keys.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        let _ = write!(s, "[{},{}]", json_str(k), r);
+    }
+    s.push(']');
+    s
+}
+
 const SEARCH_JS: &str = r#"
 let IDX=null;
 async function ensure(){ if(IDX)return IDX; const r=await fetch('search.json'); IDX=await r.json(); return IDX; }
@@ -720,20 +784,34 @@ const STR={V:['vysoka','conf-high'],S:['srědnja','conf-med'],N:['nizka','conf-l
 function strBadge(e){ const s=STR[e[5]]||STR.N; return `<span class='reliability ${s[1]}'>${s[0]}</span> <span class='score muted'>${(e[6]||0).toFixed?e[6].toFixed(2):e[6]}</span>`; }
 q.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ run(); sync(); },120); });
 function sync(){ const v=q.value.trim(); history.replaceState(null,'', v?('?q='+encodeURIComponent(v)):location.pathname); }
+// Fold flavored Interslavic letters (å ȯ ě ę ų ć č š ž …) to plain ASCII so the
+// query "kratoky" or "kratky" can find "kråtȯky"/"kråtky". NFD strips combining
+// marks; đ has no decomposition and is folded by hand.
+function fold(x){ return x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d'); }
 async function run(){
   let s=q.value.trim().toLowerCase(); if(!s){out.innerHTML='';return;}
   // English verbs are cited without the infinitive marker ("eat", not "to eat").
   const s2=s.replace(/^to\s+/,'');
+  const sf=fold(s2);
   const idx=await ensure();
   const hits=[];
-  for(const e of idx){ const f=e[1].toLowerCase(), g=e[2].toLowerCase();
+  for(const e of idx){ const f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
     const gs=g.split(/[,;]\s*/).map(x=>x.trim());
-    let score=0;
-    if(f===s||f===s2)score=100; else if(f.startsWith(s2))score=60; else if(f.includes(s2))score=40;
-    else if(gs.some(x=>x===s||x===s2))score=55; else if(g.includes(s2))score=20;
-    if(score>0)hits.push([score,e]); if(hits.length>600)break; }
+    const ff=fold(f);
+    let score=0, anchor=0;
+    if(f===s||f===s2)score=100;
+    else if(ff===sf)score=90;
+    else{ for(const kr of ks){ if(kr[0]===s2||kr[0]===sf){ score=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
+    if(!score){
+      if(f.startsWith(s2)||ff.startsWith(sf))score=60;
+      else if(gs.some(x=>x===s||x===s2))score=55;
+      else if(ks.some(kr=>kr[0].startsWith(sf)))score=50;
+      else if(f.includes(s2))score=40;
+      else if(g.includes(s2))score=20;
+    }
+    if(score>0)hits.push([score,e,anchor]); if(hits.length>600)break; }
   hits.sort((a,b)=>b[0]-a[0]);
-  out.innerHTML=hits.slice(0,60).map(([_,e])=>`<a class='hit' href='entry/${e[0]}.html'><b>${e[1]}</b> <span class='hp'>${e[3]}</span> <span class='hg'>${e[2]}</span> <span class='hs'>${strBadge(e)}</span></a>`).join('')||"<div class='muted'>Ničto ne najdeno.</div>";
+  out.innerHTML=hits.slice(0,60).map(([_,e,a])=>`<a class='hit' href='entry/${e[0]}.html${a?('#cand-'+a):''}'><b>${e[1]}</b> <span class='hp'>${e[3]}</span> <span class='hg'>${e[2]}</span> <span class='hs'>${strBadge(e)}</span></a>`).join('')||"<div class='muted'>Ničto ne najdeno.</div>";
 }
 // Random "word of the moment" for the sidebar spotlight.
 async function randomWord(){
@@ -858,7 +936,8 @@ fn alternatives_block(candidates: &[Candidate]) -> String {
     for (i, c) in candidates.iter().enumerate() {
         let _ = write!(
             s,
-            "<tr class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td>{}</td><td>{}</td></tr>",
+            "<tr id='cand-{}' class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td>{}</td><td>{}</td></tr>",
+            i + 1,
             if i == 0 { "top-candidate" } else { "" },
             i + 1,
             esc(&c.form),
@@ -1127,6 +1206,7 @@ fn page(title: &str, body: &str, depth: usize) -> String {
            <nav class='nav'><a href='{up}index.html'>Slovnik</a><a href='{up}about.html'>O metodě</a><a href='{REPO_URL}'>Kod</a></nav>\
          </header>\
          <main>{body}</main>\
+         <script>(function(){{var h=location.hash;if(h&&/^#cand-\\d+$/.test(h)){{var t=document.querySelector(h);if(t){{var d=t.closest('details');if(d)d.open=true;t.scrollIntoView({{block:'center'}});}}}}}})();</script>\
          <footer class='site-footer'>Mašinno generovane rekonstrukcije — ne oficialny standard bez prověrky. Dokazy: interslavic-dictionary.com, Wiktionary (CC BY-SA). <a href='{REPO_URL}'>Izvorny kod</a>.</footer>\
          </body></html>",
         title = esc(title)
@@ -1203,6 +1283,7 @@ h3,h4{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-weight:
 .inflection-table th{white-space:nowrap}
 .compact-table td.lc{color:var(--muted);white-space:nowrap}
 .top-candidate{background:#eafaef}
+tr:target{background:#fff3bf;outline:2px solid #f0c000}
 .score{font-variant-numeric:tabular-nums}
 
 /* Search. */
@@ -1297,4 +1378,47 @@ fn json_str(v: &str) -> String {
     }
     out.push('"');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_keys_make_alternatives_and_folds_findable() {
+        // The kråtky case (V6 §2): the top candidate is flavored, the official
+        // spelling appears as candidate 2 — both the alternative's form and the
+        // ASCII folds must be searchable keys.
+        let cands = vec![
+            Candidate::new(
+                "kråtȯky".to_string(),
+                CandidateSource::ProtoSlavicRule,
+                0.98,
+            ),
+            Candidate::new(
+                "kratky".to_string(),
+                CandidateSource::BranchConsensus,
+                0.967,
+            ),
+        ];
+        let keys = search_keys(&cands, "kråtȯky");
+        let has = |k: &str, r: usize| keys.iter().any(|(kk, rr)| kk == k && *rr == r);
+        assert!(has("kratoky", 1), "ASCII fold of the headword: {keys:?}");
+        assert!(has("kratky", 2), "the alternative's own form: {keys:?}");
+        // The raw headword itself is NOT duplicated (the client matches it).
+        assert!(!keys.iter().any(|(k, _)| k == "kråtȯky"));
+    }
+
+    #[test]
+    fn search_keys_json_is_well_formed() {
+        let cands = vec![Candidate::new(
+            "běly".to_string(),
+            CandidateSource::ProtoSlavicRule,
+            0.9,
+        )];
+        let keys = search_keys(&cands, "běly");
+        let json = keys_json(&keys);
+        assert!(json.starts_with('[') && json.ends_with(']'));
+        assert!(json.contains("[\"bely\",1]"), "{json}");
+    }
 }

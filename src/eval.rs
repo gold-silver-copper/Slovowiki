@@ -642,6 +642,20 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
         .iter()
         .find(|e| e.isv.to_lowercase() == ql)
         .or_else(|| {
+            // Folded match, so a query without the flavored letters still finds
+            // the lemma: "kratky" → kråtky, "medzu" → medžu.
+            let qs = ortho::to_standard(&ql);
+            let qk = ortho::ascii_skeleton(&ql);
+            entries
+                .iter()
+                .find(|e| ortho::to_standard(&e.isv.to_lowercase()) == qs)
+                .or_else(|| {
+                    entries
+                        .iter()
+                        .find(|e| !qk.is_empty() && ortho::ascii_skeleton(&e.isv) == qk)
+                })
+        })
+        .or_else(|| {
             entries.iter().find(|e| {
                 e.english
                     .to_lowercase()
