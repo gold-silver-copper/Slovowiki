@@ -1158,41 +1158,124 @@
       "by_branch_coverage": [
         {
           "branch_coverage": 0,
-          "exact": 0.4166666567325592,
-          "n": 48,
-          "normalized": 0.4791666567325592
+          "exact": 0.47457626461982727,
+          "n": 118,
+          "normalized": 0.5508474707603455
         },
         {
           "branch_coverage": 1,
-          "exact": 0.13764044642448425,
-          "n": 3560,
-          "normalized": 0.18061797320842743
+          "exact": 0.21128319203853607,
+          "n": 4520,
+          "normalized": 0.25973451137542725
         },
         {
           "branch_coverage": 2,
-          "exact": 0.3092470169067383,
-          "n": 5591,
-          "normalized": 0.3958147168159485
+          "exact": 0.3373601734638214,
+          "n": 6705,
+          "normalized": 0.42624905705451965
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5825939774513245,
-          "n": 7101,
-          "normalized": 0.6572313904762268
+          "exact": 0.6064151525497437,
+          "n": 4957,
+          "normalized": 0.6869074106216431
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 6836,
-          "normalized": 0.6765652298927307
+          "n": 5972,
+          "normalized": 0.7277293801307678
         },
         "low": {
-          "n": 2226,
-          "normalized": 0.11590296775102615
+          "n": 2299,
+          "normalized": 0.118312306702137
         },
         "medium": {
-          "n": 7238,
-          "normalized": 0.36791932582855225
+          "n": 8029,
+          "normalized": 0.3591979146003723
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.33459943532943726,
+          "n": 2896,
+          "normalized": 0.43162983655929565
+        },
+        "adv": {
+          "exact": 0.19786910712718964,
+          "n": 657,
+          "normalized": 0.2952815890312195
+        },
+        "noun": {
+          "exact": 0.4650801122188568,
+          "n": 8362,
+          "normalized": 0.531930148601532
+        },
+        "num": {
+          "exact": 0.0982142835855484,
+          "n": 112,
+          "normalized": 0.2321428507566452
+        },
+        "pron": {
+          "exact": 0.39393940567970276,
+          "n": 99,
+          "normalized": 0.4040403962135315
+        },
+        "verb": {
+          "exact": 0.2973167300224304,
+          "n": 4174,
+          "normalized": 0.3699089586734772
+        }
+      },
+      "description": "Verb conjugation classes: jat after hushing spelled a (drzati, slysati), statives -eti on East/West e-stem evidence (kameneti).",
+      "exact_top1": 0.3852147161960602,
+      "mean_normalized_edit_distance": 0.22644974291324615,
+      "n": 16300,
+      "name": "+verb-class",
+      "normalized_top1": 0.46024540066719055,
+      "normalized_top3": 0.565582811832428,
+      "normalized_top5": 0.5933742523193359,
+      "skeleton_top1": 0.4638650417327881
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.4285714328289032,
+          "n": 49,
+          "normalized": 0.4897959232330322
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.13880303502082825,
+          "n": 3559,
+          "normalized": 0.18179263174533844
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.30930233001708984,
+          "n": 5590,
+          "normalized": 0.39624330401420593
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.5827935934066772,
+          "n": 7102,
+          "normalized": 0.6574204564094543
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 6834,
+          "normalized": 0.676616907119751
+        },
+        "low": {
+          "n": 2227,
+          "normalized": 0.11764705926179886
+        },
+        "medium": {
+          "n": 7239,
+          "normalized": 0.3686973452568054
         }
       },
       "by_pos": {
@@ -1222,20 +1305,20 @@
           "normalized": 0.38383838534355164
         },
         "verb": {
-          "exact": 0.3052228093147278,
+          "exact": 0.3068998456001282,
           "n": 4174,
-          "normalized": 0.373502641916275
+          "normalized": 0.3756588399410248
         }
       },
       "description": "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.",
-      "exact_top1": 0.3911656439304352,
-      "mean_normalized_edit_distance": 0.22780780494213104,
+      "exact_top1": 0.39159509539604187,
+      "mean_normalized_edit_distance": 0.22774426639080048,
       "n": 16300,
       "name": "+explicit-etymology (production)",
-      "normalized_top1": 0.46294477581977844,
-      "normalized_top3": 0.5712883472442627,
-      "normalized_top5": 0.598343551158905,
-      "skeleton_top1": 0.46601226925849915
+      "normalized_top1": 0.4634969234466553,
+      "normalized_top3": 0.5718404650688171,
+      "normalized_top5": 0.5991411209106445,
+      "skeleton_top1": 0.4666871130466461
     }
   ]
 }

@@ -108,6 +108,9 @@ pub struct ConsensusConfig {
     /// stem (Polish y→i, South-Slavic epenthetic vowel/-ac/-a), each sub-repair
     /// gated on the internationalism shape and/or a corroborating cognate.
     pub loan_stem_repair: bool,
+    /// Repair verb conjugation-class endings: jat after hushing is a
+    /// (-žati/-čati/-šati), statives take -ěti on East/West e-stem evidence.
+    pub verb_class_repair: bool,
 }
 
 impl ConsensusConfig {
@@ -134,6 +137,7 @@ impl ConsensusConfig {
             synonym_alternatives: false,
             proto_prefix_stripping: false,
             loan_stem_repair: false,
+            verb_class_repair: false,
         }
     }
 
@@ -162,6 +166,7 @@ impl ConsensusConfig {
             synonym_alternatives: true,
             proto_prefix_stripping: true,
             loan_stem_repair: true,
+            verb_class_repair: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -189,6 +194,7 @@ impl ConsensusConfig {
             synonym_alternatives: true,
             proto_prefix_stripping: true,
             loan_stem_repair: true,
+            verb_class_repair: true,
         }
     }
 }
@@ -599,7 +605,82 @@ fn reconstruct(
             form = fixed;
         }
     }
+
+    // Repair 7: verb conjugation-class endings the representative miscites.
+    if cfg.verb_class_repair && input.pos == Pos::Verb {
+        let (fixed, steps) = verb_class_repair(&form, per_lang);
+        if fixed != form {
+            trace.extend(steps);
+            form = fixed;
+        }
+    }
     (form, trace)
+}
+
+/// Verb conjugation-class repairs (see `ConsensusConfig::verb_class_repair`):
+///   (a) *ě after a hushing consonant/j is spelled a — Interslavic never has
+///       -žeti/-četi/-šeti/-jeti (držati, slyšati, stojati);
+///   (b) the stative/inchoative class is -ěti, not -iti, when an East/West
+///       cognate cites the e-stem infinitive (ru каменеть / cs kamenět →
+///       kameněti, against South kameniti).
+fn verb_class_repair(
+    form: &str,
+    per_lang: &BTreeMap<&str, &SourceForm>,
+) -> (String, Vec<RuleStep>) {
+    let mut w = form.to_string();
+    let mut steps = Vec::new();
+
+    // (a) hushing/j + ěti/eti → ati (RULE_SPEC: *ě > a after č/ž/š/j).
+    for h in ['ž', 'č', 'š', 'j'] {
+        for tail in ["ěti", "eti"] {
+            let suf = format!("{h}{tail}");
+            if let Some(stem) = w.strip_suffix(&suf) {
+                if !stem.is_empty() {
+                    let fixed = format!("{stem}{h}ati");
+                    steps.push(RuleStep::new(
+                        "verb-husing-a",
+                        w.clone(),
+                        fixed.clone(),
+                        "Jať po šumnom sųglasniku (ž/č/š/j) piše sę a: držati, slyšati."
+                            .to_string(),
+                        Some(DOC_ORTHO),
+                    ));
+                    w = fixed;
+                }
+            }
+        }
+    }
+
+    // (b) -iti → -ěti when an East/West cognate cites the stative e-stem: its
+    // form ends with the same stem consonant + "et"/"eti"/"ět".
+    if let Some(stem) = w.strip_suffix("iti") {
+        if let Some(last) = stem.chars().last().filter(|c| is_cons(*c)) {
+            // East only: the Russian stative -еть is reliable, while the Czech
+            // iterative -ět (navádět vs naváděti/navoditi) is not.
+            let confirmed = per_lang.values().any(|f| {
+                if f.branch != Branch::East {
+                    return false;
+                }
+                let l = f.norm.latin.to_lowercase();
+                ["et", "eti", "ět", "ěti"]
+                    .iter()
+                    .any(|t| l.ends_with(&format!("{last}{t}")))
+            });
+            if confirmed {
+                let fixed = format!("{stem}ěti");
+                steps.push(RuleStep::new(
+                    "verb-stative-eti",
+                    w.clone(),
+                    fixed.clone(),
+                    "Stativny/inhoativny glagol na -ěti (ru -еть / cs -ět), ne -iti.".to_string(),
+                    Some(DOC_ORTHO),
+                ));
+                w = fixed;
+            }
+        }
+    }
+
+    (w, steps)
 }
 
 /// Loan-stem repairs (see `ConsensusConfig::loan_stem_repair`). Returns the
@@ -1394,5 +1475,24 @@ mod tests {
         let cs_davati = form("cs", Branch::West, "davati");
         let per_dav: BTreeMap<&str, &SourceForm> = [("cs", &cs_davati)].into_iter().collect();
         assert_eq!(loan_stem_repair("davati", &per_dav, &verb).0, "davati");
+    }
+
+    #[test]
+    fn verb_class_repairs() {
+        // (a) jat after a hushing consonant is spelled a — unconditional law.
+        let empty: BTreeMap<&str, &SourceForm> = BTreeMap::new();
+        assert_eq!(verb_class_repair("držeti", &empty).0, "držati");
+        assert_eq!(verb_class_repair("slyšeti", &empty).0, "slyšati");
+        // Non-hushing stems are untouched.
+        assert_eq!(verb_class_repair("viděti", &empty).0, "viděti");
+
+        // (b) stative -ěti on the East e-stem infinitive (ru каменеть).
+        let ru = form("ru", Branch::East, "kamenet");
+        let per: BTreeMap<&str, &SourceForm> = [("ru", &ru)].into_iter().collect();
+        assert_eq!(verb_class_repair("kameniti", &per).0, "kameněti");
+        // The Czech iterative -ět does NOT confirm (navádět vs navoditi).
+        let cs = form("cs", Branch::West, "navádět");
+        let per_cs: BTreeMap<&str, &SourceForm> = [("cs", &cs)].into_iter().collect();
+        assert_eq!(verb_class_repair("navoditi", &per_cs).0, "navoditi");
     }
 }

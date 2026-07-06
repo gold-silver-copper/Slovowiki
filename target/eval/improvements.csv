@@ -461,6 +461,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 7336,friendly,adj,družny,pratelsky,družny
 25392,"timber, wood",noun,drva,drova,drva
 2617,"hold, keep",verb,dŕžati,deržati,dŕžati
+25399,"shudder, shiver, tremble",verb,držati,držeti,držati
 1756,"state, country",noun,dŕžava,deržava,dŕžava
 35173,statehood,noun,dŕžavnosť,deržavnist,državnosť
 6268,state,adj,dŕžavny,deržavnyj,državny
@@ -1410,6 +1411,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 20520,most,adv,najvęće,najvięcej,najveće
 21348,"bend, incline",verb,naklanjati,naklonati,naklanjati
 19878,air-raid,noun,nalet,nalot,nalet
+1010,"belong, pertain",verb,naležati,naležeti,naležati
 20525,"concubine, paramour",noun,naložnica,naložnyca,naložnica
 36966,"intentionally, on purpose",adv,naměrno,namerenno,namerno
 36965,"intentional, intended",adj,naměrny,namerennyj,namerny
@@ -1612,6 +1614,8 @@ id,gloss,pos,official,baseline_pred,final_pred
 5662,fall off,verb,odpadati,otpadati,odpadati
 5663,fall off,verb,odpasti,otpasti,odpasti
 36727,sail away,verb,odplyvati,otplyvati,odplyvati
+5557,reflect,verb,odražati,odražeti,odražati
+21400,repel,verb,odražati,odražeti,odražati
 22356,detachment (mil.),noun,odręd,odrad,odręd
 29249,serve out,verb,odslužiti,odsloužiti,odslužiti
 5075,"resign, step back, abdicate",verb,odstųpiti,odstoupiti,odstųpiti
@@ -1849,9 +1853,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 32976,gilding,noun,pozlåta,pozolota,pozlata
 29798,gild,verb,pozlåtiti,pozolotiti,pozlatiti
 35066,recognition,noun,poznańje,opoznanie,poznanje
-20054,regret,verb,požaliti,požaleti,požaliti
 11128,fire,adj,požarny,požarnyj,požarny
-32984,harvest,verb,požęti,požati,požęti
 3147,sacrifice,verb,požrtvovati,požertvovati,požrtvovati
 2073,"doorstep, threshold",noun,pråg,porog,pråg
 20057,"practically, virtually",adv,praktično,praktyčnie,praktično
@@ -2075,6 +2077,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 30243,"sensual, blisful, delightful",adj,råzkošny,blažennyj,råzkošny
 30244,"unchain, unshoe (a horse)",verb,råzkovati,raskovati,råzkovati
 33868,"unchain, unshoe (a horse)",verb,råzkovyvati,raskovyvati,råzkovyvati
+33866,cut up,verb,råzkrajati,rozkrajeti,råzkrajati
 30251,cut up,verb,råzkrojiti,raskroiti,råzkrojiti
 30256,"reveal, disclose, unveil, bare, uncover",verb,råzkryti,rozkryti,råzkryti
 30258,"reveal, disclose, unveil, bare, uncover",verb,råzkryvati,rozkryvati,råzkryvati
@@ -2302,7 +2305,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 35175,emerald,noun,smaragd,šmaragd,smaragd
 12372,"mixed, blended",adj,směšany,smešannyj,smešany
 5227,"funny, ridiculous, hilarious, laughable",adj,směšny,smešnoj,směšny
-20177,stink,verb,smŕditi,smerdeti,smrditi
 2070,death,noun,smŕť,smert,smŕt
 12382,"mortal, deadly, lethal, fatal, death",adj,smŕtny,smertnyj,smŕtny
 12384,"deadly, lethal",adj,smŕtonosny,smertonosnyj,smrtonosny
@@ -2593,6 +2595,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 20004,simplification,noun,uprošćeńje,uproščenie,uprošćenje
 13334,simplified,adj,uprošćeny,uproščonnyj,uprošćeny
 35063,Uralic,adj,uraľsky,uralskij,uralsky
+622,"insult, offend",verb,uražati,uražeti,uražati
 21607,harvest,noun,urođaj,uroda,urođaj
 22449,Uruguayan,adj,urugvajsky,urugvajskij,urugvajsky
 1618,"conditional, contingent",adj,uslovny,uslovnyj,uslovny
@@ -2735,6 +2738,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 526,"satisfied, pleased",adj,zadovoljeny,zadovolony,zadovoljeny
 297,"arrest, detain",verb,zadŕžati,zaderžati,zadržati
 19353,"hold back, check",verb,zadŕžati,zaderžati,zadŕžati
+34659,"shudder, shiver, tremble",verb,zadržati,zadržeti,zadržati
 35630,retain,verb,zadŕžati,zaderžati,zadŕžati
 36514,"pause, stop",verb,zadŕžati,zaderžati,zadržati
 14068,"puzzling, mysterious",adj,zagadȯčny,zagadočnyj,zagadȯčny
@@ -2761,7 +2765,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 4187,westwards,adv,zapadno,zapadne,zapadno
 842,western,adj,zapadny,zapadnyj,zapadny
 16476,inflammation (med.),noun,zapaljeńje,zapalenie,zapaljenje
-32371,"initiate, commence, kick off, originate, start up",verb,započęti,započati,započęti
 22241,commandment,noun,zapověď,zapovid,zapověd
 14163,infectious,adj,zarazny,zaraznyj,zarazny
 5841,"infection, contamination",noun,zaražeńje,zaraženie,zaraženje
