@@ -198,6 +198,330 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+// ===========================================================================
+// Corpus-driven site: a cognate-set dictionary built from ALL inherited Slavic
+// lemmas in Wiktionary, independent of the official Interslavic dictionary.
+// ===========================================================================
+
+/// Generate the static site from the Wiktionary cognate-set corpus. Every set of
+/// etymologically-connected Slavic lemmas becomes one Interslavic word, with
+/// confidence scaling by how many languages/branches attest it.
+pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
+    install_quiet_inflection_hook();
+    let corpus = crate::dump::LemmaCorpus::load(lemmas_path)?;
+    let cfg = ConsensusConfig::production();
+    let sets = crate::corpus::build_sets(&corpus);
+    println!(
+        "built {} cognate sets from {} Slavic lemmas",
+        sets.len(),
+        corpus.entry_count
+    );
+
+    // Cross-reference the official dictionary purely as a validation badge: does
+    // the generated form already exist as an official Interslavic lemma?
+    let official_forms: std::collections::HashSet<String> =
+        match official::load(Path::new(crate::DEFAULT_OFFICIAL)) {
+            Ok(entries) => entries
+                .iter()
+                .filter(|e| !e.isv.trim().is_empty())
+                .map(|e| crate::orthography::to_standard(&e.isv.to_lowercase()))
+                .collect(),
+            Err(_) => std::collections::HashSet::new(),
+        };
+
+    let entry_dir = out_dir.join("entry");
+    let _ = std::fs::remove_dir_all(&entry_dir); // clear any stale pages
+    std::fs::create_dir_all(&entry_dir)?;
+
+    let mut search = String::from("[\n");
+    let mut first_search = true;
+    let mut rows: Vec<HomeRow> = Vec::new();
+    let (mut n, mut high, mut med, mut low, mut official) = (0usize, 0, 0, 0, 0);
+    let mut lemma_total = 0usize;
+
+    let mut id = 0usize;
+    for set in sets {
+        let members = set.members.len();
+        let g = crate::corpus::generate_set(set, &cfg, true);
+        let form = g.form().to_string();
+        if form.is_empty() {
+            continue;
+        }
+        id += 1;
+        n += 1;
+        lemma_total += members;
+        match g.confidence {
+            Confidence::High => high += 1,
+            Confidence::Medium => med += 1,
+            Confidence::Low => low += 1,
+        }
+        let in_official =
+            official_forms.contains(&crate::orthography::to_standard(&form.to_lowercase()));
+        if in_official {
+            official += 1;
+        }
+        let status = if in_official {
+            MatchStatus::OfficialMatch
+        } else {
+            MatchStatus::NoOfficialEntry
+        };
+
+        let html = corpus_entry_page(id, &g, status);
+        std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
+
+        if !first_search {
+            search.push_str(",\n");
+        }
+        first_search = false;
+        let _ = write!(
+            search,
+            "[{},{},{},{},{},{},{:.2}]",
+            id,
+            json_str(&form),
+            json_str(&truncate(&g.set.gloss, 70)),
+            json_str(g.set.pos.code()),
+            json_str(if in_official { "O" } else { "N" }),
+            json_str(conf_letter(g.confidence)),
+            g.score,
+        );
+        rows.push(HomeRow {
+            // sort the home list by coverage (n_langs) so the best-attested show first
+            freq: g.n_langs as f32 + g.n_branches as f32 / 10.0,
+            id,
+            form,
+            gloss: g.set.gloss.clone(),
+            pos: g.set.pos.code().to_string(),
+            status,
+            conf: g.confidence,
+            score: g.score,
+        });
+    }
+    search.push_str("\n]\n");
+
+    std::fs::write(out_dir.join("search.json"), search)?;
+    std::fs::write(out_dir.join("wiktionary.css"), css())?;
+    std::fs::write(out_dir.join(".nojekyll"), "")?;
+
+    rows.sort_by(|a, b| b.freq.total_cmp(&a.freq));
+    let home = corpus_home(n, lemma_total, high, med, low, official, &rows);
+    std::fs::write(out_dir.join("index.html"), home)?;
+    std::fs::write(
+        out_dir.join("about.html"),
+        corpus_about(n, lemma_total, official),
+    )?;
+
+    let panics = INFLECTION_PANICS.load(std::sync::atomic::Ordering::Relaxed);
+    println!(
+        "wrote {n} cognate-word pages ({high} high / {med} medium / {low} low confidence; {official} match an official ISV form){}",
+        if panics > 0 { format!("; {panics} inflection cells blank") } else { String::new() }
+    );
+    Ok(())
+}
+
+fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchStatus) -> String {
+    let top = g.candidates.first().unwrap();
+    let pos_code = g.set.pos.code();
+    let coverage = format!(
+        "<span class='reliability {}'>uvěrjenost: {}</span> <span class='muted'>({} językov, {} větvi)</span>",
+        conf_class(g.confidence),
+        g.confidence.label(),
+        g.n_langs,
+        g.n_branches
+    );
+    let headline = format!(
+        "<div class='headword-block'>
+           <div class='headmeta'>
+             <span class='badge pos'>{}</span>
+             <span class='pill {}'>{}</span>
+             {coverage}
+             {}
+           </div>
+           <p class='def'><b>Anglijski smysl:</b> {}</p>
+         </div>",
+        esc(&pos_heading(g.set.pos.code())),
+        source_class(top.source),
+        esc(top.source.label()),
+        status_pill(status),
+        esc(&g.set.gloss),
+    );
+
+    let banner = format!(
+        "<div class='banner {}'><b>Podpŕto {} językami v {} slovjanskyh větvah.</b> {}</div>",
+        match g.confidence {
+            Confidence::High => "ok",
+            Confidence::Medium => "warn",
+            Confidence::Low => "info",
+        },
+        g.n_langs,
+        g.n_branches,
+        match status {
+            MatchStatus::OfficialMatch =>
+                "Toj forma takože postoji v oficialnom medžuslovjanskom slovniku.",
+            _ => "Forma je generovana iz cognatov; ne v oficialnom slovniku.",
+        }
+    );
+
+    let etymology = format!(
+        "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>{}</a>. Wiktionary povęzuje vse niže naslědniky s tojoju rekonstrukcijeju.</p>
+         <p class='muted'>Praslovjansko pravilo izvodi formų s pravilnymi znakami (ě, ć/đ, å, ȯ, y); medžuvětvovy konsensus daje alternativų.</p>",
+        esc(g.set.proto.trim_start_matches('*')),
+        esc(&g.set.proto),
+    );
+
+    let inflection = inflection_table(&top.form, pos_code);
+    let cognates = cognate_block(g);
+    let alternatives = alternatives_block(&g.candidates);
+    let trace = trace_block(top);
+
+    let body = format!(
+        "<article class='entry'>
+           <h1 class='page-title firstHeading'>{}</h1>
+           {banner}
+           {headline}
+           <details class='sec' open><summary>Cognaty — slovjanske slova toj korene ({} językov)</summary>{cognates}</details>
+           <details class='sec' open><summary>Etimologija (praslovjanska rekonstrukcija)</summary>{etymology}</details>
+           <details class='sec' open><summary>Prěgibanje</summary>{inflection}</details>
+           <details class='sec'><summary>Alternativne kandidaty</summary>{alternatives}</details>
+           <details class='sec'><summary>Sled pravil</summary>{trace}</details>
+           <p class='foot'>Mašinno generovana rekonstrukcija iz cognatov (Wiktionary, CC BY-SA). Ne oficialny standard.</p>
+         </article>",
+        esc(&top.form),
+        g.n_langs,
+    );
+    let _ = id;
+    page(&format!("{} — medžuslovjansky", top.form), &body, 1)
+}
+
+/// The cognate set: every attesting Slavic lemma, grouped by branch.
+fn cognate_block(g: &crate::corpus::GeneratedWord) -> String {
+    let mut s = String::from("<div class='branch-grid'>");
+    for branch in Branch::ALL {
+        let items: Vec<&crate::dump::LemmaEntry> = g
+            .set
+            .members
+            .iter()
+            .filter(|m| crate::corpus::branch_of(&m.lang) == Some(branch))
+            .collect();
+        if items.is_empty() {
+            continue;
+        }
+        let _ = write!(
+            s,
+            "<div class='branch-box'><h4>{}</h4><table class='wikitable compact-table'><tbody>",
+            esc(branch.label())
+        );
+        for m in items {
+            let _ = write!(
+                s,
+                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a></td><td class='muted'>{}</td></tr>",
+                esc(&crate::lang::lang_name(&m.lang)),
+                esc(&m.word.replace(' ', "_")),
+                esc(&m.lang),
+                esc(&m.word),
+                esc(&truncate(&m.gloss, 32))
+            );
+        }
+        s.push_str("</tbody></table></div>");
+    }
+    s.push_str("</div>");
+    s
+}
+
+#[allow(clippy::too_many_arguments)]
+fn corpus_home(
+    n: usize,
+    lemma_total: usize,
+    high: usize,
+    med: usize,
+    low: usize,
+    official: usize,
+    rows: &[HomeRow],
+) -> String {
+    let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Smysl</th><th>Sila dogadki</th><th>Cognaty</th></tr></thead><tbody>");
+    for r in rows.iter().take(400) {
+        let langs = (r.freq as usize).max(1);
+        let _ = write!(
+            list,
+            "<tr><td><a href='entry/{}.html'><b>{}</b></a></td><td>{}</td><td>{}</td><td>{}</td><td class='muted'>{}</td></tr>",
+            r.id,
+            esc(&r.form),
+            esc(&r.pos),
+            esc(&truncate(&r.gloss, 50)),
+            strength_cell(r.conf, r.score),
+            langs
+        );
+    }
+    list.push_str("</tbody></table>");
+
+    let body = format!(
+        "<section class='home-heading'>
+           <h1 class='firstHeading'>Medžuslovjansky generator</h1>
+           <p class='muted'>Slovnik medžuslovjanskyh slov generovany iz <b>vsěh</b> naslědovanyh slovjanskyh lemm v Wiktionary — grupovanyh po praslovjanskom korene. Čim viče językov potvŕđaje korenj, tym veća uvěrjenost.</p>
+           <div class='searchbox'><input id='q' type='search' placeholder='Iskaj po slově ili anglijskom smyslu…' autocomplete='off'><div id='results' class='results'></div></div>
+         </section>
+         <section class='wiki-layout'>
+           <article class='wiki-main-list'>
+             <h2>Najbolje potvŕđene slova</h2>
+             <p class='muted'>Sortovano po čislu językov. Pokazano 400 od <b>{total}</b> slov; iskaj gore za vse.</p>
+             {list}
+           </article>
+           <aside class='wiki-sidebar'>
+             <div class='portal-box'><h3>Slučajno slovo</h3><div id='spotlight'><p class='muted'>Nakladajě sę…</p></div><button id='randbtn' type='button'>Drugo slovo</button></div>
+             <div class='portal-box stats-portal'><h3>Slovnik</h3>
+               <table class='wikitable compact-table'>
+                 <tr><th>Slov (cognatnyh grup)</th><td>{total}</td></tr>
+                 <tr><th>Slovjanskyh lemm</th><td>{lemmas}</td></tr>
+                 <tr><th>Visoka uvěrjenost</th><td>{high}</td></tr>
+                 <tr><th>Srědnja</th><td>{med}</td></tr>
+                 <tr><th>Nizka</th><td>{low}</td></tr>
+                 <tr><th>V oficialnom slovniku</th><td>{official}</td></tr>
+               </table>
+             </div>
+             <div class='portal-box'><h3>Kako radi</h3><ul class='compact-list'>
+               <li>Vse slovjanske lemmy iz Wiktionary, grupovane po praslovjanskom korene.</li>
+               <li>Praslovjansko pravilo daje formų; konsensus daje alternativų.</li>
+               <li>Uvěrjenost = čislo językov i větvej.</li>
+               <li><a href='about.html'>O metodě →</a></li>
+             </ul></div>
+           </aside>
+         </section>
+         <script>{js}</script>",
+        total = compact(n),
+        lemmas = compact(lemma_total),
+        high = compact(high),
+        med = compact(med),
+        low = compact(low),
+        official = compact(official),
+        list = list,
+        js = SEARCH_JS,
+    );
+    page("Medžuslovjansky generator", &body, 0)
+}
+
+fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
+    let body = format!(
+        "<article class='entry'>
+           <h1 class='firstHeading'>O metodě</h1>
+           <p class='muted'>Toj slovnik ne je izvedeny iz oficialnogo medžuslovjanskogo slovnika — on je generovany iz <b>vsěh {lemmas} naslědovanyh slovjanskyh lemm</b> v Wiktionary.</p>
+           <h2>Kako</h2>
+           <ol>
+             <li>Iz Wiktionary sȯbiramy vsakų slovjanskų lemmų (imennik, infinitiv glagola, positiv prilagatelnogo) s jeje praslovjanskym korenem.</li>
+             <li>Lemmy s tym že korenem tvorę <b>cognatnų grupų</b> — {sets} grup.</li>
+             <li>Praslovjansko pravilo izvodi medžuslovjanskų formų; medžuvětvovy konsensus daje alternativų.</li>
+             <li><b>Uvěrjenost raste s čislom językov i větvej</b> kotore potvŕđajų korenj: slovo v jednom języku = niska uvěrjenost, slovo v vsěh třěh větvah = visoka.</li>
+           </ol>
+           <h2>Validacija</h2>
+           <p>{official} generovanyh slov takože postoji v oficialnom medžuslovjanskom slovniku — nězavisna kontrola točnosti.</p>
+           <p class='muted'>Dokazy: Wiktionary (CC BY-SA). Praslovjanske rekonstrukcije i naslědniky iz Wiktionary etimologij. Kod: <a href='{repo}'>MIT</a>.</p>
+         </article>",
+        lemmas = compact(lemma_total),
+        sets = compact(n),
+        official = compact(official),
+        repo = REPO_URL,
+    );
+    page("O metodě — medžuslovjansky generator", &body, 0)
+}
+
 fn build_input(entry: &OfficialEntry) -> MeaningInput {
     let forms = crate::consensus::source_forms_from_cells(&entry.cells, |code, form| {
         format!(

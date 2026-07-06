@@ -17,6 +17,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod consensus;
+mod corpus;
 mod dump;
 mod eval;
 mod generator;
@@ -37,6 +38,7 @@ const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
 const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 const DEFAULT_OVERRIDES: &str = "data/overrides.toml";
 const DEFAULT_PROTO_CACHE: &str = "data/proto-slavic.cache.json";
+const DEFAULT_LEMMA_CACHE: &str = "data/slavic-lemmas.cache.json";
 
 #[derive(Parser)]
 #[command(
@@ -66,6 +68,14 @@ enum Command {
         #[arg(long, default_value = DEFAULT_DUMP)]
         dump: PathBuf,
         #[arg(long, default_value = DEFAULT_PROTO_CACHE)]
+        out: PathBuf,
+    },
+    /// Stream the dump once and cache every inherited Slavic lemma with its
+    /// Proto-Slavic ancestor (the corpus the cognate-set site is built from).
+    ExtractLemmas {
+        #[arg(long, default_value = DEFAULT_DUMP)]
+        dump: PathBuf,
+        #[arg(long, default_value = DEFAULT_LEMMA_CACHE)]
         out: PathBuf,
     },
     /// Explain the generator's output for one word or gloss (manual spot-check).
@@ -106,8 +116,19 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Export { official, out } => site::export(&official, &out),
+        Command::Export { official, out } => {
+            // The site is the cognate-set dictionary built from the Wiktionary
+            // Slavic-lemma corpus when it's available; otherwise fall back to the
+            // official-dictionary-seeded site.
+            let lemmas = std::path::Path::new(DEFAULT_LEMMA_CACHE);
+            if lemmas.exists() {
+                site::export_corpus(lemmas, &out)
+            } else {
+                site::export(&official, &out)
+            }
+        }
         Command::ExtractProto { dump, out } => dump::extract(&dump, &out),
+        Command::ExtractLemmas { dump, out } => dump::extract_lemmas(&dump, &out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),

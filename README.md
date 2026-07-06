@@ -9,8 +9,28 @@ its rule trace, the Slavic evidence by branch, a calibrated confidence, and whet
 matches the official dictionary.
 
 No SQLite / database and no server: the website is a **statically generated** set of
-HTML pages (one per meaning + client-side search) hostable on GitHub Pages. No hotlinked
-Wikimedia CSS/JS.
+HTML pages + client-side search, hostable on GitHub Pages. No hotlinked Wikimedia CSS/JS.
+
+## The site is corpus-driven, not dictionary-driven
+
+The website is **not** limited to the official dictionary's meanings. It is built from the
+**whole Wiktionary Slavic-lemma corpus**: every inherited Slavic lemma (noun, verb
+infinitive, positive adjective, …) is extracted with its Proto-Slavic ancestor, and
+lemmas sharing an ancestor form a **cognate set**. Each set becomes one Interslavic word
+— the Proto-Slavic rule engine supplies the form from the *known* reconstruction, the
+modern reflexes give the consensus surface — and **confidence scales with how many
+languages and branches attest it**: a root seen in one language is a low-confidence
+guess; one spread across all three branches is high-confidence.
+
+- `cargo run -- extract-lemmas` — stream the dump once → `data/slavic-lemmas.cache.json`
+  (25k lemmas, grouped into ~8.6k cognate sets across 15 Slavic lects incl. OCS).
+- `cargo run -- export` — generate the cognate-set site (falls back to the
+  dictionary-seeded site if the lemma cache is absent).
+- Independent validation: **~3.2k generated words already exist as official Interslavic
+  lemmas**, with no leakage from the dictionary into the generation.
+
+The **benchmark below** still measures generation accuracy against the official dictionary
+(a separate, leakage-free evaluation of the engine).
 
 ## Core principle
 

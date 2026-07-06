@@ -9,6 +9,10 @@ OUT ?= target/eval
 extract-proto:
 	cargo run --release -- extract-proto --dump "$(DUMP)"
 
+# One-time: stream the dump into the Slavic-lemma corpus (drives the cognate-set site).
+extract-lemmas:
+	cargo run --release -- extract-lemmas --dump "$(DUMP)"
+
 # Reproducible accuracy benchmark against the official Interslavic dictionary.
 eval:
 	cargo run --release -- evaluate --official "$(OFFICIAL)" --out "$(OUT)"

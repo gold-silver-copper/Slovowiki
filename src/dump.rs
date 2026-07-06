@@ -41,6 +41,187 @@ pub struct ProtoCache {
 /// parsing.
 const MARKER: &str = "\"lang_code\": \"sla-pro\"";
 
+/// The modern (and near-modern) Slavic languages we collect lemmas for.
+pub const SLAVIC_LANGS: &[&str] = &[
+    "ru", "uk", "be", "pl", "cs", "sk", "sl", "hr", "sr", "bg", "mk", "bs", "cu", "csb", "szl",
+    "dsb", "hsb", "rue",
+];
+
+/// One modern-Slavic dictionary lemma, tagged with its Proto-Slavic ancestor so
+/// lemmas sharing an ancestor form a cognate set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LemmaEntry {
+    pub lang: String,
+    pub word: String,
+    pub pos: String,
+    pub gloss: String,
+    /// Etymological group key: the Proto-Slavic reconstruction (`*orvьnъ`).
+    pub proto: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LemmaCorpus {
+    pub source: String,
+    pub entry_count: usize,
+    pub entries: Vec<LemmaEntry>,
+}
+
+impl LemmaCorpus {
+    pub fn load(path: &Path) -> Result<Self> {
+        use std::io::Read;
+        let mut json = String::new();
+        File::open(path)
+            .with_context(|| format!("open lemma corpus {}", path.display()))?
+            .read_to_string(&mut json)?;
+        serde_json::from_str(&json).context("parse lemma corpus")
+    }
+}
+
+/// Stream the dump once and collect every inherited Slavic lemma that Wiktionary
+/// links to a Proto-Slavic ancestor. Lemmas grouped by that ancestor become the
+/// cognate sets the generator turns into Interslavic words.
+pub fn extract_lemmas(dump: &Path, out: &Path) -> Result<()> {
+    if !dump.exists() {
+        anyhow::bail!("dump not found: {}", dump.display());
+    }
+    let file = File::open(dump).with_context(|| format!("open {}", dump.display()))?;
+    let reader = BufReader::with_capacity(8 * 1024 * 1024, file);
+
+    let mut entries: Vec<LemmaEntry> = Vec::new();
+    let mut line_count: u64 = 0;
+    for line in reader.lines() {
+        let line = line?;
+        line_count += 1;
+        // Only inherited lemmas mention their Proto-Slavic ancestor.
+        if !line.contains("sla-pro") {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(entry) = lemma_from_value(&value) {
+            entries.push(entry);
+            if entries.len() % 5000 == 0 {
+                eprintln!(
+                    "  collected {} Slavic lemmas after {} lines",
+                    entries.len(),
+                    line_count
+                );
+            }
+        }
+    }
+
+    let corpus = LemmaCorpus {
+        source: dump.display().to_string(),
+        entry_count: entries.len(),
+        entries,
+    };
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = out.with_extension("json.tmp");
+    let mut f = File::create(&tmp)?;
+    serde_json::to_writer(&mut f, &corpus)?;
+    f.flush()?;
+    std::fs::rename(&tmp, out)?;
+    println!(
+        "wrote {} ({} Slavic lemmas from {} lines)",
+        out.display(),
+        corpus.entry_count,
+        line_count
+    );
+    Ok(())
+}
+
+fn lemma_from_value(value: &Value) -> Option<LemmaEntry> {
+    let lang = value.get("lang_code").and_then(Value::as_str)?;
+    if !SLAVIC_LANGS.contains(&lang) {
+        return None;
+    }
+    let word = value
+        .get("word")
+        .and_then(Value::as_str)?
+        .trim()
+        .to_string();
+    // Lemmas only: single token, not a reconstruction, not a phrase.
+    if word.is_empty() || word.contains(' ') || word.starts_with('*') || word.starts_with('-') {
+        return None;
+    }
+    let pos = Pos::parse(value.get("pos").and_then(Value::as_str).unwrap_or("")).code();
+    let proto = proto_ancestor(value)?;
+    let gloss = lemma_gloss(value)?;
+    Some(LemmaEntry {
+        lang: lang.to_string(),
+        word,
+        pos: pos.to_string(),
+        gloss,
+        proto,
+    })
+}
+
+/// The Proto-Slavic ancestor from an `inh`/`der` etymology template, normalized
+/// to a bare reconstruction (`*orvьnъ`).
+fn proto_ancestor(value: &Value) -> Option<String> {
+    let templates = value.get("etymology_templates").and_then(Value::as_array)?;
+    for t in templates {
+        let name = t.get("name").and_then(Value::as_str).unwrap_or("");
+        if !matches!(
+            name,
+            "inh" | "inh+" | "inherited" | "der" | "der+" | "derived"
+        ) {
+            continue;
+        }
+        let args = t.get("args")?;
+        if args.get("2").and_then(Value::as_str) != Some("sla-pro") {
+            continue;
+        }
+        let form = args.get("3").and_then(Value::as_str)?.trim();
+        // Wiktextract sometimes carries `<id:...>` qualifiers; drop them.
+        let form = form.split('<').next().unwrap_or(form).trim();
+        if form.is_empty() || form == "*" {
+            continue;
+        }
+        let form = form.strip_prefix('*').unwrap_or(form);
+        if form.is_empty() {
+            continue;
+        }
+        return Some(format!("*{form}"));
+    }
+    None
+}
+
+/// First real (non-form-of) English gloss.
+fn lemma_gloss(value: &Value) -> Option<String> {
+    let senses = value.get("senses").and_then(Value::as_array)?;
+    for sense in senses {
+        if sense.get("form_of").is_some() {
+            continue;
+        }
+        let is_form = sense
+            .get("tags")
+            .and_then(Value::as_array)
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(Value::as_str)
+                    .any(|t| t == "form-of" || t == "inflection-of")
+            })
+            .unwrap_or(false);
+        if is_form {
+            continue;
+        }
+        if let Some(gs) = sense.get("glosses").and_then(Value::as_array) {
+            if let Some(g) = gs.iter().filter_map(Value::as_str).next() {
+                let g = g.trim();
+                if !g.is_empty() {
+                    return Some(g.chars().take(80).collect());
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn extract(dump: &Path, out: &Path) -> Result<()> {
     if !dump.exists() {
         anyhow::bail!("dump not found: {}", dump.display());
