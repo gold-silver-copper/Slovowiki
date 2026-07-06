@@ -264,18 +264,25 @@ let IDX=null;
 async function ensure(){ if(IDX)return IDX; const r=await fetch('search.json'); IDX=await r.json(); return IDX; }
 const q=document.getElementById('q'), out=document.getElementById('results');
 let t=null;
-q.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(run,120); });
+q.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ run(); sync(); },120); });
+function sync(){ const v=q.value.trim(); history.replaceState(null,'', v?('?q='+encodeURIComponent(v)):location.pathname); }
 async function run(){
-  const s=q.value.trim().toLowerCase(); if(!s){out.innerHTML='';return;}
+  let s=q.value.trim().toLowerCase(); if(!s){out.innerHTML='';return;}
+  // English verbs are cited without the infinitive marker ("eat", not "to eat").
+  const s2=s.replace(/^to\s+/,'');
   const idx=await ensure();
   const hits=[];
   for(const e of idx){ const f=e[1].toLowerCase(), g=e[2].toLowerCase();
-    let score=0; if(f===s)score=100; else if(f.startsWith(s))score=60; else if(f.includes(s))score=40;
-    else if(g.split(/[,;] /).some(x=>x.trim()===s))score=50; else if(g.includes(s))score=20;
-    if(score>0)hits.push([score,e]); if(hits.length>400)break; }
+    const gs=g.split(/[,;]\s*/).map(x=>x.trim());
+    let score=0;
+    if(f===s||f===s2)score=100; else if(f.startsWith(s2))score=60; else if(f.includes(s2))score=40;
+    else if(gs.some(x=>x===s||x===s2))score=55; else if(g.includes(s2))score=20;
+    if(score>0)hits.push([score,e]); if(hits.length>600)break; }
   hits.sort((a,b)=>b[0]-a[0]);
   out.innerHTML=hits.slice(0,60).map(([_,e])=>`<a class='hit' href='entry/${e[0]}.html'><b>${e[1]}</b> <span class='hp'>${e[3]}</span> <span class='hg'>${e[2]}</span></a>`).join('')||"<div class='muted'>Ničto ne najdeno.</div>";
 }
+// Pre-fill and run from a ?q= URL so shared links (…/?q=to+eat) work.
+(function(){ const p=new URLSearchParams(location.search).get('q'); if(p){ q.value=p; run(); } })();
 "#;
 
 // ---------------------------------------------------------------------------
