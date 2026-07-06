@@ -658,11 +658,21 @@ fn nasal_from_polish(word: &str, pl: &str) -> Option<String> {
     }
     let pl_slots = vowel_slots(pl);
     let nasal = pl_slots.iter().find(|(_, v, _)| *v == 'ę' || *v == 'ǫ')?;
-    let target = if nasal.1 == 'ę' { 'ę' } else { 'ų' };
     let word_slots = vowel_slots(word);
     let slot = word_slots
         .iter()
         .min_by_key(|(c, _, _)| (*c as isize - nasal.0 as isize).unsigned_abs())?;
+    // Polish ą (→ǫ) is reliably the BACK nasal ų. Polish ę, however, descends from
+    // *ę AND *ǫ (ręka<*rǫka, gęś<*gǫsь), so its quality is ambiguous — decide
+    // front/back from the representative's own reflex vowel at that slot: a back
+    // reflex (u/o/…) means the ISV nasal is back (ų), else front (ę) (B6).
+    let target = if nasal.1 == 'ǫ' {
+        'ų'
+    } else if matches!(slot.1, 'u' | 'o' | 'ų' | 'ǫ' | 'å' | 'ȯ' | 'y') {
+        'ų'
+    } else {
+        'ę'
+    };
     let mut chars: Vec<char> = word.chars().collect();
     if slot.2 < chars.len() {
         chars[slot.2] = target;

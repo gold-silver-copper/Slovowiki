@@ -1,6 +1,8 @@
 # Interslavic Wiktionary Lab
 
-**Live site: <https://grift.rs/interslavic-wiktionary-lab/>** (generated statically, deployed by GitHub Actions)
+The website is generated **locally** with `cargo run --release -- export --out site`
+(then open `site/index.html`, or serve it with any static server). It is not
+published to GitHub Pages.
 
 An **evidence-based Interslavic (Medžuslovjansky) candidate-generation engine** with a
 reproducible accuracy benchmark against the official Interslavic dictionary, plus a
@@ -56,11 +58,16 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **36.40%** | +9.02 pp |
-| normalized top-1 | 34.96% | **43.65%** | +8.69 pp |
-| normalized top-3 | 42.89% | **54.42%** | +11.5 pp |
+| exact top-1 | 27.38% | **36.61%** | +9.23 pp |
+| normalized top-1 | 34.96% | **44.04%** | +9.08 pp |
+| normalized top-3 | 42.89% | **54.5%** | +11.6 pp |
 | normalized top-5 | — | **57.0%** | — |
 | mean normalized edit distance | 0.253 | **0.231** | −0.022 |
+
+The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
+(`cargo run -- corpus-eval`): **55.3% exact / 59.4% normalized** on the ~6.9k entries
+where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
+headline because it only scores words the site actually derives from a known ancestor.
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
 ~38% *wrong-cluster* (the official root is in the evidence but a different one

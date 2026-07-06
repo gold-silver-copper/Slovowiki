@@ -23,6 +23,10 @@ proto-eval:
 audit:
 	cargo run --release -- audit --out "$(OUT)"
 
+# The site path (corpus::generate_set) accuracy vs the official dictionary.
+corpus-eval:
+	cargo run --release -- corpus-eval --out "$(OUT)"
+
 # Generate the static website (no server, GitHub Pages hostable).
 export:
 	cargo run --release -- export --out "$(SITE)"

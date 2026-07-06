@@ -136,7 +136,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 7179,"obliged, obligated, bound to, due",adj,dȯlžen,dolžen,dolženy
 36356,domain,noun,domen,domen,doměna
 423,"quite, rather, fairly, enough",adv,dosť,dost,dosta
-17334,access,noun,dostųp,dostup,dostęp
 6045,"availability, accessibility",noun,dostųpnosť,dostupnost,dostopnosti
 25345,enough,adv,dosyta,dosyta,dosta
 35839,preciousness,noun,drågocěnnosť,dragocennost,dragocjenosť
@@ -203,7 +202,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 37102,gymnast,noun,gimnast,gimnast,gimnosť
 35155,Glagolitic alphabet,noun,glagolica,glagolica,glagoljica
 7571,depth,noun,glųbina,glubina,globina
-19708,deeply,adv,glųboko,gluboko,glęboko
 25661,become stupid,verb,glupěti,glupeti,glupjeti
 1815,"drive, chase",verb,gnati,gnati,goniti
 1127,"anger, fury, wrath",noun,gněv,gnev,gnjev
@@ -231,7 +229,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 17445,"chest, breasts",noun,grųď,grud,grudi
 37048,rodent,noun,gryzun,gryzun,gryzonj
 5281,rubber,noun,guma,guma,gumi
-14591,psaltery player,noun,gųslaŕ,guslar,gęslar
 7715,psaltery,noun,gųsli,gusli,gusle
 25894,density,noun,gųstota,gustota,gȯstota
 25896,thicket,noun,gųšća,gušča,gųšč
@@ -261,7 +258,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 31776,interlinguistics,noun,interlingvistika,interlingvistika,interlingvistike
 7947,so,adv,itak,itak,tako
 26167,"surplus, excess",noun,izbytȯk,izbytok,zbytek
-36226,traitor,noun,izdajnik,izdajnik,prědatel
+36226,traitor,noun,izdajnik,izdajnik,predatel
 26196,"surplus, excess",noun,izlišek,izlišek,izlišȯk
 1081,"change, exchange",verb,izměniti,izmeniti,izmijeniti
 5596,measure,verb,izměriti,izmeriti,izmjeriti
@@ -469,8 +466,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 27770,motto,noun,motto,motto,moto
 926,"possibly, perhaps, it is possible",adv,možno,možno,možna
 35051,marble,noun,mramor,mramor,marmor
-27824,martyr,noun,mųčenica,mučenica,męčenica
-27825,martyr,noun,mųčenik,mučenik,męčenik
 27835,"grow wise, become wiser",verb,mųdrěti,mudreti,mudriti
 37026,mule,noun,mul,mul,mula
 37071,Mur,noun,Mura,mura,mora
@@ -560,7 +555,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 9920,enchant,verb,očariti,očariti,očarovati
 20920,eyewitness,noun,očevidec,očevidec,očividec
 29065,"move away, pull away, remove, estrange, alienate",verb,oddaliti,oddaliti,udaljiti
-35533,"dedication, commitment",noun,oddanosť,oddanost,prědanosť
+35533,"dedication, commitment",noun,oddanosť,oddanost,predanosť
 18062,"devoted, faithful, committed",adj,oddany,oddany,odany
 29110,unstick,verb,odlěpiti,odlepiti,odlijepiti
 10377,excellently,adv,odlično,odlično,otlično
@@ -578,7 +573,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 32994,ocarina,noun,okarina,okarina,okraina
 32327,"surroundings, vicinity",noun,okolina,okolina,okolica
 18119,"chains, bonds, shackles, fetters",noun,okovy,okovy,okovi
-19997,"district, county",noun,okrųg,okrug,okręg
 36834,octave,noun,oktava,oktava,oktave
 37268,olympiad,noun,olimpiada,olimpiada,olimpijada
 29436,apply ointment,verb,omastiti,omastiti,umastiti
@@ -713,7 +707,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4079,practice,noun,praktika,praktika,praktyka
 35804,"forefather, progenitor",noun,praotec,praotec,praotac
 16812,"stay, reside, remain, linger, abide",verb,prěbyvati,prebyvati,prebivati
-36370,predicate (logic),noun,predikat,predikat,prědykat
+36370,predicate (logic),noun,predikat,predikat,predykat
 11254,preside,verb,prědsědati,predsedati,prědsjedati
 3127,"forecast, predict",verb,prědskazyvati,predskazyvati,prědskazavati
 29987,eve,noun,prědvečer,predvečer,prědvečerje
@@ -784,12 +778,10 @@ id,gloss,pos,official,baseline_pred,final_pred
 14958,backpack,noun,ranec,ranec,ranac
 16072,level,noun,rang,rang,ranga
 1383,early,adv,rano,rano,ran
-23623,racist,noun,rasist,rasist,råzist
-23622,racism,noun,rasizm,rasizm,råzizm
 1331,round,noun,raund,raund,runda
 23780,"steadily, evenly",adv,råvnoměrno,ravnomerno,ravnomjerno
 20669,equability,noun,råvnoměrnosť,ravnomernost,ravnomjernosť
-30145,undress,verb,råzděvati,razdevati,råzodijevati
+30145,undress,verb,råzděvati,razdevati,razodijevati
 2349,"anger, make angry",verb,råzgněvati,razgnevati,råzgnjeviti
 30203,#crack,verb,råzgryzati,razgryzati,råzgrizati
 30278,spill,verb,råzliti,razliti,råzlitje
@@ -801,7 +793,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 30326,"get soaked, go soggy",verb,råzmokati,razmokati,råzmakati
 5046,"contemplate, ponder, wonder, meditate",verb,råzmysliti,razmysliti,råzmisliti
 11834,difference,noun,råznica,raznica,rožnica
-23009,disarm,verb,råzorųžiti,razoružiti,råzoružati
+23009,disarm,verb,råzorųžiti,razoružiti,razoružati
 22188,ruins,noun,råzvaliny,razvaliny,råzvaline
 2101,"develop (tr.), evolve (tr.)",verb,råzvivati,razvivati,råzvijavati
 17030,regularization,noun,regularizacija,regularizacija,regularyzacija
@@ -817,7 +809,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 18647,castling (chess),noun,rokada,rokada,rošada
 149,rose,noun,roza,roza,ruža
 21531,branch (river),noun,rųkav,rukav,rakav
-16412,manuscript,noun,rųkopis,rukopis,rękopisa
+16412,manuscript,noun,rųkopis,rukopis,rųkopisa
 20694,ordination (priest),noun,rųkopoložeńje,rukopoloženje,posvaščenje
 36648,rune,noun,runa,runa,rune
 1269,Russian,noun,Rus,rus,ruski
@@ -998,7 +990,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 36594,"tribune, rostrum, stand, grandstand",noun,tribuna,tribuna,tribina
 18996,triple jump,noun,trojskok,trojskok,troskok
 5997,"sidewalk, trottoir, pavement (footway)",noun,trotuar,trotuar,trotoar
-37247,trumpeter,noun,trųbač,trubač,trębač
 34680,"#pall, grow dull, become blunt",verb,tųpěti,tupeti,tupiti
 22749,native,noun,tuzemec,tuzemec,tuzemac
 22042,"mourn, yearn, grieve",verb,tųžiti,tužiti,tožiti

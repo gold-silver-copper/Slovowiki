@@ -379,10 +379,13 @@ fn noun_lemma(word: &str) -> Option<(String, &'static str, &'static str)> {
 /// Normalize the common verbal/nominal prefixes to their Interslavic shape.
 /// Fires only word-initially and only when a plausible root follows.
 fn normalize_prefix(word: &str) -> Option<(String, &'static str, &'static str)> {
-    // *orz- : Russian raz-/ras-, Polish/Ukrainian roz-/ros- → ISV råz-.
+    // *orz- : Russian raz-/ras-, Polish/Ukrainian roz-/ros- → ISV råz-. Require a
+    // CONSONANT-initial stem after the prefix: a real prefixed verb is raz+CV…
+    // (rasprostirati), whereas a root that merely begins with ros/ras has a vowel
+    // there (rositi, rosa) — stripping it would wrongly yield råziti (B17).
     for pre in ["raz", "ras", "roz", "ros", "rȯz", "råz"] {
         if let Some(rest) = word.strip_prefix(pre) {
-            if rest.chars().count() >= 3 && rest.chars().next().map(is_letter).unwrap_or(false) {
+            if rest.chars().count() >= 3 && rest.chars().next().map(is_consonant).unwrap_or(false) {
                 if pre == "råz" {
                     return None;
                 }
@@ -390,9 +393,10 @@ fn normalize_prefix(word: &str) -> Option<(String, &'static str, &'static str)> 
             }
         }
     }
-    // *perd- : pred-/pred → prěd- (jat).
+    // *perd- : pred-/pred → prěd- (jat). Same consonant-initial-stem guard, so
+    // predator/predikat (Latin roots) are not mis-analyzed as prěd-.
     if let Some(rest) = word.strip_prefix("pred") {
-        if rest.chars().count() >= 3 {
+        if rest.chars().count() >= 3 && rest.chars().next().map(is_consonant).unwrap_or(false) {
             return Some((
                 format!("prěd{rest}"),
                 "prefix-perd",
@@ -401,6 +405,11 @@ fn normalize_prefix(word: &str) -> Option<(String, &'static str, &'static str)> 
         }
     }
     None
+}
+
+/// A consonant (not a vowel or semivowel start of a fresh syllable).
+fn is_consonant(c: char) -> bool {
+    is_letter(c) && !"aeiouyěęųǫåȯėAEIOUY".contains(c)
 }
 
 fn is_letter(c: char) -> bool {
@@ -420,6 +429,22 @@ fn stem_is_soft(stem: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn prefix_normalized_only_before_a_consonant_stem() {
+        // Real prefixed verbs normalize; roots that merely start ros-/pred- don't (B17).
+        assert!(super::normalize_prefix("rasprostirati")
+            .unwrap()
+            .0
+            .starts_with("råz"));
+        assert!(super::normalize_prefix("predstaviti")
+            .unwrap()
+            .0
+            .starts_with("prěd"));
+        assert!(super::normalize_prefix("rositi").is_none());
+        assert!(super::normalize_prefix("predator").is_none());
+        assert!(super::normalize_prefix("rosa").is_none());
+    }
+
     #[test]
     fn native_prefix_vowel_boundary_detected() {
         // au/eu across a native prefix boundary must be protected (B1).

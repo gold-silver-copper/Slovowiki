@@ -92,6 +92,14 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// Benchmark the SITE's generation path (corpus::generate_set) against the
+    /// official dictionary — the cognate-set path's own leakage-free accuracy.
+    CorpusEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Data-quality / ceiling audit: classify misses and cognate cohesion.
     Audit {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
@@ -131,6 +139,7 @@ fn main() -> Result<()> {
         Command::ExtractLemmas { dump, out } => dump::extract_lemmas(&dump, &out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
+        Command::CorpusEval { official, out } => eval::run_corpus_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Evaluate {
             official,

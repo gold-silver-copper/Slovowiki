@@ -171,6 +171,107 @@ fn branch_cov_of(input: &MeaningInput) -> usize {
     branches.len()
 }
 
+/// Benchmark the **site's** generation path (`corpus::generate_set`) against the
+/// official dictionary, leakage-free. For each scorable entry we build a cognate
+/// set from the modern cognates + the leakage-free Proto-Slavic link (or the
+/// internationalism flag) — exactly what the corpus site does — run
+/// `generate_set`, and score its headword. This gives the site path its own
+/// accuracy number, distinct from the consensus pipeline's headline.
+pub fn run_corpus_eval(official_path: &Path, _out_dir: &Path) -> Result<()> {
+    use crate::corpus::{self, CognateSet};
+    use crate::dump::LemmaEntry;
+    let entries = official::load(official_path)?;
+    let proto = load_proto_index();
+    if proto.is_none() {
+        println!("(no proto cache — inherited words can't be derived; run extract-proto)");
+    }
+    let cfg = ConsensusConfig::production();
+    let (mut n, mut exact, mut norm, mut inh, mut bor) = (0usize, 0usize, 0usize, 0usize, 0usize);
+
+    for entry in &entries {
+        let input = build_input(entry);
+        if input.forms.iter().filter(|f| f.modern).count() < 2 || entry.isv.trim().is_empty() {
+            continue;
+        }
+        if entry.isv.contains(' ') || entry.isv.contains('#') {
+            continue;
+        }
+        let borrowed = entry.genesis.trim() == "I";
+        // Leakage-free ancestor: the descendant/gloss link, never the isv form.
+        let proto_word = if borrowed {
+            String::new()
+        } else {
+            match proto
+                .as_ref()
+                .and_then(|idx| crate::proto_link::link(idx, &input, true))
+            {
+                Some(l) => format!("*{}", l.entry.word),
+                None => continue, // no ancestor and not international: site skips it
+            }
+        };
+        let members: Vec<LemmaEntry> = input
+            .forms
+            .iter()
+            .filter(|f| f.modern && f.primary)
+            .map(|f| LemmaEntry {
+                lang: f.lang_code.clone(),
+                word: f.norm.original.clone(),
+                pos: entry.pos.code().to_string(),
+                gloss: entry.english.clone(),
+                proto: proto_word.clone(),
+                etymon: if borrowed {
+                    "la loan".into()
+                } else {
+                    proto_word.clone()
+                },
+            })
+            .collect();
+        let set = CognateSet {
+            proto: if borrowed {
+                "bor:loan".into()
+            } else {
+                proto_word.clone()
+            },
+            etymon: proto_word.clone(),
+            borrowed,
+            pos: entry.pos,
+            gloss: entry.english.clone(),
+            members,
+        };
+        let g = corpus::generate_set(set, &cfg);
+        let form = g.form();
+        n += 1;
+        if borrowed {
+            bor += 1
+        } else {
+            inh += 1
+        }
+        if ortho::exact_match(form, &entry.isv) {
+            exact += 1;
+        }
+        if ortho::normalized_match(form, &entry.isv) {
+            norm += 1;
+        }
+    }
+
+    let pct = |a: usize| {
+        if n == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / n as f32
+        }
+    };
+    println!(
+        "Corpus site path (generate_set) vs official — {n} scorable entries ({inh} inherited + {bor} international):"
+    );
+    println!(
+        "  exact top-1 {:.2}%, normalized top-1 {:.2}%",
+        pct(exact),
+        pct(norm)
+    );
+    Ok(())
+}
+
 fn build_input(entry: &OfficialEntry) -> MeaningInput {
     let forms: Vec<SourceForm> = consensus::source_forms_from_cells(&entry.cells, |code, form| {
         format!(
