@@ -28,7 +28,7 @@ pub fn generate(
 
     if cfg.proto_derived_form {
         if let Some(index) = proto {
-            if let Some(l) = proto_link::link(index, input) {
+            if let Some(l) = proto_link::link(index, input, cfg.proto_prefix_stripping) {
                 // Feed the modern reflexes to the yer resolver so lexicalized
                 // weak-yer retentions (pьsati→pisati) are derived correctly rather
                 // than papered over downstream.
@@ -44,6 +44,11 @@ pub fn generate(
                     input.gender,
                     &reflexes,
                 );
+                // Prefix-stripped link: re-attach the Interslavic prefix onto the
+                // derived bare root (*prostirati → prostirati → råzprostirati).
+                if let (Some(pref), false) = (&l.prefix, pc.form.is_empty()) {
+                    pc.form = format!("{pref}{}", pc.form);
+                }
                 if !pc.form.is_empty() {
                     // §4.4: the regular derivation is authoritative for the *form*.
                     // A confidently-linked reconstruction therefore outranks the

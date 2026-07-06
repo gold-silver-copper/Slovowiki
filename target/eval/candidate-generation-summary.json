@@ -982,11 +982,94 @@
       "exact_top1": 0.36024540662765503,
       "mean_normalized_edit_distance": 0.23105911910533905,
       "n": 16300,
-      "name": "+synonym-alts (production)",
+      "name": "+synonym-alts",
       "normalized_top1": 0.43576687574386597,
       "normalized_top3": 0.5406134724617004,
       "normalized_top5": 0.5684662461280823,
       "skeleton_top1": 0.4392024576663971
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.42718446254730225,
+          "n": 103,
+          "normalized": 0.5048543810844421
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.20480599999427795,
+          "n": 4536,
+          "normalized": 0.24779541790485382
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.3195860683917999,
+          "n": 6668,
+          "normalized": 0.4053689241409302
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.5635890364646912,
+          "n": 4993,
+          "normalized": 0.6459042429924011
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 5873,
+          "normalized": 0.6907883286476135
+        },
+        "low": {
+          "n": 2290,
+          "normalized": 0.10960698872804642
+        },
+        "medium": {
+          "n": 8137,
+          "normalized": 0.3436155915260315
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.2976519465446472,
+          "n": 2896,
+          "normalized": 0.3933010995388031
+        },
+        "adv": {
+          "exact": 0.1948249638080597,
+          "n": 657,
+          "normalized": 0.2891933023929596
+        },
+        "noun": {
+          "exact": 0.4393685758113861,
+          "n": 8362,
+          "normalized": 0.5031092762947083
+        },
+        "num": {
+          "exact": 0.0982142835855484,
+          "n": 112,
+          "normalized": 0.2321428507566452
+        },
+        "pron": {
+          "exact": 0.39393940567970276,
+          "n": 99,
+          "normalized": 0.4040403962135315
+        },
+        "verb": {
+          "exact": 0.2884523272514343,
+          "n": 4174,
+          "normalized": 0.35984668135643005
+        }
+      },
+      "description": "Grow proto-link coverage: strip a shared prefix off the cognates, link the bare root, re-attach the Interslavic prefix (råzprostirati from *prostirati).",
+      "exact_top1": 0.36306747794151306,
+      "mean_normalized_edit_distance": 0.23103991150856018,
+      "n": 16300,
+      "name": "+prefix-strip (production)",
+      "normalized_top1": 0.43582820892333984,
+      "normalized_top3": 0.5425153374671936,
+      "normalized_top5": 0.5704294443130493,
+      "skeleton_top1": 0.43926379084587097
     }
   ]
 }

@@ -95,6 +95,9 @@ pub struct ConsensusConfig {
     /// Seed alternative candidates from secondary (non-primary) translations so
     /// the official lemma can appear in top-3/top-5. Never changes top-1.
     pub synonym_alternatives: bool,
+    /// Grow Proto-Slavic link coverage by stripping a shared prefix off the
+    /// cognates, linking the bare root, and re-attaching the Interslavic prefix.
+    pub proto_prefix_stripping: bool,
 }
 
 impl ConsensusConfig {
@@ -118,6 +121,7 @@ impl ConsensusConfig {
             internationalism_preference: false,
             adj_fleeting_drop: false,
             synonym_alternatives: false,
+            proto_prefix_stripping: false,
         }
     }
 
@@ -143,6 +147,7 @@ impl ConsensusConfig {
             internationalism_preference: true,
             adj_fleeting_drop: true,
             synonym_alternatives: true,
+            proto_prefix_stripping: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -167,6 +172,7 @@ impl ConsensusConfig {
             internationalism_preference: true,
             adj_fleeting_drop: true,
             synonym_alternatives: true,
+            proto_prefix_stripping: true,
         }
     }
 }

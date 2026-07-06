@@ -51,6 +51,8 @@ fn kept_ladder() -> Vec<Rung> {
     adjfleet.adj_fleeting_drop = true;
     let mut synalt = adjfleet;
     synalt.synonym_alternatives = true;
+    let mut prefixstrip = synalt;
+    prefixstrip.proto_prefix_stripping = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -64,7 +66,8 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+proto-derived", description: "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.", cfg: proto },
         Rung { name: "+intl-preference", description: "Prefer the internationalism cluster over native synonyms (ISV design criteria favor international roots for modern vocabulary): aeroplan over samolot.", cfg: intlpref },
         Rung { name: "+adj-fleeting", description: "Drop a South-Slavic adjective's fleeting vowel before -y, gated on East/West consonant adjacency (dobar→dobry, zelen stays).", cfg: adjfleet },
-        Rung { name: "+synonym-alts (production)", description: "Seed alternatives from secondary translations (below every primary candidate) so the official lemma surfaces in top-3/top-5 when it is a 2nd/3rd translation.", cfg: synalt },
+        Rung { name: "+synonym-alts", description: "Seed alternatives from secondary translations (below every primary candidate) so the official lemma surfaces in top-3/top-5 when it is a 2nd/3rd translation.", cfg: synalt },
+        Rung { name: "+prefix-strip (production)", description: "Grow proto-link coverage: strip a shared prefix off the cognates, link the bare root, re-attach the Interslavic prefix (råzprostirati from *prostirati).", cfg: prefixstrip },
     ]
 }
 
@@ -414,7 +417,9 @@ pub fn run_proto_engine(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         }
         n += 1;
-        let Some(l) = crate::proto_link::link(&proto, &input) else {
+        // Direct links only: this benchmark isolates the derivation engine, so it
+        // derives the bare entry word without prefix re-attachment.
+        let Some(l) = crate::proto_link::link(&proto, &input, false) else {
             continue;
         };
         linked += 1;

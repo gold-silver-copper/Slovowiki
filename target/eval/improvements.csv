@@ -1246,7 +1246,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 17835,henceforward,adv,nadalje,nadale,nadalje
 17838,"don, put on",verb,naděti,nadjenuti,nadeti
 27952,"reliable, dependable, trustworthy",adj,nadežny,nadožnyj,nadežny
-19865,super-human,adj,nadljudsky,nadlidsky,nadljudsky
 35396,supranational,adj,nadnacionaľny,nadnacionalnyj,nadnacionalny
 27958,inscription,noun,nadpis,napis,nadpis
 2763,"oil, petroleum",noun,nafta,neft,nafta
@@ -1255,6 +1254,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4247,suddenly,adv,naglo,nagle,naglo
 2764,"abrupt, hasty",adj,nagly,nahly,nagly
 17850,accumulate,verb,nagromaditi,nahromaditi,nagromaditi
+17845,bend,verb,nagybati,nagibati,nagybati
 2055,find,verb,nahoditi,nalaziti,nahoditi
 15399,find,noun,nahodka,nalez,nahodka
 16721,naive,adj,naivny,naivnyj,naivny
@@ -1287,7 +1287,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 28225,persistent,adj,nastojčivy,uporan,nastojčivy
 28232,"tune, tune up",verb,nastrojiti,nastroiti,nastrojiti
 28233,dispose (someone’s attitude),verb,nastrojiti,nastroiti,nastrojiti
-28267,"pull tight, draw tight, stretch out",verb,natęgnųti,natahnouti,nategnuti
+28267,"pull tight, draw tight, stretch out",verb,natęgnųti,natahnouti,natęgnųti
 3409,natural,adj,naturaľny,prirodny,naturalny
 28336,pillow-case,noun,navlåčka,navoločka,navlačka
 28342,"incite, induce, put up to, bring about",verb,navoditi,navadeti,navoditi
@@ -1452,13 +1452,14 @@ id,gloss,pos,official,baseline_pred,final_pred
 2028,"discover, disclose, uncover, open, reveal, unveil, detect",verb,odkryvati,otkryvati,odkryvati
 36919,"cast, mold (in bronze etc.)",verb,odlivati,odlevati,odlivati
 4671,carry away,verb,odnositi,odnašeti,odnositi
+5662,fall off,verb,odpadati,otpadati,odpadati
 5663,fall off,verb,odpasti,otpasti,odpasti
 36727,sail away,verb,odplyvati,otplyvati,odplyvati
-22356,detachment (mil.),noun,odręd,odrad,odred
+22356,detachment (mil.),noun,odręd,odrad,odręd
 29249,serve out,verb,odslužiti,odsloužiti,odslužiti
-5075,"resign, step back, abdicate",verb,odstųpiti,odstoupiti,odstupiti
+5075,"resign, step back, abdicate",verb,odstųpiti,odstoupiti,odstųpiti
 10071,weaned,adj,odučeny,odučony,odučeny
-36387,untie (sth./sbd. from sth.),verb,odvęzati,odvazati,odvezati
+36387,untie (sth./sbd. from sth.),verb,odvęzati,odvazati,odvęzati
 5508,bring away,verb,odvoziti,odvažeti,odvoziti
 1042,"avert, divert, prevent, turn away (tr.)",verb,odvraćati,odvraceti,odvraćati
 22691,distract,verb,odvraćati,odvraceti,odvraćati
@@ -1607,7 +1608,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 37043,"foot, base, pedestal",noun,podnožje,podnožie,podnožje
 1718,"similar, alike, look-alike",adj,podobny,podobnyj,podobny
 10750,subscription,noun,podpiska,pretplata,podpiska
-22358,subordinate,verb,podręditi,podriditi,podrediti
+22358,subordinate,verb,podręditi,podriditi,podręditi
 35083,"detailed, elaborate",adj,podrobny,podrobnyj,podrobny
 23272,"submarine, underwater, subaquatic",adj,podvodny,podvodnyj,podvodny
 16308,underground,adj,podzemny,podzemnyj,podzemny
@@ -1670,7 +1671,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4314,perspiration,noun,potěńje,potenie,potenje
 29955,necessarily,adv,potrěbno,potrebnie,potrebno
 34956,"joggle, brandish",verb,potręsati,potrasati,potresati
-3901,"shake, quake, jolt, joggle, brandish",verb,potręsti,potrasti,potresti
+3901,"shake, quake, jolt, joggle, brandish",verb,potręsti,potrasti,potręsti
 18346,"confirmed, attested",adj,potvŕđeny,potvierdzony,potvrđeny
 3202,"turn, turning point, bend, twist",noun,povråt,povorot,povrat
 22695,"recurrent, relapsing",adj,povråtny,povrotny,povratny
@@ -1684,7 +1685,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 35066,recognition,noun,poznańje,opoznanie,poznanje
 20054,regret,verb,požaliti,požaleti,požaliti
 11128,fire,adj,požarny,požarnyj,požarny
-32984,harvest,verb,požęti,požati,požeti
+32984,harvest,verb,požęti,požati,požęti
 3147,sacrifice,verb,požrtvovati,požertvovati,požrtvovati
 2073,"doorstep, threshold",noun,pråg,porog,pråg
 3574,"dust, powder",noun,pråh,proh,prah
@@ -1719,11 +1720,11 @@ id,gloss,pos,official,baseline_pred,final_pred
 32190,fracture,noun,prělom,perelom,prelom
 6228,"move (transitive), relocate, shift, transfer",verb,prěměšćati,peremeščati,premeščati
 2976,premiere,noun,premiera,premera,premiera
-4250,rewind,verb,prěmotati,peremotati,premotati
+4250,rewind,verb,prěmotati,peremotati,prěmotati
 9633,"disregard, neglect",noun,prěnebrěžeńje,prenebreženie,prenebreženje
 5394,"bring over, transfer",verb,prěnesti,perenesti,prenesti
 4195,spend the night,verb,prěnoćevati,perenočevati,prenočevati
-5393,"bring over, transfer",verb,prěnositi,perenositi,prenositi
+5393,"bring over, transfer",verb,prěnositi,perenositi,prěnositi
 11322,"morph, transform",verb,prěobražati,preobražavati,preobražati
 20069,"transformation, metamorphosis",noun,prěobražeńje,preobraženie,preobraženje
 11325,rewritten,adj,prěpisany,perepisannyj,prepisany
@@ -1752,15 +1753,15 @@ id,gloss,pos,official,baseline_pred,final_pred
 32532,pretentious,adj,pretenciozny,pretencioznyj,pretenciozny
 35819,prevention,noun,prevencija,prevencja,prevencija
 35820,preventive,adj,preventivny,preventivnyj,preventivny
-3872,translate,verb,prěvesti,perevesti,prevesti
+3872,translate,verb,prěvesti,perevesti,prěvesti
 5396,transport,verb,prěvezti,perevezti,prěvezti
 20073,translation,noun,prěvod,perevod,prevod
 22254,transfer,noun,prěvod,perevod,prevod
-3055,translate,verb,prěvoditi,perevoditi,prevoditi
+3055,translate,verb,prěvoditi,perevoditi,prěvoditi
 5395,transport,verb,prěvoziti,perevoziti,prevoziti
 11396,"destiny, fate",noun,prěznačeńje,preznačenie,preznačenje
 20074,"disregard, disdain, contempt",noun,prězrěńje,prezrenie,prezrenje
-3604,live through,verb,prěžiti,perežiti,prežiti
+3604,live through,verb,prěžiti,perežiti,prěžiti
 4178,survive,verb,prěžiti,perežiti,prežiti
 4331,experience,verb,prěžiti,perežiti,prežiti
 4330,experience,verb,prěživati,pereživati,preživati
@@ -1790,7 +1791,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4298,press,verb,pritiskati,prytyskaty,pritiskati
 5863,"accustomed, trained",adj,priučeny,priučennyj,priučeny
 6293,private,adj,privatny,privatnyj,privatny
-21482,tie (to smth.),verb,privęzati,privazati,privezati
+21482,tie (to smth.),verb,privęzati,privazati,privęzati
 6099,"ghost, apparition, specter",noun,prividěńje,prividenie,prividenje
 22750,ground floor,noun,prizemje,prizemi,prizemje
 11524,acknowledgement,noun,priznańje,priznanie,priznanje
@@ -1875,7 +1876,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 30191,partition,verb,råzgråditi,razgoroditi,råzgraditi
 30197,warming-up,noun,råzgrěvańje,rozgrevanie,råzgrevanje
 30198,"warm up, heat up",verb,råzgrěvati,razogrevati,råzgrevati
-18600,"expense, expenditure",noun,råzhod,rashod,råzhod
 30210,"expenses, expenditure",adj,råzhodny,rashodnyj,råzhodny
 35358,"enrage, infuriate",verb,råzjariti,razariti,råzjariti
 18605,"brighten, lighten",verb,råzjasniti,rozjasniti,råzjasniti
@@ -1903,8 +1903,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 30280,flood,noun,råzliv,poplava,råzliv
 20108,separate,verb,råzlųčati,rozlučovati,råzlučati
 30290,"parting, separation",noun,råzlųčeńje,razlučenie,råzlučenje
+17,exchange,verb,råzměniti,razmenati,råzměniti
 23250,mixed up,adj,råzměšany,razmešannyj,råzmešany
-30320,thresh into pieces,verb,råzmlåtiti,razmolotiti,råzmlatiti
+30320,thresh into pieces,verb,råzmlåtiti,razmolotiti,råzmlåtiti
 30323,"reproduction, multiplication",noun,råzmnožeńje,razmnoženie,råzmnoženje
 23065,"defrost, thaw out",verb,råzmråziti,razmoroziti,råzmraziti
 21509,"heterogeneous, diverse",adj,råznorodny,raznorodnyj,råznorodny
@@ -1933,7 +1934,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 21141,"melt, liquify",verb,råzpustiti,rozpustiti,råzpustiti
 30426,overgrowth,noun,råzrastańje,rast,råzrastanje
 22362,"category, class",noun,råzręd,razrad,råzred
-30434,"cut up, slit, dissect, carve up",verb,råzrězati,rozrezati,råzrezati
+30434,"cut up, slit, dissect, carve up",verb,råzrězati,rozrezati,råzrězati
 14967,destruction,noun,råzrušeńje,razrušenie,råzrušenje
 35903,"calculate, compute",verb,råzsčityvati,računati,råzsčityvati
 6235,investigation,noun,råzslědovańje,rassledovanie,råzsledovanje
@@ -1943,7 +1944,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 11859,strewn across,adj,råzsypany,rassypannyj,råzsypany
 1149,scatter,verb,råzsypati,rozsypati,råzsypati
 11871,decypher,verb,råzšifrovati,rozšifrovati,råzšifrovati
-30522,"melt, thaw",verb,råztajati,rastajati,råztajati
 30530,"rub up, grind",verb,råztirati,roztirati,råztirati
 30537,put on weight,verb,råztȯlstěti,rastolsteti,råztolsteti
 817,"melt, dissolve",verb,råztopiti,roztopyty,råztopiti
@@ -1958,7 +1958,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4167,"sensible, reasonable",adj,råzumny,razumnyj,råzumny
 11915,intelligent,adj,råzumny,rozumny,råzumny
 6011,"consider, ponder, reflect",verb,råzvažiti,rozvažiti,råzvažiti
-22198,"untie, unbind, unlace",verb,råzvęzati,razvazati,råzvezati
+22198,"untie, unbind, unlace",verb,råzvęzati,razvazati,råzvęzati
 22552,watershed,noun,råzvoďje,rozvodi,råzvodje
 18631,"development, evolution",noun,råzvoj,rozvoj,råzvoj
 14832,"perverse, lecherous, lewd",adj,råzvråtny,perverzno,råzvratny
@@ -2473,14 +2473,14 @@ id,gloss,pos,official,baseline_pred,final_pred
 15139,benefit,noun,vygoda,koryst,vygoda
 19308,udder,noun,vymę,vyma,vymę
 409,"high, tall",adj,vysoky,vysokij,vysoky
-14030,"prohibition, ban",noun,zabråna,zaborona,zabrana
+14030,"prohibition, ban",noun,zabråna,zaborona,zabråna
 14040,"begin (tr.), start (tr.), embark",verb,začęti,začiti,začeti
 3958,"task, assignment, exercise",noun,zadańje,zadanie,zadanje
 3356,"satisfy, please",verb,zadovoliti,zadovoljiti,zadovoliti
 526,"satisfied, pleased",adj,zadovoljeny,zadovolony,zadovoljeny
 297,"arrest, detain",verb,zadŕžati,zaderžati,zadržati
-19353,"hold back, check",verb,zadŕžati,zaderžati,zadržati
-35630,retain,verb,zadŕžati,zaderžati,zadržati
+19353,"hold back, check",verb,zadŕžati,zaderžati,zadŕžati
+35630,retain,verb,zadŕžati,zaderžati,zadŕžati
 36514,"pause, stop",verb,zadŕžati,zaderžati,zadržati
 14068,"puzzling, mysterious",adj,zagadȯčny,zagadočnyj,zagadȯčny
 36048,conspirator,noun,zagovornik,zavjerenik,zagovornik
@@ -2489,8 +2489,8 @@ id,gloss,pos,official,baseline_pred,final_pred
 19363,"capture, rapture, takeover",noun,zahvat,zaplena,zahvat
 1803,hare,noun,zajęc,zajac,zajęc
 1741,together,adv,zajedno,zaodno,zajedno
-23715,cough,verb,zakašljati,zakašlati,zakašljati
-32007,"stab, thrust, slaughter",verb,zaklåti,zakoloti,zaklati
+23715,cough,verb,zakašljati,zakašlati,zakašĺjati
+32007,"stab, thrust, slaughter",verb,zaklåti,zakoloti,zaklåti
 31506,"incantation, spell",noun,zaklinańje,zaklinanie,zaklinanje
 5163,"conclude, infer",verb,zaključiti,zaklučiti,zaključiti
 20307,"sign (agreement), conclude (agreement)",verb,zaključiti,zaklučiti,zaključiti
@@ -2499,25 +2499,23 @@ id,gloss,pos,official,baseline_pred,final_pred
 14107,backstage,adj,zakulisny,zakulisnyj,zakulisny
 3810,replace,verb,zaměnjati,zamenjovati,zamenjati
 20832,lock,noun,zamȯk,zamek,zamȯk
-31526,overseas,adj,zamoŕsky,zamorskij,zamorsky
-2168,freeze,verb,zamråziti,zamoroziti,zamraziti
 4187,westwards,adv,zapadno,zapadne,zapadno
 842,western,adj,zapadny,zapadnyj,zapadny
 16476,inflammation (med.),noun,zapaljeńje,zapalenie,zapaljenje
-32371,"initiate, commence, kick off, originate, start up",verb,započęti,započati,započeti
+32371,"initiate, commence, kick off, originate, start up",verb,započęti,započati,započęti
 14163,infectious,adj,zarazny,zaraznyj,zarazny
 5841,"infection, contamination",noun,zaražeńje,zaraženie,zaraženje
 21678,"meeting, session",noun,zasědańje,zasedanie,zasedanje
 33686,"shelter, cover, shade, shield (from light etc.)",verb,zaslanjati,zasloniti,zaslanjati
 19415,sleepy,adj,zaspany,zaspannyj,zaspany
-21995,represent (act as a representative of),verb,zastųpiti,zastoupiti,zastupiti
+21995,represent (act as a representative of),verb,zastųpiti,zastoupiti,zastųpiti
 31881,"lull, standstill",noun,zatišje,zatiše,zatišje
-13062,"shake, quake, jolt",verb,zatręsti,zatrasti,zatresti
-19424,"make a knot, tie a knot",verb,zavęzati,zavazati,zavezati
+13062,"shake, quake, jolt",verb,zatręsti,zatrasti,zatręsti
+19424,"make a knot, tie a knot",verb,zavęzati,zavazati,zavęzati
 31587,enviable,adj,zavidny,zavidnyj,zavidny
 31592,curl,noun,zavitȯk,lokon,zavitok
 2355,conquer,verb,zavojevati,zavoevati,zavojevati
-19435,"conclude, end, finish, complete",verb,zavŕšiti,zaveršiti,završiti
+19435,"conclude, end, finish, complete",verb,zavŕšiti,zaveršiti,zavŕšiti
 576,health,noun,zdråvje,zdorove,zdravje
 2167,healthy,adj,zdråvy,zdorovyj,zdravy
 23475,"chaffinch, finch",noun,zęba,zięba,zęba
