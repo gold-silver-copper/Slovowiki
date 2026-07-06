@@ -53,6 +53,9 @@ pub struct MeaningInput {
     /// (`genesis = I`) — meaning-level metadata, used to prefer the international
     /// cluster. Not the answer form.
     pub is_intl_meaning: bool,
+    /// A reflexive verb (most cognates carry a reflexive marker). Interslavic
+    /// cites these as `<lemma> sę`, so the generator appends the particle.
+    pub reflexive: bool,
 }
 
 /// Toggles for each etymological repair, so the benchmark can attribute the
@@ -951,6 +954,69 @@ pub fn lemma_forms(forms: Vec<SourceForm>, pos: Pos) -> Vec<SourceForm> {
     }
 }
 
+/// Detect a reflexive verb and strip the reflexive marker off its cognates, so
+/// the consensus votes on the clean stem. Interslavic writes reflexives as
+/// `<lemma> sę`, added later (see the pipeline). Returns `(forms, reflexive)`.
+/// Only fires for verbs and only when ≥2 cognates (and at least half) carry a
+/// marker, so a stem that merely ends in `-sa` isn't misread as reflexive.
+pub fn strip_reflexive(mut forms: Vec<SourceForm>, pos: Pos) -> (Vec<SourceForm>, bool) {
+    if pos != Pos::Verb {
+        return (forms, false);
+    }
+    let primary: Vec<usize> = forms
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.modern && f.primary)
+        .map(|(i, _)| i)
+        .collect();
+    let marked = primary
+        .iter()
+        .filter(|&&i| reflexive_stem(&forms[i].norm.latin).is_some())
+        .count();
+    if marked < 2 || marked * 2 < primary.len() {
+        return (forms, false);
+    }
+    for f in &mut forms {
+        if let Some(stem) = reflexive_stem(&f.norm.latin) {
+            f.norm.latin = stem.clone();
+            f.norm.skeleton = crate::orthography::ascii_skeleton(&stem);
+        }
+    }
+    forms.retain(|f| !f.norm.skeleton.is_empty());
+    (forms, true)
+}
+
+/// The stem of a reflexive cognate form, or `None` if it carries no marker.
+fn reflexive_stem(latin: &str) -> Option<String> {
+    // Space-separated particle (West/South: się, se, sę, sobě).
+    for p in [" się", " sie", " sę", " se", " sobě", " sobe"] {
+        if let Some(h) = latin.strip_suffix(p) {
+            let h = h.trim_end();
+            if h.chars().count() >= 3 {
+                return Some(h.to_string());
+            }
+        }
+    }
+    // Glued East-Slavic reflexive infinitive: the reliable marker is the
+    // reflexive `-t(i)-sja`/`-t(i)-sa` (ru `-ться`→tsa, uk `-тися`→tysja) — the
+    // `-t-` distinguishes it from a stem that merely ends in `-sa`. Bare `-sa`
+    // and `-сь`→s are too ambiguous to strip.
+    for suf in ["tsja", "tsa", "tisja", "tisa", "tysja", "tysa", "sję", "sę"] {
+        if let Some(h) = latin.strip_suffix(suf) {
+            // Restore the stem-final -t- that the reflexive infinitive carries.
+            let stem = if suf.starts_with('t') {
+                format!("{h}t")
+            } else {
+                h.to_string()
+            };
+            if stem.chars().count() >= 4 {
+                return Some(stem);
+            }
+        }
+    }
+    None
+}
+
 /// Convenience: build [`SourceForm`]s for every modern Slavic language present in
 /// a cell map (used by the evaluator and site builder).
 pub fn source_forms_from_cells(
@@ -1001,4 +1067,19 @@ pub fn source_forms_from_cells(
         }
     }
     forms
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reflexive_marker_detection() {
+        // Reflexive infinitive -tsa / space particle → stem recovered.
+        assert_eq!(reflexive_stem("žalovatsa").as_deref(), Some("žalovat"));
+        assert_eq!(reflexive_stem("učiti sę").as_deref(), Some("učiti"));
+        // Bare -sa (no -t-) and short stems are NOT treated as reflexive.
+        assert!(reflexive_stem("kolbasa").is_none());
+        assert!(reflexive_stem("nesę").is_none());
+    }
 }

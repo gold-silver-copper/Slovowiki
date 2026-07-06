@@ -175,12 +175,14 @@ fn build_input(entry: &OfficialEntry) -> MeaningInput {
         )
     });
     let forms = consensus::lemma_forms(forms, entry.pos);
+    let (forms, reflexive) = consensus::strip_reflexive(forms, entry.pos);
     MeaningInput {
         pos: entry.pos,
         gender: entry.noun_traits.gender,
         gloss: entry.english.clone(),
         forms,
         is_intl_meaning: entry.genesis.trim() == "I",
+        reflexive,
     }
 }
 

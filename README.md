@@ -29,10 +29,10 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.38% | **36.42%** | +9.04 pp |
-| normalized top-1 | 34.96% | **43.67%** | +8.71 pp |
-| normalized top-3 | 42.89% | **54.44%** | +11.6 pp |
-| normalized top-5 | — | **57.1%** | — |
+| exact top-1 | 27.38% | **36.40%** | +9.02 pp |
+| normalized top-1 | 34.96% | **43.65%** | +8.69 pp |
+| normalized top-3 | 42.89% | **54.42%** | +11.5 pp |
+| normalized top-5 | — | **57.0%** | — |
 | mean normalized edit distance | 0.253 | **0.231** | −0.022 |
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:

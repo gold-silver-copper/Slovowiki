@@ -159,6 +159,16 @@ pub fn generate(
         }
     }
 
+    // Reflexive verbs are cited in Interslavic as `<lemma> sę` (§3). The stem was
+    // reconstructed from marker-stripped cognates; append the particle here.
+    if input.reflexive {
+        for c in &mut candidates {
+            if !c.form.is_empty() && !c.form.ends_with(" sę") {
+                c.form.push_str(" sę");
+            }
+        }
+    }
+
     dedupe(&mut candidates);
     candidates.sort_by(|a, b| {
         b.score

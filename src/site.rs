@@ -20,8 +20,33 @@ use interslavic::{
 use std::fmt::Write as _;
 use std::path::Path;
 
+/// Counts inflection-table panics swallowed by the quiet hook (see below).
+static INFLECTION_PANICS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The bundled `interslavic` inflection crate *panics* (rather than erroring) on
+/// stems it can't handle — reflexive `-sę` verbs and athematic `-ći` infinitives.
+/// We already recover each one with `catch_unwind` (the cell shows "—"), but the
+/// default panic hook still prints the message thousands of times. Install a hook
+/// that swallows panics originating inside that crate (counting them) and passes
+/// any real panic from our own code through to the default handler.
+fn install_quiet_inflection_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let from_inflector = info
+            .location()
+            .map(|l| l.file().contains("interslavic"))
+            .unwrap_or(false);
+        if from_inflector {
+            INFLECTION_PANICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+        default(info);
+    }));
+}
+
 /// Generate the whole static site under `out_dir`.
 pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
+    install_quiet_inflection_hook();
     let entries = official::load(official_path)?;
     let overrides = Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
     let cfg = ConsensusConfig::production();
@@ -164,6 +189,12 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         n_none,
         rate(n_match, with_official)
     );
+    let panics = INFLECTION_PANICS.load(std::sync::atomic::Ordering::Relaxed);
+    if panics > 0 {
+        println!(
+            "note: {panics} inflection cells left blank (stems the bundled inflector can't decline)"
+        );
+    }
     Ok(())
 }
 
@@ -176,12 +207,14 @@ fn build_input(entry: &OfficialEntry) -> MeaningInput {
         )
     });
     let forms = crate::consensus::lemma_forms(forms, entry.pos);
+    let (forms, reflexive) = crate::consensus::strip_reflexive(forms, entry.pos);
     MeaningInput {
         pos: entry.pos,
         gender: entry.noun_traits.gender,
         gloss: entry.english.clone(),
         forms,
         is_intl_meaning: entry.genesis.trim() == "I",
+        reflexive,
     }
 }
 
@@ -546,6 +579,8 @@ fn evidence_block(evidence: &[Evidence]) -> String {
 // ---------------------------------------------------------------------------
 
 fn inflection_table(word: &str, pos_code: &str) -> String {
+    // Decline the bare stem for reflexive verbs (the ` sę` particle is invariant).
+    let word = word.strip_suffix(" sę").unwrap_or(word);
     match pos_code {
         "noun" | "proper_noun" => noun_table(word),
         "adj" => adj_table(word),
