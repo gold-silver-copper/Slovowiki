@@ -1,12 +1,16 @@
 //! Reproducible benchmark of the candidate generator against the official
 //! Interslavic dictionary.
 //!
-//! For every benchmarkable official entry we hand the generator only the modern
-//! Slavic cognates (never the answer), ask it to reconstruct the Interslavic
-//! lemma, and compare against the official `isv`. We run an *ablation ladder* —
-//! baseline, then each linguistic rule switched on cumulatively — so the
-//! measured effect of every change is attributable. All metrics and the
-//! regression/improvement diffs are written under `target/eval/`.
+//! For every benchmarkable official entry we hand the generator the modern Slavic
+//! cognates plus the meaning-level metadata the official row carries — POS, gender,
+//! and the `genesis` internationalism flag — but **never the `isv` answer form**.
+//! (So the reconstruction is leakage-free w.r.t. the form; it does use official
+//! POS/gender/genesis, as a real generator would from a headword's part of speech.)
+//! We run an *ablation ladder* — baseline, then each linguistic rule switched on
+//! cumulatively — so the measured effect of every change is attributable. Rules
+//! are kept on the **primary metric (exact top-1)**; a kept rule may still nudge a
+//! secondary metric (e.g. `+nasals` is ~flat on exact, −0.1pp on normalized). All
+//! metrics and the regression/improvement diffs are written under `target/eval/`.
 
 use crate::consensus::{self, ConsensusConfig, MeaningInput, SourceForm};
 use crate::model::{Candidate, Confidence, Pos};
@@ -24,8 +28,9 @@ struct Rung {
     cfg: ConsensusConfig,
 }
 
-/// The cumulative ladder of *kept* rules — each one improved measured accuracy —
-/// ending exactly at [`ConsensusConfig::production`].
+/// The cumulative ladder of *kept* rules — each improved the primary metric
+/// (exact top-1) without regressing it — ending exactly at
+/// [`ConsensusConfig::production`] (enforced by a test).
 fn kept_ladder() -> Vec<Rung> {
     let base = ConsensusConfig::baseline();
     let mut branch = base;
@@ -1059,5 +1064,27 @@ fn csv_escape(s: &str) -> String {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
         s.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ladder_ends_at_production() {
+        // The Headline / CI floor reports runs.last(); it MUST be production().
+        assert_eq!(
+            kept_ladder().last().map(|r| r.cfg),
+            Some(ConsensusConfig::production())
+        );
+    }
+
+    #[test]
+    fn ladder_starts_at_baseline() {
+        assert_eq!(
+            kept_ladder().first().map(|r| r.cfg),
+            Some(ConsensusConfig::baseline())
+        );
     }
 }
