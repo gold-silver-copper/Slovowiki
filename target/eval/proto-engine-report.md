@@ -3,8 +3,8 @@
 Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive the form straight from the linked reconstruction and compare to the official lemma.
 
 - Benchmark entries with modern evidence: **16300**
-- Confidently linked to a Proto-Slavic entry: **2912** (17.9% coverage)
-- On the linked subset: **exact 43.99%**, **normalized 49.38%**
+- Confidently linked to a Proto-Slavic entry: **2913** (17.9% coverage)
+- On the linked subset: **exact 43.98%**, **normalized 49.36%**
 
 ## Proto-engine accuracy by POS (linked subset)
 
@@ -12,7 +12,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 |---|---:|---:|---:|
 | adj | 327 | 30.58% | 33.03% |
 | adv | 65 | 10.77% | 15.38% |
-| noun | 1650 | 50.55% | 58.30% |
+| noun | 1651 | 50.51% | 58.27% |
 | num | 16 | 18.75% | 25.00% |
 | pron | 40 | 75.00% | 77.50% |
 | verb | 814 | 37.71% | 39.68% |

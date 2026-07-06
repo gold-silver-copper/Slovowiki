@@ -11,7 +11,7 @@ its rule trace, the Slavic evidence by branch, a calibrated confidence, and whet
 matches the official dictionary.
 
 No SQLite / database and no server: the website is a **statically generated** set of
-HTML pages + client-side search, hostable on GitHub Pages. No hotlinked Wikimedia CSS/JS.
+HTML pages + client-side search, hostable on any static host. No hotlinked Wikimedia CSS/JS.
 
 ## The site is corpus-driven, not dictionary-driven
 
@@ -33,10 +33,14 @@ Two kinds of etymological group are collected:
 
 - `cargo run -- extract-lemmas` — stream the dump once → `data/slavic-lemmas.cache.json`
   (~47k lemmas: ~25k inherited + ~22k borrowings, across 15+ Slavic lects incl. OCS).
-- `cargo run -- export` — generate the cognate-set site (~24.5k words; falls back to the
+- `cargo run -- export` — generate the cognate-set site (~22.4k words; falls back to the
   dictionary-seeded site if the lemma cache is absent).
-- Independent validation: **~5.3k generated words already exist as official Interslavic
-  lemmas**, with no leakage from the dictionary into the generation.
+- Independent validation: **~5.2k generated words already exist as official Interslavic
+  lemmas** (of ~22.4k), with no leakage from the dictionary into the generation.
+- `cargo run -- corpus-eval` scores this site path against the dictionary directly:
+  **55.3% exact / 59.4% normalized** on the ~6.9k entries with a known ancestor.
+- `data/novel-words.tsv` — 2,066 high/medium-confidence words the engine derived that
+  are **not** in the official dictionary (candidate new vocabulary, with ancestors).
 
 The **benchmark below** still measures generation accuracy against the official dictionary
 (a separate, leakage-free evaluation of the engine).
@@ -70,25 +74,25 @@ where a Proto-Slavic ancestor or internationalism is known — higher than the p
 headline because it only scores words the site actually derives from a known ancestor.
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss:
-~38% *wrong-cluster* (the official root is in the evidence but a different one
-was chosen — mostly editorial synonym choices Interslavic makes), ~38%
-*right-cluster-wrong-form* (engine/reconstruction error), ~24% *root-absent*
+~44% *wrong-cluster* (the official root is in the evidence but a different one
+was chosen — mostly editorial synonym choices Interslavic makes), ~35%
+*right-cluster-wrong-form* (engine/reconstruction error), ~20% *root-absent*
 (the official root is not in any modern cognate — unfixable from evidence).
-84.6% of meanings split across ≥3 cognate clusters. This maps the ceiling for
+89.5% of meanings split across ≥3 cognate clusters. This maps the ceiling for
 future word-selection work.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
 (`cargo run --release -- proto-eval`): on the words it confidently links to a
-reconstruction it derives the official lemma with **43.25% exact / 48.04%
-normalized** accuracy (up from 38.6% before the V3 engine work).
+reconstruction it derives the official lemma with **43.98% exact / 49.36%
+normalized** accuracy.
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
 
 | confidence | n | normalized match |
 |---|---:|---:|
-| high | 4,601 | 67% |
-| medium | 9,410 | 35% |
-| low | 2,289 | 10% |
+| high | 6,826 | 64% |
+| medium | 7,248 | 35% |
+| low | 2,226 | 11% |
 
 Full metrics, POS-specific accuracy, branch-coverage analysis, regression/improvement
 lists and the remaining-error breakdown are regenerated into `target/eval/` (a committed
@@ -102,7 +106,8 @@ snapshot is under version control).
    CZ+SK / SL+HR+SR+BS / BG+MK, with population as a tie-break only.
 3. **POS lemma endings** (§3) — noun nom.sg, adjective `-y`/`-i`, verb infinitive `-ti`.
 4. **Internationalism table** (§5.2) — `-ism→-izm`, `-tion→-cija`, `-ic/-ical→-ičny`,
-   `-al→-alny`, `-ive→-ivny`, verbs→`-ovati`, plus `au→av`, `eu→ev`.
+   `-al→-alny`, `-ive→-ivny`, verbs→`-ovati`, plus `au→av`/`eu→ev`/`th→t` **gated to
+   recognized internationalisms** (so native `naučiti`/`sauna`/`snosny` are untouched).
 5. **Prefix normalization** — `roz-/ras-/raz-/ros- → råz-`, `pred- → prěd-`.
 6. **De-pleophony** (liquid metathesis) and **nasal recovery** (`ę/ų` from Polish).
 7. **g-preserving representative** — Interslavic keeps *g, so g-languages outrank the
@@ -117,8 +122,21 @@ snapshot is under version control).
    kept when the reflexes vote to keep it (`*pьsati`→`pisati`) and dropped when they drop
    it (`*bьrati`→`brati`) — resolved by evidence, not a length heuristic. A length-free
    **reflex-shape-agreement** rule governs when the reconstruction may override the
-   consensus. This rung adds **+1.4 pp exact / +1.7 pp top-3** over the consensus-only
-   config.
+   consensus. This rung adds **+2.4 pp exact / +2.2 pp top-3** over the consensus-only
+   config, and a further **+2.0 pp exact** comes from **explicit etymology** — using
+   Wiktionary's stated `(lang → ancestor)` map to pick the reconstruction when ≥2
+   cognates agree, before the fuzzy descendant+gloss link.
+9. **Internationalism preference** — for concepts the dictionary marks international
+   (`genesis=I`), prefer the international cluster over a native synonym (`aeroplan`).
+10. **Adjective fleeting-vowel drop** — collapse a South-Slavic short adjective's
+    fleeting vowel before `-y`, gated on East/West consonant adjacency (`dobar→dobry`,
+    `zelen` stays). The single biggest lever (+1.2 pp exact).
+11. **Prefix-stripped proto links** — when a whole word doesn't link, strip a shared
+    prefix, link the bare root, re-attach the Interslavic prefix (`napisati`).
+12. **Lemmas only** — drop bg/mk present-tense verb citations (no infinitive), and
+    reflexive verbs are cited `<lemma> sę` after stripping the cognates' markers.
+13. **Synonym alternatives** — surface secondary translations as top-3/top-5
+    alternatives (scored below every primary candidate; never changes top-1).
 
 ## What was rejected (regressed the benchmark)
 
@@ -127,6 +145,22 @@ each experiment regressed accuracy. The correct source (rule spec §4.4) is the
 **Proto-Slavic reconstruction**, which the `+proto-derived` stage above now uses. The
 consensus-level `palatals`/`jat`/`y-recovery` toggles remain in the report's *rejected
 experiments* table as documented negatives.
+
+## Testing
+
+`cargo test` runs the unit suite (rules across `proto`, `normalize`, `orthography`,
+`morph`, `consensus`, `corpus`, `dump`, `eval`). Every rule was **adversarially
+audited and triple-checked** (a finder plus two independent verifiers reproducing each
+bug against the binary); the confirmed bugs were fixed with a regression test each. CI
+(`.github/workflows/ci.yml`) runs `fmt` + `build` + the tests **and fails if exact
+top-1 drops below a floor** — the floor measures the *shipped* production config
+(`runs.last()`), not the best ablation rung, and a test asserts the ladder ends at
+`ConsensusConfig::production()`, so a production regression can't slip through.
+
+The benchmark is **leakage-free w.r.t. the answer form**: the generator sees the modern
+cognates plus the official row's POS/gender/`genesis` metadata, but never the `isv`
+lemma. Two paths are measured separately — the consensus **pipeline** (headline above)
+and the **site's** `corpus::generate_set` (`corpus-eval`).
 
 ## Architecture
 
@@ -141,17 +175,20 @@ src/
   morph.rs         POS lemma endings + internationalism ending table
   proto.rs         Proto-Slavic → Interslavic ordered rule engine (+ tests)
   dump.rs          stream the 23 GB dump → Proto-Slavic cache + indexes
-  proto_link.rs    leakage-free meaning → reconstruction linker (3 signals)
+  proto_link.rs    leakage-free linker: explicit Wiktionary etymology + 3-signal fuzzy match
   pipeline.rs      two-stage §4.4 merge (consensus root + proto-derived form)
   overrides.rs     manual curation (TOML), excluded from pure-algorithm accuracy
   generator.rs     orchestrator: pipeline + overrides + official match status
   eval.rs          reproducible benchmark, ablation ladder, report writers
+  corpus.rs        Wiktionary-corpus cognate-set dictionary + confidence model
   site.rs          static site generator (export) — HTML pages + search index
 data/
   official-isv.csv        the full official dictionary (evidence + gold)
   overrides.toml          manual curation file
   RULE_SPEC.md            authoritative Proto-Slavic → Interslavic rule spec
   proto-slavic.cache.json Proto-Slavic reconstructions (built by extract-proto)
+  slavic-lemmas.cache.json every inherited + borrowed Slavic lemma (built by extract-lemmas)
+  novel-words.tsv         engine-derived words absent from the official dictionary
 ```
 
 ## Commands
@@ -167,13 +204,16 @@ cargo run --release -- evaluate --official data/official-isv.csv --out target/ev
 # Proto-engine-only benchmark (isolates the rule engine's accuracy on linked words):
 cargo run --release -- proto-eval
 
-# The acceptance-criteria invocation also works (the metadata TSV lacks
-# translations, so it transparently falls back to the bundled full export):
-cargo run --release -- evaluate \
-  --dump /Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl \
-  --official /Users/kisaczka/Desktop/code/interslavic-rs/crates/interslavic/data/dictionary_metadata.tsv
+# One-time: stream the dump into the Slavic-lemma corpus (drives the cognate-set site):
+cargo run --release -- extract-lemmas
 
-# Generate the static website (no server; GitHub Pages hostable):
+# Benchmark the SITE's generation path (corpus::generate_set) against the dictionary:
+cargo run --release -- corpus-eval
+
+# Data-quality / ceiling audit (classifies every miss):
+cargo run --release -- audit
+
+# Generate the static website locally (no server; not published anywhere):
 cargo run --release -- export --out site
 # Preview locally with any static server, e.g.:
 #   (cd site && python3 -m http.server 8765)   # or: make serve
