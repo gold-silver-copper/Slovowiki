@@ -22,11 +22,18 @@ modern reflexes give the consensus surface — and **confidence scales with how 
 languages and branches attest it**: a root seen in one language is a low-confidence
 guess; one spread across all three branches is high-confidence.
 
+Two kinds of etymological group are collected:
+
+- **Inherited** lemmas, grouped by their Proto-Slavic ancestor (`*voda`, `*dobrъ`).
+- **Borrowings / internationalisms**, grouped by shared phonemic skeleton
+  (`компьютер`/`komputer` → `kompjuter`) — the modern Graeco-Latin and other loan
+  vocabulary, generated with the internationalism ending rules.
+
 - `cargo run -- extract-lemmas` — stream the dump once → `data/slavic-lemmas.cache.json`
-  (25k lemmas, grouped into ~8.6k cognate sets across 15 Slavic lects incl. OCS).
-- `cargo run -- export` — generate the cognate-set site (falls back to the
+  (~47k lemmas: ~25k inherited + ~22k borrowings, across 15+ Slavic lects incl. OCS).
+- `cargo run -- export` — generate the cognate-set site (~24.5k words; falls back to the
   dictionary-seeded site if the lemma cache is absent).
-- Independent validation: **~3.2k generated words already exist as official Interslavic
+- Independent validation: **~5.3k generated words already exist as official Interslavic
   lemmas**, with no leakage from the dictionary into the generation.
 
 The **benchmark below** still measures generation accuracy against the official dictionary

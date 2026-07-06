@@ -236,13 +236,13 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     let mut search = String::from("[\n");
     let mut first_search = true;
     let mut rows: Vec<HomeRow> = Vec::new();
-    let (mut n, mut high, mut med, mut low, mut official) = (0usize, 0, 0, 0, 0);
+    let (mut n, mut high, mut med, mut low, mut official, mut borrowed) = (0usize, 0, 0, 0, 0, 0);
     let mut lemma_total = 0usize;
 
     let mut id = 0usize;
     for set in sets {
         let members = set.members.len();
-        let g = crate::corpus::generate_set(set, &cfg, true);
+        let g = crate::corpus::generate_set(set, &cfg);
         let form = g.form().to_string();
         if form.is_empty() {
             continue;
@@ -250,6 +250,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         id += 1;
         n += 1;
         lemma_total += members;
+        if g.set.borrowed {
+            borrowed += 1;
+        }
         match g.confidence {
             Confidence::High => high += 1,
             Confidence::Medium => med += 1,
@@ -303,7 +306,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     std::fs::write(out_dir.join(".nojekyll"), "")?;
 
     rows.sort_by(|a, b| b.freq.total_cmp(&a.freq));
-    let home = corpus_home(n, lemma_total, high, med, low, official, &rows);
+    let home = corpus_home(n, lemma_total, high, med, low, official, borrowed, &rows);
     std::fs::write(out_dir.join("index.html"), home)?;
     std::fs::write(
         out_dir.join("about.html"),
@@ -361,12 +364,20 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
         }
     );
 
-    let etymology = format!(
-        "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>{}</a>. Wiktionary povęzuje vse niže naslědniky s tojoju rekonstrukcijeju.</p>
-         <p class='muted'>Praslovjansko pravilo izvodi formų s pravilnymi znakami (ě, ć/đ, å, ȯ, y); medžuvětvovy konsensus daje alternativų.</p>",
-        esc(g.set.proto.trim_start_matches('*')),
-        esc(&g.set.proto),
-    );
+    let etymology = if g.set.borrowed {
+        format!(
+            "<p><b>Internacionalizm</b> (zaimka). Etimon: <span class='mention'>{}</span>.</p>
+             <p class='muted'>Forma je normalizovana po medžuslovjanskyh pravilah za internacionalizmy (-cija, -izm, -ist, -ičny); niže sų slovjanske zaimky toj že korene.</p>",
+            esc(&etymon_display(&g.set.etymon))
+        )
+    } else {
+        format!(
+            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>{}</a>. Wiktionary povęzuje vse niže naslědniky s tojoju rekonstrukcijeju.</p>
+             <p class='muted'>Praslovjansko pravilo izvodi formų s pravilnymi znakami (ě, ć/đ, å, ȯ, y); medžuvětvovy konsensus daje alternativų.</p>",
+            esc(g.set.proto.trim_start_matches('*')),
+            esc(&g.set.proto),
+        )
+    };
 
     let inflection = inflection_table(&top.form, pos_code);
     let cognates = cognate_block(g);
@@ -390,6 +401,30 @@ fn corpus_entry_page(id: usize, g: &crate::corpus::GeneratedWord, status: MatchS
     );
     let _ = id;
     page(&format!("{} — medžuslovjansky", top.form), &body, 1)
+}
+
+/// Human-readable borrowing source: `la computare` → `latinsky computare`.
+fn etymon_display(etymon: &str) -> String {
+    let (src, word) = etymon.split_once(' ').unwrap_or(("", etymon));
+    let name = match src {
+        "la" | "ML." | "LL." | "la-med" | "la-lat" => "latinsky",
+        "grc" | "el" => "grečsky",
+        "fr" | "frm" | "fro" => "francuzsky",
+        "de" | "gmh" => "němečsky",
+        "en" => "anglijsky",
+        "it" => "italijsky",
+        "nl" => "holandsky",
+        "es" | "pt" => "iberijsky",
+        "tr" | "ota" => "turecky",
+        "ar" => "arabsky",
+        "he" => "hebrejsky",
+        _ => "",
+    };
+    if name.is_empty() {
+        etymon.to_string()
+    } else {
+        format!("{name} „{word}“")
+    }
 }
 
 /// The cognate set: every attesting Slavic lemma, grouped by branch.
@@ -435,6 +470,7 @@ fn corpus_home(
     med: usize,
     low: usize,
     official: usize,
+    borrowed: usize,
     rows: &[HomeRow],
 ) -> String {
     let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Smysl</th><th>Sila dogadki</th><th>Cognaty</th></tr></thead><tbody>");
@@ -471,6 +507,7 @@ fn corpus_home(
                <table class='wikitable compact-table'>
                  <tr><th>Slov (cognatnyh grup)</th><td>{total}</td></tr>
                  <tr><th>Slovjanskyh lemm</th><td>{lemmas}</td></tr>
+                 <tr><th>Internacionalizmov</th><td>{borrowed}</td></tr>
                  <tr><th>Visoka uvěrjenost</th><td>{high}</td></tr>
                  <tr><th>Srědnja</th><td>{med}</td></tr>
                  <tr><th>Nizka</th><td>{low}</td></tr>
@@ -488,6 +525,7 @@ fn corpus_home(
          <script>{js}</script>",
         total = compact(n),
         lemmas = compact(lemma_total),
+        borrowed = compact(borrowed),
         high = compact(high),
         med = compact(med),
         low = compact(low),

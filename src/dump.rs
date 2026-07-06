@@ -47,16 +47,28 @@ pub const SLAVIC_LANGS: &[&str] = &[
     "dsb", "hsb", "rue",
 ];
 
-/// One modern-Slavic dictionary lemma, tagged with its Proto-Slavic ancestor so
-/// lemmas sharing an ancestor form a cognate set.
+/// One modern-Slavic dictionary lemma tagged with its etymological ancestor, so
+/// lemmas sharing an ancestor form a cognate set. A lemma is either **inherited**
+/// (`proto` = a Proto-Slavic reconstruction) or a **borrowing / internationalism**
+/// (`etymon` = a non-Slavic source such as Latin/Greek/French).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LemmaEntry {
     pub lang: String,
     pub word: String,
     pub pos: String,
     pub gloss: String,
-    /// Etymological group key: the Proto-Slavic reconstruction (`*orvьnъ`).
+    /// The Proto-Slavic reconstruction (`*orvьnъ`) for inherited lemmas, else "".
+    #[serde(default)]
     pub proto: String,
+    /// The non-Slavic source (`la computare`, `grc τῆλε`) for borrowings, else "".
+    #[serde(default)]
+    pub etymon: String,
+}
+
+impl LemmaEntry {
+    pub fn is_borrowed(&self) -> bool {
+        self.proto.is_empty() && !self.etymon.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,8 +104,13 @@ pub fn extract_lemmas(dump: &Path, out: &Path) -> Result<()> {
     for line in reader.lines() {
         let line = line?;
         line_count += 1;
-        // Only inherited lemmas mention their Proto-Slavic ancestor.
-        if !line.contains("sla-pro") {
+        // Inherited lemmas mention `sla-pro`; borrowings carry a bor/der/lbor
+        // template. Cheap prefilter before the full JSON parse.
+        if !(line.contains("sla-pro")
+            || line.contains("\"bor")
+            || line.contains("\"lbor")
+            || line.contains("\"der+"))
+        {
             continue;
         }
         let value: Value = match serde_json::from_str(&line) {
@@ -149,7 +166,17 @@ fn lemma_from_value(value: &Value) -> Option<LemmaEntry> {
         return None;
     }
     let pos = Pos::parse(value.get("pos").and_then(Value::as_str).unwrap_or("")).code();
-    let proto = proto_ancestor(value)?;
+    // Prefer the inherited (Proto-Slavic) ancestor; else fall back to a non-Slavic
+    // borrowing source (internationalisms, Graeco-Latin and other loans).
+    let proto = proto_ancestor(value).unwrap_or_default();
+    let etymon = if proto.is_empty() {
+        borrowed_etymon(value).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    if proto.is_empty() && etymon.is_empty() {
+        return None;
+    }
     let gloss = lemma_gloss(value)?;
     Some(LemmaEntry {
         lang: lang.to_string(),
@@ -157,7 +184,54 @@ fn lemma_from_value(value: &Value) -> Option<LemmaEntry> {
         pos: pos.to_string(),
         gloss,
         proto,
+        etymon,
     })
+}
+
+/// True for a Slavic (or Proto-Slavic) source language — a borrowing *within*
+/// Slavic is not an internationalism.
+fn is_slavic_src(code: &str) -> bool {
+    code == "sla-pro" || code == "sla" || SLAVIC_LANGS.contains(&code)
+}
+
+/// The non-Slavic source of a borrowing/derivation, as a display string
+/// (`la computare`). Prefers the classical etymon (Latin/Greek) when present, as
+/// it groups internationalisms across their varied immediate sources.
+fn borrowed_etymon(value: &Value) -> Option<String> {
+    let templates = value.get("etymology_templates").and_then(Value::as_array)?;
+    let mut best: Option<(u8, String)> = None;
+    for t in templates {
+        let name = t.get("name").and_then(Value::as_str).unwrap_or("");
+        if !matches!(
+            name,
+            "bor" | "bor+" | "borrowed" | "lbor" | "lbor+" | "der" | "der+" | "derived"
+        ) {
+            continue;
+        }
+        let Some(args) = t.get("args") else { continue };
+        let src = args.get("2").and_then(Value::as_str).unwrap_or("").trim();
+        let word = args.get("3").and_then(Value::as_str).unwrap_or("").trim();
+        if src.is_empty() || is_slavic_src(src) {
+            continue;
+        }
+        let word = word.split('<').next().unwrap_or(word).trim();
+        if word.is_empty() || word == "-" {
+            continue;
+        }
+        let rank = match src {
+            "la" | "ML." | "LL." | "la-med" | "la-lat" => 6,
+            "grc" | "el" => 5,
+            "it" => 3,
+            "fr" | "frm" | "fro" => 3,
+            "de" | "gmh" | "nl" => 2,
+            "en" => 2,
+            _ => 1,
+        };
+        if best.as_ref().map(|(r, _)| rank > *r).unwrap_or(true) {
+            best = Some((rank, format!("{src} {word}")));
+        }
+    }
+    best.map(|(_, s)| s)
 }
 
 /// The Proto-Slavic ancestor from an `inh`/`der` etymology template, normalized

@@ -17,10 +17,15 @@ use crate::normalize::{self, NormForm};
 use crate::orthography as ortho;
 use std::collections::BTreeMap;
 
-/// A group of etymologically-connected modern lemmas (shared Proto-Slavic root).
+/// A group of etymologically-connected modern lemmas — either a shared
+/// Proto-Slavic root (inherited) or a shared non-Slavic source (borrowing).
 #[derive(Debug, Clone)]
 pub struct CognateSet {
+    /// Group key: `*orvьnъ` (inherited) or `bor:<skeleton>` (borrowing).
     pub proto: String,
+    /// Display ancestor: `*orvьnъ` or `la computare`.
+    pub etymon: String,
+    pub borrowed: bool,
     pub pos: Pos,
     pub gloss: String,
     pub members: Vec<LemmaEntry>,
@@ -70,37 +75,91 @@ fn pos_class(pos: &str) -> &'static str {
     }
 }
 
-/// Group the corpus into cognate sets keyed by (Proto-Slavic ancestor, POS class).
+/// Group the corpus into cognate sets: inherited lemmas by their Proto-Slavic
+/// ancestor, borrowings by the shared phonemic skeleton of the Slavic form (so
+/// `компьютер` / `komputer` / `komputer` cluster as one internationalism).
 pub fn build_sets(corpus: &LemmaCorpus) -> Vec<CognateSet> {
-    let mut groups: BTreeMap<(String, &'static str), Vec<LemmaEntry>> = BTreeMap::new();
+    let mut inherited: BTreeMap<(String, &'static str), Vec<LemmaEntry>> = BTreeMap::new();
+    let mut borrowed: BTreeMap<(String, &'static str), Vec<LemmaEntry>> = BTreeMap::new();
     for e in &corpus.entries {
         if branch_of(&e.lang).is_none() {
             continue;
         }
-        groups
-            .entry((e.proto.clone(), pos_class(&e.pos)))
-            .or_default()
-            .push(e.clone());
+        if e.is_borrowed() {
+            let latin = normalize::to_phonemic_latin(&e.lang, &e.word);
+            let key = intl_key(&latin);
+            if key.len() < 2 {
+                continue;
+            }
+            borrowed
+                .entry((key, pos_class(&e.pos)))
+                .or_default()
+                .push(e.clone());
+        } else if !e.proto.is_empty() {
+            inherited
+                .entry((e.proto.clone(), pos_class(&e.pos)))
+                .or_default()
+                .push(e.clone());
+        }
     }
 
     let mut sets = Vec::new();
-    for ((proto, _), mut members) in groups {
-        // Dedupe identical (language, word) senses.
-        members.sort_by(|a, b| (&a.lang, &a.word).cmp(&(&b.lang, &b.word)));
-        members.dedup_by(|a, b| a.lang == b.lang && a.word == b.word);
-        if members.is_empty() {
-            continue;
+    for ((proto, _), members) in inherited {
+        if let Some(set) = finish_set(proto.clone(), proto, false, members) {
+            sets.push(set);
         }
-        let pos = most_common_pos(&members);
-        let gloss = representative_gloss(&members);
-        sets.push(CognateSet {
-            proto,
-            pos,
-            gloss,
-            members,
-        });
+    }
+    for ((key, _), members) in borrowed {
+        let etymon = most_common_etymon(&members);
+        if let Some(set) = finish_set(format!("bor:{key}"), etymon, true, members) {
+            sets.push(set);
+        }
     }
     sets
+}
+
+fn finish_set(
+    proto: String,
+    etymon: String,
+    borrowed: bool,
+    mut members: Vec<LemmaEntry>,
+) -> Option<CognateSet> {
+    members.sort_by(|a, b| (&a.lang, &a.word).cmp(&(&b.lang, &b.word)));
+    members.dedup_by(|a, b| a.lang == b.lang && a.word == b.word);
+    if members.is_empty() {
+        return None;
+    }
+    let pos = most_common_pos(&members);
+    let gloss = representative_gloss(&members);
+    Some(CognateSet {
+        proto,
+        etymon,
+        borrowed,
+        pos,
+        gloss,
+        members,
+    })
+}
+
+/// The consonant skeleton used to cluster internationalisms across languages.
+/// Drops vowels and the inconsistent glide `j` (kompjuter ≍ komputer) and folds
+/// c→k, so the same Graeco-Latin root clusters regardless of local spelling.
+fn intl_key(latin: &str) -> String {
+    ortho::ascii_skeleton(latin).replace('j', "")
+}
+
+fn most_common_etymon(members: &[LemmaEntry]) -> String {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for m in members {
+        if !m.etymon.is_empty() {
+            *counts.entry(m.etymon.as_str()).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, n)| *n)
+        .map(|(e, _)| e.to_string())
+        .unwrap_or_default()
 }
 
 fn most_common_pos(members: &[LemmaEntry]) -> Pos {
@@ -140,7 +199,7 @@ fn representative_gloss(members: &[LemmaEntry]) -> String {
 }
 
 /// Generate the Interslavic word for a cognate set.
-pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig, proto_enabled: bool) -> GeneratedWord {
+pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
     // One primary source form per language (extra senses become secondary).
     let mut forms: Vec<SourceForm> = Vec::new();
     let mut seen_lang: BTreeMap<&str, bool> = BTreeMap::new();
@@ -180,16 +239,19 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig, proto_enabled: bool)
         gender: None,
         gloss: set.gloss.clone(),
         forms,
-        is_intl_meaning: false,
+        // Borrowings are internationalisms: trigger the -cija/-izm/-ist ending
+        // normalization and the international-cluster preference.
+        is_intl_meaning: set.borrowed,
         reflexive,
     };
 
     // Cross-branch consensus surface + alternatives.
     let mut candidates = consensus::generate(&input, cfg);
 
-    // Authoritative form from the *known* Proto-Slavic ancestor.
+    // Inherited words get their authoritative form from the *known* Proto-Slavic
+    // ancestor; borrowings have no reconstruction and rely on the consensus.
     let mut reconstruction = None;
-    if proto_enabled {
+    if !set.borrowed {
         let reflexes: Vec<String> = input
             .forms
             .iter()
