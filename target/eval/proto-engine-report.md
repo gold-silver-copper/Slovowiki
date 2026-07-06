@@ -3,14 +3,14 @@
 Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive the form straight from the linked reconstruction and compare to the official lemma.
 
 - Benchmark entries with modern evidence: **16300**
-- Confidently linked to a Proto-Slavic entry: **2913** (17.9% coverage)
-- On the linked subset: **exact 43.98%**, **normalized 49.36%**
+- Confidently linked to a Proto-Slavic entry: **2931** (18.0% coverage)
+- On the linked subset: **exact 46.26%**, **normalized 51.96%**
 
 ## Proto-engine accuracy by POS (linked subset)
 
 | POS | linked | exact | normalized |
 |---|---:|---:|---:|
-| adj | 327 | 30.58% | 33.03% |
+| adj | 345 | 50.72% | 55.94% |
 | adv | 65 | 10.77% | 15.38% |
 | noun | 1651 | 50.51% | 58.27% |
 | num | 16 | 18.75% | 25.00% |
@@ -77,7 +77,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | scab | kråsta | strup | *strupъ | 0.77 |
 | hazel | leščina | lěska | *lěska | 0.77 |
 | hunt | lovitva | lov | *lovъ | 0.77 |
+| drinkable | pijemy | pitny | *pitьnъ | 0.77 |
 | bitch (female dog) | psica | suka | *suka | 0.77 |
 | word | rěč | slovo | *slovo | 0.77 |
 | pine | sosna | bor | *borъ | 0.77 |
-| bottom | spod | dno | *dъno | 0.77 |

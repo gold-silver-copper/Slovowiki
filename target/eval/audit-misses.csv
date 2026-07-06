@@ -25,7 +25,7 @@ shark,noun,akula,ajkula,4,right-cluster-wrong-form
 accumulate,verb,akumulovati,hromaditi,13,wrong-cluster
 exactly,adv,akurat,točno,10,wrong-cluster
 accuracy,noun,akuratnosť,točnosť,9,wrong-cluster
-accurate,adj,akuratny,tȯčeny,7,wrong-cluster
+accurate,adj,akuratny,tȯčny,7,wrong-cluster
 accusative,noun,akuzativ,vinitelen padež,7,wrong-cluster
 watercolor,noun,akvarelj,akvarel,2,right-cluster-wrong-form
 aquarium,noun,akvarium,akvarijum,2,right-cluster-wrong-form
@@ -100,7 +100,7 @@ azure,adj,azurny,lazurny,7,wrong-cluster
 grandmother,noun,babica,babika,10,wrong-cluster
 grandma’s,adj,babin,babiny,7,right-cluster-wrong-form
 old woman,noun,babka,babaka,14,right-cluster-wrong-form
-womanish,adj,babsky,ženesky,8,wrong-cluster
+womanish,adj,babsky,žensky,8,wrong-cluster
 grandma,noun,babuška,babica,9,wrong-cluster
 "trifle, triviality",noun,bagatela,sitnica,18,wrong-cluster
 "downplay, underestimate",verb,bagatelizovati,preumenšati,13,wrong-cluster
@@ -140,9 +140,8 @@ cotton,noun,bavȯlna,bavelna,5,right-cluster-wrong-form
 vigil,noun,bděńje,bedenje,7,right-cluster-wrong-form
 be awake,verb,bděti,bedeti,13,right-cluster-wrong-form
 vigilance,noun,bditeljnosť,budnosť,7,wrong-cluster
-vigilant,adj,bditeljny,pileny,9,wrong-cluster
+vigilant,adj,bditeljny,pilny,9,wrong-cluster
 poverty,noun,běda,hudoba,13,wrong-cluster
-poor,adj,bědny,bědeny,11,right-cluster-wrong-form
 ladybird,noun,bedrenec,bubamara,11,root-absent
 hip,noun,bedro,stegno,11,wrong-cluster
 running,noun,běg,bieganje,7,root-absent
@@ -172,17 +171,14 @@ painless,adj,bezbolěsny,bezbolny,7,wrong-cluster
 "dishonor, dishonour",noun,bezčesťje,hanjba,12,wrong-cluster
 "dishonorable, dishonourable, infamous",adj,bezčestny,haniebny,13,root-absent
 dishonest,adj,bezčestny,nečastny,13,root-absent
-childless,adj,bezdětny,bezděteny,4,right-cluster-wrong-form
 abyss,noun,bezdna,propast,9,wrong-cluster
 bottomless,adj,bezdȯnny,bezdny,4,right-cluster-wrong-form
 dry spell,noun,bezdȯžďje,suša,13,wrong-cluster
 treeless,adj,bezdrěvny,obezlesny,9,wrong-cluster
-soulless,adj,bezdušny,bezdušeny,6,right-cluster-wrong-form
 breathless,adj,bezdyšny,bezdahany,13,root-absent
 "tailless, anurous",adj,bezhvosty,beshvostyji,12,wrong-cluster
 "flawless, impeccable",adj,bezhybny,bezuprečny,16,wrong-cluster
 anonymously,adv,bezimenno,anonimno,5,wrong-cluster
-"nameless, anonymous",adj,bezimenny,bezimeneny,7,wrong-cluster
 hopelessness (situation),noun,bezizhodnosť,bezizlaznosť,13,wrong-cluster
 "hopeless (situation), desperate (situation)",adj,bezizhodny,bezizlazny,12,wrong-cluster
 impunity,noun,bezkarnosť,beznakazanosť,9,wrong-cluster
@@ -202,7 +198,6 @@ speechless,adj,bezmȯlvny,bezmovny,16,wrong-cluster
 brainless,adj,bezmozgy,bezmyšlenkovity,17,wrong-cluster
 "duty-free, tax-free, toll-free",adj,bezmytny,bezmitny,10,right-cluster-wrong-form
 hopelessness,noun,beznadějnosť,beznadežnosť,9,wrong-cluster
-hopeless,adj,beznadějny,beznadežny,5,wrong-cluster
 "safety, security",noun,bezopasnosť,sigurnosť,10,wrong-cluster
 "safe, secure",adj,bezopasny,bezpiečny,6,wrong-cluster
 forgetful,adj,bezpamętny,zabyvčivyji,14,root-absent
@@ -227,13 +222,11 @@ causeless,adj,bezpričinny,bezduvodny,15,wrong-cluster
 "unequalled, unparalleled, unexampled, unheard of",adj,bezpriměrny,besprimjerny,21,root-absent
 "jobless, unemployed",adj,bezråbotny,bezrobotny,8,right-cluster-wrong-form
 "joyless, cheerless, dismal",adj,bezradostny,bezradosny,20,wrong-cluster
-powerless,adj,bezsiľny,bezsileny,8,right-cluster-wrong-form
+powerless,adj,bezsiľny,bessilny,8,wrong-cluster
 nonsense,noun,bezsmyslica,besmislica,15,wrong-cluster
 "pointless, senseless",adj,bezsmysľny,besmislny,11,wrong-cluster
-snowless,adj,bezsněžny,bezsněženy,5,right-cluster-wrong-form
 insomnia,noun,bezsȯnnica,bessonnica,7,root-absent
 sleepless,adj,bezsȯnny,bezsenny,10,right-cluster-wrong-form
-"fearless, dauntless, intrepid",adj,bezstrašny,bezstrašeny,12,right-cluster-wrong-form
 "shamelessness, effrontery",noun,bezstydnosť,besstydstvo,13,root-absent
 shameless,adj,bezstydny,besramny,14,root-absent
 quietness,noun,bezšumnosť,tišina,15,wrong-cluster
@@ -245,14 +238,13 @@ fuckwit,noun,bezumnik,šaleniec,15,wrong-cluster
 effortlessness,noun,bezusiľje,logkost,16,root-absent
 effortlessly,adv,bezusiľno,legȯk,19,wrong-cluster
 effortlessness,noun,bezusiľnosť,logkost,16,root-absent
-effortless,adj,bezusiľny,legȯky,19,wrong-cluster
-unsuccessful,adj,bezuspěšny,neuspěšeny,8,wrong-cluster
+effortless,adj,bezusiľny,legky,19,wrong-cluster
+unsuccessful,adj,bezuspěšny,neuspěšny,8,wrong-cluster
 inconsolable,adj,bezutěšny,bezutešnyji,10,right-cluster-wrong-form
 "atheism, lack of faith",noun,bezvěŕje,bezverie,15,right-cluster-wrong-form
 lost without a trace,adj,bezvěstny,neizvjestny,15,wrong-cluster
 calm (wind),noun,bezvětŕje,bezvetrie,8,right-cluster-wrong-form
 innocent,adj,bezvinny,neviny,9,wrong-cluster
-"insipid, bland",adj,bezvkųsny,bezvekuseny,15,right-cluster-wrong-form
 powerlessness,noun,bezvladnosť,bessilie,9,wrong-cluster
 paralysis,noun,bezvladnosť,paraliza,10,wrong-cluster
 powerless,adj,bezvladny,bessilnyji,10,wrong-cluster
@@ -310,7 +302,6 @@ shine,verb,blěstěti,blyščati,9,wrong-cluster
 pancake,noun,blin,mlin,4,wrong-cluster
 "almost, nearly",adv,bliz,počti,16,wrong-cluster
 "near, close",adv,blizko,bliz,7,wrong-cluster
-"near, close",adj,blizky,blizȯky,3,right-cluster-wrong-form
 twin,noun,bliznec,blizniak,5,wrong-cluster
 twin brothers,noun,blizneci,blizanci,8,right-cluster-wrong-form
 Gemini,noun,Blizneci,blizanci,5,right-cluster-wrong-form
@@ -332,6 +323,7 @@ barrel,noun,bȯčva,bȯčka,8,wrong-cluster
 "spike, prick",noun,bodec,šip,9,wrong-cluster
 cooper,noun,bȯdnaŕ,bondar,7,wrong-cluster
 "pierce, stab",verb,bodnųti,bodnouti,13,right-cluster-wrong-form
+"cheerful, brisk, spirited",adj,bodry,bdry,13,right-cluster-wrong-form
 "richness, wealth",noun,bogatosť,bogatstvo,10,wrong-cluster
 richer,adj,bogatši,bogatejši,8,right-cluster-wrong-form
 hero,noun,bogatyr,bohater,6,right-cluster-wrong-form
@@ -388,7 +380,6 @@ brother,noun,brat,bratr,3,wrong-cluster
 brethren,noun,bratja,bratje,4,right-cluster-wrong-form
 fratricide,noun,bratobijstvo,bratoubistvo,6,right-cluster-wrong-form
 brother’s,adj,bratov,bratovy,9,right-cluster-wrong-form
-brotherly,adj,bratsky,bratesky,5,right-cluster-wrong-form
 brotherhood,noun,bratstvo,bratrstvo,4,wrong-cluster
 "hill, hillock",noun,bŕdo,hȯlmo,18,wrong-cluster
 coastal,adj,brěgovy,bregovoji,6,right-cluster-wrong-form
@@ -428,7 +419,6 @@ buffer,noun,bufer,buffer,8,right-cluster-wrong-form
 "bang, burst, thump",verb,buhati,bouhati,17,right-cluster-wrong-form
 "accountant, bookkeeper",noun,buhhalter,buhgalter,12,right-cluster-wrong-form
 burst,verb,buhnųti,bouhnouti,12,right-cluster-wrong-form
-"exuberant, lush, luxuriant, rambunctious",adj,bujny,bujeny,12,right-cluster-wrong-form
 letter (alphabet),noun,bukva,buky,5,wrong-cluster
 Bulgaria,noun,Bulgarija,bolgarija,5,right-cluster-wrong-form
 bulgarization,noun,bulgarizacija,bolgarizacija,3,right-cluster-wrong-form
@@ -499,3 +489,13 @@ foreigner,noun,ćuđinka,cizinka,11,wrong-cluster
 "zucchini, courgette",noun,cukina,kabačok,8,wrong-cluster
 sugar,noun,cukr,cukier,5,right-cluster-wrong-form
 "confectioner, pastry cook",noun,cukraŕ,konditer,8,wrong-cluster
+"confectionery, pastry shop",noun,cukrarnja,konditerskaja,10,wrong-cluster
+sweet,noun,cukrka,cukierek,10,right-cluster-wrong-form
+florist,noun,cvěćaŕ,florist,7,wrong-cluster
+tease,verb,cvěliti,drazniti,14,root-absent
+"bloom, blossom, flower",verb,cvěsti,kvisti,5,wrong-cluster
+flower,noun,cvět,květ,6,wrong-cluster
+"colour, color",noun,cvět,kolor,5,wrong-cluster
+"bloom, blossom, flower",verb,cvětati,kvisti,6,wrong-cluster
+April,noun,cvětėnj,april,6,root-absent
+"bloom, blossom, flower",verb,cvětnųti,kvisti,8,root-absent

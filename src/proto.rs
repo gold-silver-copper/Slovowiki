@@ -39,6 +39,31 @@ pub fn generate_with_reflexes(
     s = soft_consonants(&s, &mut trace);
     s = syllabic_liquid(&s, &mut trace);
     s = simplify_clusters(&s, &mut trace);
+    // The Interslavic adjective lemma continues the *definite* form (*-ъjь), not
+    // the short nominative the cache cites: append the definite ending BEFORE yer
+    // resolution, because it flips the Havlík parity of the stem yers
+    // (*bědьnъ → strong ь → *bědeny, but *bědьnъjь → weak ь → bědny; *kortъkъjь
+    // → kråtky). Possessives (-inъ/-ovъ) keep the short form. The modern South
+    // citations are short forms whose vocalized yer says nothing about the long
+    // form, so the reflex-retention vote is suppressed for the definite stem.
+    let mut reflexes = reflexes;
+    if pos == Pos::Adjective && s.ends_with('ъ') && !s.ends_with("ъjь") {
+        let stem = &s[..s.len() - 'ъ'.len_utf8()];
+        let possessive = ["in", "ov", "ev", "yn"].iter().any(|p| stem.ends_with(p));
+        if !possessive {
+            let before = s.clone();
+            s.push_str("jь");
+            reflexes = &[];
+            step(
+                &mut trace,
+                "adj-definite",
+                &before,
+                &s,
+                "Pridavnik prodolžaje opreděljenu formu *-ъjь (dȯlga forma), ne kratku.",
+                STEEN,
+            );
+        }
+    }
     s = yers(&s, reflexes, &mut trace);
     s = endings(&s, pos, gender, &mut trace);
     s = finalize(&s, &mut trace);
@@ -682,6 +707,20 @@ mod tests {
         // ending *-ъjь surfaces with y (novъjь → novy). Without the tense rule
         // strict Havlík would misassign the ъ as strong (→ novȯj-).
         assert!(normalized_match(&gen("*novъjь", Pos::Adjective), "novy"));
+    }
+
+    #[test]
+    fn adjective_lemma_continues_the_definite_form() {
+        // The lemma is the definite *-ъjь form, which flips the Havlík parity of
+        // the stem yers: the short form would give *kråtȯky/*bědeny, the definite
+        // form correctly drops the now-weak yer (kråtky, bědny, nizky).
+        assert_eq!(gen("*kortъkъ", Pos::Adjective), "kråtky");
+        assert_eq!(gen("*bědьnъ", Pos::Adjective), "bědny");
+        assert_eq!(gen("*nizъkъ", Pos::Adjective), "nizky");
+        // Possessives keep the short form (no -y).
+        assert!(!gen("*materinъ", Pos::Adjective).ends_with('y'));
+        // A reconstruction already cited in the long form is not doubled.
+        assert_eq!(gen("*kortъkъjь", Pos::Adjective), "kråtky");
     }
 
     #[test]
