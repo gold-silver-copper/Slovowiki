@@ -273,6 +273,27 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // pages are emitted exactly for the rest.
     let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
 
+    // First pass: generate every word, so ancestor families (shared proto stem
+    // or loan etymon) can be cross-linked before any page is rendered.
+    struct Prepared {
+        id: usize,
+        g: crate::corpus::GeneratedWord,
+        display: String,
+        status: MatchStatus,
+        matched: Option<(usize, String, String)>,
+    }
+    impl FamilyEntry for Prepared {
+        fn id(&self) -> usize {
+            self.id
+        }
+        fn display(&self) -> &str {
+            &self.display
+        }
+        fn set(&self) -> &crate::corpus::CognateSet {
+            &self.g.set
+        }
+    }
+    let mut prepared: Vec<Prepared> = Vec::new();
     let mut id = 0usize;
     for set in sets {
         let members = set.members.len();
@@ -294,63 +315,88 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }
         // Authoritative match: ANY ranked candidate reproducing an official
         // lemma (folded) puts the entry under the official headword.
-        let matched: Option<(usize, &(String, String))> =
+        let matched: Option<(usize, String, String)> =
             g.candidates.iter().take(5).enumerate().find_map(|(i, c)| {
                 official_map
                     .get(&crate::orthography::to_standard(&c.form.to_lowercase()))
-                    .map(|o| (i + 1, o))
+                    .map(|(isv, en)| (i + 1, isv.clone(), en.clone()))
             });
         for c in g.candidates.iter().take(5) {
             covered.insert(crate::orthography::to_standard(&c.form.to_lowercase()));
         }
-        let in_official = matched.is_some();
-        if in_official {
+        if matched.is_some() {
             official += 1;
         }
-        let status = if in_official {
+        let status = if matched.is_some() {
             MatchStatus::OfficialMatch
         } else {
             MatchStatus::NoOfficialEntry
         };
         let display = matched
-            .map(|(_, (isv, _))| isv.clone())
+            .as_ref()
+            .map(|(_, isv, _)| isv.clone())
             .unwrap_or_else(|| form.clone());
-
-        let html = corpus_entry_page(
+        prepared.push(Prepared {
             id,
-            &g,
+            g,
+            display,
             status,
-            matched.map(|(r, (isv, en))| (r, isv.as_str(), en.as_str())),
+            matched,
+        });
+    }
+
+    // Word families: entries whose ancestors share a Proto-Slavic stem
+    // (*starъ/*starostь/*starьcь) or the same loan etymon (la magister →
+    // majstor/maestro/magistr) cross-link each other.
+    let mut families: std::collections::BTreeMap<String, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for (i, p) in prepared.iter().enumerate() {
+        if let Some(k) = family_key(&p.g.set) {
+            families.entry(k).or_default().push(i);
+        }
+    }
+
+    // Second pass: render pages (with family links) + the search index.
+    for (i, p) in prepared.iter().enumerate() {
+        let family = family_block(i, &prepared, &families);
+        let html = corpus_entry_page(
+            p.id,
+            &p.g,
+            p.status,
+            p.matched
+                .as_ref()
+                .map(|(r, isv, en)| (*r, isv.as_str(), en.as_str())),
+            &family,
         );
-        std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
+        std::fs::write(entry_dir.join(format!("{}.html", p.id)), html)?;
 
         if !first_search {
             search.push_str(",\n");
         }
         first_search = false;
-        let keys = search_keys(&g.candidates, &display);
+        let keys = search_keys(&p.g.candidates, &p.display);
         let _ = write!(
             search,
             "[{},{},{},{},{},{},{:.2},{}]",
-            id,
-            json_str(&display),
-            json_str(&truncate(&g.set.gloss, 70)),
-            json_str(g.set.pos.code()),
-            json_str(if in_official { "O" } else { "N" }),
-            json_str(conf_letter(g.confidence)),
-            g.score,
+            p.id,
+            json_str(&p.display),
+            json_str(&truncate(&p.g.set.gloss, 70)),
+            json_str(p.g.set.pos.code()),
+            json_str(if p.matched.is_some() { "O" } else { "N" }),
+            json_str(conf_letter(p.g.confidence)),
+            p.g.score,
             keys_json(&keys),
         );
         rows.push(HomeRow {
             // sort the home list by coverage (n_langs) so the best-attested show first
-            freq: g.n_langs as f32 + g.n_branches as f32 / 10.0,
-            id,
-            form: display,
-            gloss: g.set.gloss.clone(),
-            pos: g.set.pos.code().to_string(),
-            status,
-            conf: g.confidence,
-            score: g.score,
+            freq: p.g.n_langs as f32 + p.g.n_branches as f32 / 10.0,
+            id: p.id,
+            form: p.display.clone(),
+            gloss: p.g.set.gloss.clone(),
+            pos: p.g.set.pos.code().to_string(),
+            status: p.status,
+            conf: p.g.confidence,
+            score: p.g.score,
         });
     }
 
@@ -428,11 +474,120 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The family key of a cognate set: inherited sets share a family when their
+/// Proto-Slavic ancestors share a derivational stem (*starъ / *starostь /
+/// *starьcь → "star"); borrowings share a family when they continue the same
+/// etymon (la magister → majstor / maestro / magistr).
+fn family_key(set: &crate::corpus::CognateSet) -> Option<String> {
+    if set.borrowed {
+        let e = set.etymon.trim();
+        if e.is_empty() {
+            None
+        } else {
+            Some(format!("et:{e}"))
+        }
+    } else {
+        proto_stem(set.proto.trim_start_matches('*')).map(|s| format!("st:{s}"))
+    }
+}
+
+/// Strip one derivational suffix off a Proto-Slavic reconstruction; the stem
+/// must keep ≥4 characters so unrelated short roots don't collide.
+fn proto_stem(w: &str) -> Option<String> {
+    // Strip the accent/length marks Wiktionary reconstructions carry (pę̑tь),
+    // so accent variants of one stem share a family key and the label is clean.
+    let w: String = w
+        .chars()
+        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .collect();
+    let w = w.as_str();
+    const SUF: &[&str] = &[
+        "ovati", "irati", "nǫti", "ostь", "išče", "ьje", "ica", "ina", "ьcь", "ъka", "ъkъ", "ьnъ",
+        "ěti", "ati", "iti", "ti", "y", "a", "o", "ъ", "ь", "ę", "ě", "i",
+    ];
+    let mut sufs: Vec<&str> = SUF.to_vec();
+    sufs.sort_by_key(|s| std::cmp::Reverse(s.chars().count()));
+    for s in sufs {
+        if let Some(stem) = w.strip_suffix(s) {
+            if stem.chars().count() >= 4 {
+                return Some(stem.to_string());
+            }
+        }
+    }
+    if w.chars().count() >= 4 {
+        Some(w.to_string())
+    } else {
+        None
+    }
+}
+
+/// Slice-element view for `family_block` (keeps the private `Prepared` struct
+/// out of the signature).
+trait FamilyEntry {
+    fn id(&self) -> usize;
+    fn display(&self) -> &str;
+    fn set(&self) -> &crate::corpus::CognateSet;
+}
+
+/// Render the "word family" section for entry `i`: links to the siblings that
+/// share its ancestor stem/etymon. Empty when the entry has no family.
+fn family_block<T: FamilyEntry>(
+    i: usize,
+    prepared: &[T],
+    families: &std::collections::BTreeMap<String, Vec<usize>>,
+) -> String {
+    let Some(key) = family_key(prepared[i].set()) else {
+        return String::new();
+    };
+    let Some(members) = families.get(&key) else {
+        return String::new();
+    };
+    // 2..=15 members: below is no family, above is a suffix artefact.
+    if members.len() < 2 || members.len() > 15 {
+        return String::new();
+    }
+    let label = match key.split_once(':') {
+        Some(("st", stem)) => format!("praslovjansky korenj <b>*{}-</b>", esc(stem)),
+        Some(("et", etymon)) => format!("etimon <b>{}</b>", esc(&etymon_display(etymon))),
+        _ => String::new(),
+    };
+    let mut items = String::new();
+    let mut shown = 0;
+    for &j in members {
+        if j == i {
+            continue;
+        }
+        let s = &prepared[j];
+        let _ = write!(
+            items,
+            "<li><a href='{}.html'><b>{}</b></a> <span class='muted'>{} · {}</span></li>",
+            s.id(),
+            esc(s.display()),
+            esc(s.set().pos.code()),
+            esc(&truncate(&s.set().gloss, 48)),
+        );
+        shown += 1;
+        if shown >= 12 {
+            break;
+        }
+    }
+    if items.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<details class='sec' open><summary>Rodina slov — obči prědȯk</summary>
+           <p class='muted'>Slova iz toj že etimologičnoj rodiny ({label}):</p>
+           <ul class='compact-list'>{items}</ul>
+         </details>"
+    )
+}
+
 fn corpus_entry_page(
     id: usize,
     g: &crate::corpus::GeneratedWord,
     status: MatchStatus,
     official: Option<(usize, &str, &str)>,
+    family: &str,
 ) -> String {
     let top = g.candidates.first().unwrap();
     let pos_code = g.set.pos.code();
@@ -539,6 +694,7 @@ fn corpus_entry_page(
            {headline}
            <details class='sec' open><summary>Cognaty — slovjanske slova toj korene ({} językov)</summary>{cognates}</details>
            <details class='sec' open><summary>Etimologija (praslovjanska rekonstrukcija)</summary>{etymology}</details>
+           {family}
            <details class='sec' open><summary>Prěgibanje</summary>{inflection}</details>
            <details class='sec'><summary>Alternativne kandidaty</summary>{alternatives}</details>
            <details class='sec'><summary>Sled pravil</summary>{trace}</details>
@@ -1573,6 +1729,21 @@ mod tests {
         assert!(has("kratky", 2), "the alternative's own form: {keys:?}");
         // The raw headword itself is NOT duplicated (the client matches it).
         assert!(!keys.iter().any(|(k, _)| k == "kråtȯky"));
+    }
+
+    #[test]
+    fn proto_stems_group_word_families() {
+        // One derivational suffix stripped, ≥4-char stem kept.
+        assert_eq!(proto_stem("starъ").as_deref(), Some("star"));
+        assert_eq!(proto_stem("starostь").as_deref(), Some("star"));
+        assert_eq!(proto_stem("starьcь").as_deref(), Some("star"));
+        // Combining accent marks (lemma-corpus reconstructions carry them:
+        // pę̑tь) are folded first, so accent variants share one key.
+        assert_eq!(proto_stem("sta\u{0301}rъ").as_deref(), Some("star"));
+        // A root too short after stripping keeps the whole word as its key…
+        assert_eq!(proto_stem("pьsъ").as_deref(), Some("pьsъ"));
+        // …and a genuinely tiny fragment gets none.
+        assert_eq!(proto_stem("kъ"), None);
     }
 
     #[test]
