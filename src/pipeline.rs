@@ -163,9 +163,18 @@ pub fn generate(
     // reconstructed from marker-stripped cognates; append the particle here.
     if input.reflexive {
         for c in &mut candidates {
-            if !c.form.is_empty() && !c.form.ends_with(" sę") {
-                c.form.push_str(" sę");
+            if c.form.is_empty() {
+                continue;
             }
+            // Strip any residual reflexive particle first, so a form that already
+            // carries one (Slovak " sa", etc.) doesn't become a double marker.
+            for p in [" sę", " sa", " se", " sie", " się", " sobě"] {
+                if let Some(h) = c.form.strip_suffix(p) {
+                    c.form = h.trim_end().to_string();
+                    break;
+                }
+            }
+            c.form.push_str(" sę");
         }
     }
 

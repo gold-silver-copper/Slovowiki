@@ -916,7 +916,7 @@ fn population_weight(langs: &[&SourceForm]) -> f32 {
 /// Heuristic: does this form look like a Graeco-Latin internationalism? Uses
 /// distinctive international morphology (suffixes/roots that native Slavic words
 /// almost never carry). Deliberately conservative to avoid boosting native words.
-fn is_international_form(latin: &str) -> bool {
+pub fn is_international_form(latin: &str) -> bool {
     let s = crate::orthography::ascii_skeleton(latin);
     // Distinctive international suffixes.
     const SUF: &[&str] = &[
@@ -988,8 +988,10 @@ pub fn strip_reflexive(mut forms: Vec<SourceForm>, pos: Pos) -> (Vec<SourceForm>
 
 /// The stem of a reflexive cognate form, or `None` if it carries no marker.
 fn reflexive_stem(latin: &str) -> Option<String> {
-    // Space-separated particle (West/South: się, se, sę, sobě).
-    for p in [" się", " sie", " sę", " se", " sobě", " sobe"] {
+    // Space-separated particle (West/South: się, se, sa, sę, sobě). Slovak/Czech
+    // cite " sa"/" se" — omitting " sa" left Slovak reflexives unstripped, then the
+    // pipeline appended a second particle → "bat sa sę".
+    for p in [" się", " sie", " sę", " se", " sa", " sobě", " sobe"] {
         if let Some(h) = latin.strip_suffix(p) {
             let h = h.trim_end();
             if h.chars().count() >= 3 {

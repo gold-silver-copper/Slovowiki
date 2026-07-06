@@ -39,18 +39,23 @@ pub fn normalize_lemma(
     }
 
     if intl {
-        // §5.1: the Latin/Greek diphthongs au/eu are adapted to av/ev. Native
-        // Slavic vocabulary has no /au/ or /eu/, so this only touches loanwords.
-        let loan = w.replace("eu", "ev").replace("au", "av").replace("th", "t");
-        if loan != w {
-            trace.push(RuleStep::new(
-                "intl-diphthong",
-                &w,
-                &loan,
-                "Grečsko-latinske au→av, eu→ev, th→t.",
-                Some(DERIV),
-            ));
-            w = loan;
+        // §5.1: the Latin/Greek diphthongs au/eu adapt to av/ev and th→t — but
+        // ONLY inside a recognized internationalism. Blanket-replacing corrupts
+        // native words whose au/eu/th spans a morpheme boundary (naučiti, neuspěh,
+        // vethy) and loans that keep the digraph (sauna, pauza). Gate on the
+        // Graeco-Latin shape and never touch a native prefix boundary.
+        if crate::consensus::is_international_form(&w) && !starts_native_prefix_vowel(&w) {
+            let loan = w.replace("eu", "ev").replace("au", "av").replace("th", "t");
+            if loan != w {
+                trace.push(RuleStep::new(
+                    "intl-diphthong",
+                    &w,
+                    &loan,
+                    "Grečsko-latinske au→av, eu→ev, th→t.",
+                    Some(DERIV),
+                ));
+                w = loan;
+            }
         }
         if let Some((next, id, why)) = international_ending(&w, pos) {
             if next != w {
@@ -80,6 +85,22 @@ fn swap(word: &str, suffix: &str, rep: &str) -> String {
 
 /// §5.2 internationalism ending adaptations, matched on the Slavicized surface.
 /// Longest / most specific suffixes first.
+/// True when a word begins with a native prefix directly followed by a vowel that
+/// would form a spurious au/eu across the boundary (na+u→"au", ne+u→"eu"), so the
+/// internationalism diphthong rule must not fire: naučiti, neuspěh, zaučiti.
+fn starts_native_prefix_vowel(w: &str) -> bool {
+    for p in [
+        "na", "ne", "za", "po", "pre", "prě", "do", "vy", "raz", "roz", "iz",
+    ] {
+        if let Some(rest) = w.strip_prefix(p) {
+            if rest.starts_with(['a', 'e', 'u', 'i', 'o']) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn international_ending(word: &str, pos: Pos) -> Option<(String, &'static str, &'static str)> {
     // Adjectival internationalisms (must run before generic -ny handling).
     if pos == Pos::Adjective {
@@ -393,4 +414,17 @@ fn stem_is_soft(stem: &str) -> bool {
     ) || stem.ends_with("lj")
         || stem.ends_with("nj")
         || stem.ends_with("dž")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn native_prefix_vowel_boundary_detected() {
+        // au/eu across a native prefix boundary must be protected (B1).
+        assert!(super::starts_native_prefix_vowel("naučiti"));
+        assert!(super::starts_native_prefix_vowel("neuspěh"));
+        assert!(super::starts_native_prefix_vowel("zaučiti"));
+        assert!(!super::starts_native_prefix_vowel("avtomobil"));
+        assert!(!super::starts_native_prefix_vowel("telefon"));
+    }
 }

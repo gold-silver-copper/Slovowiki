@@ -10,31 +10,31 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.08649225533008575,
-          "n": 3746,
-          "normalized": 0.1286705881357193
+          "exact": 0.08656158298254013,
+          "n": 3743,
+          "normalized": 0.12877370417118073
         },
         {
           "branch_coverage": 2,
-          "exact": 0.2144780158996582,
-          "n": 6686,
-          "normalized": 0.30735865235328674
+          "exact": 0.21441388130187988,
+          "n": 6688,
+          "normalized": 0.3072667419910431
         },
         {
           "branch_coverage": 3,
-          "exact": 0.46523517370224,
-          "n": 5868,
-          "normalized": 0.547034740447998
+          "exact": 0.4651558995246887,
+          "n": 5869,
+          "normalized": 0.5469415783882141
         }
       ],
       "by_confidence": {
         "low": {
-          "n": 3200,
-          "normalized": 0.1340624988079071
+          "n": 3195,
+          "normalized": 0.13427230715751648
         },
         "medium": {
-          "n": 13100,
-          "normalized": 0.4059542119503021
+          "n": 13105,
+          "normalized": 0.4057992994785309
         }
       },
       "by_pos": {
@@ -71,12 +71,12 @@
       },
       "description": "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).",
       "exact_top1": 0.27533742785453796,
-      "mean_normalized_edit_distance": 0.25204840302467346,
+      "mean_normalized_edit_distance": 0.2520250380039215,
       "n": 16300,
       "name": "baseline",
       "normalized_top1": 0.35257667303085327,
-      "normalized_top3": 0.4330061376094818,
-      "normalized_top5": 0.4330061376094818,
+      "normalized_top3": 0.43288344144821167,
+      "normalized_top5": 0.43288344144821167,
       "skeleton_top1": 0.3545398712158203
     },
     {
@@ -89,31 +89,31 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.08033058047294617,
-          "n": 3025,
-          "normalized": 0.11801652610301971
+          "exact": 0.08041032403707504,
+          "n": 3022,
+          "normalized": 0.11813368648290634
         },
         {
           "branch_coverage": 2,
-          "exact": 0.22159945964813232,
-          "n": 7315,
-          "normalized": 0.31483253836631775
+          "exact": 0.22153888642787933,
+          "n": 7317,
+          "normalized": 0.3146098256111145
         },
         {
           "branch_coverage": 3,
-          "exact": 0.45469799637794495,
-          "n": 5960,
-          "normalized": 0.5459731817245483
+          "exact": 0.45462170243263245,
+          "n": 5961,
+          "normalized": 0.5458815693855286
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 7961,
-          "normalized": 0.5157643556594849
+          "n": 7962,
+          "normalized": 0.515699565410614
         },
         "medium": {
-          "n": 8339,
-          "normalized": 0.21681256592273712
+          "n": 8338,
+          "normalized": 0.2167186439037323
         }
       },
       "by_pos": {
@@ -145,18 +145,18 @@
         "verb": {
           "exact": 0.23071394860744476,
           "n": 4174,
-          "normalized": 0.3344513773918152
+          "normalized": 0.3342117965221405
         }
       },
       "description": "Branch-balanced skeleton vote + South-Slavic representative.",
       "exact_top1": 0.280613511800766,
-      "mean_normalized_edit_distance": 0.25072863698005676,
+      "mean_normalized_edit_distance": 0.2507065236568451,
       "n": 16300,
       "name": "+branch-consensus",
-      "normalized_top1": 0.3628220856189728,
-      "normalized_top3": 0.4469938576221466,
-      "normalized_top5": 0.4469938576221466,
-      "skeleton_top1": 0.36595091223716736
+      "normalized_top1": 0.3627607226371765,
+      "normalized_top3": 0.4468098282814026,
+      "normalized_top5": 0.4468098282814026,
+      "skeleton_top1": 0.3658895790576935
     },
     {
       "by_branch_coverage": [
@@ -168,21 +168,21 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.09139035642147064,
-          "n": 3589,
-          "normalized": 0.13513512909412384
+          "exact": 0.09146681427955627,
+          "n": 3586,
+          "normalized": 0.13524818420410156
         },
         {
           "branch_coverage": 2,
-          "exact": 0.2325102835893631,
-          "n": 6804,
-          "normalized": 0.3276014029979706
+          "exact": 0.2324419617652893,
+          "n": 6806,
+          "normalized": 0.327358216047287
         },
         {
           "branch_coverage": 3,
-          "exact": 0.4575926959514618,
-          "n": 5907,
-          "normalized": 0.549178957939148
+          "exact": 0.45751523971557617,
+          "n": 5908,
+          "normalized": 0.5490859746932983
         }
       ],
       "by_confidence": {
@@ -191,12 +191,12 @@
           "normalized": 0.5887342095375061
         },
         "low": {
-          "n": 2314,
-          "normalized": 0.09939498454332352
+          "n": 2311,
+          "normalized": 0.0990912988781929
         },
         "medium": {
-          "n": 9388,
-          "normalized": 0.3217937648296356
+          "n": 9391,
+          "normalized": 0.32169097661972046
         }
       },
       "by_pos": {
@@ -228,18 +228,18 @@
         "verb": {
           "exact": 0.2347867786884308,
           "n": 4174,
-          "normalized": 0.33948251605033875
+          "normalized": 0.33924293518066406
         }
       },
       "description": "Six dialect-subgroup vote with population tie-break (§4.1).",
       "exact_top1": 0.28300613164901733,
-      "mean_normalized_edit_distance": 0.25052180886268616,
+      "mean_normalized_edit_distance": 0.25047770142555237,
       "n": 16300,
       "name": "+six-subgroup",
-      "normalized_top1": 0.36552146077156067,
-      "normalized_top3": 0.4447852671146393,
-      "normalized_top5": 0.4447852671146393,
-      "skeleton_top1": 0.36865031719207764
+      "normalized_top1": 0.3654601275920868,
+      "normalized_top3": 0.44466257095336914,
+      "normalized_top5": 0.44466257095336914,
+      "skeleton_top1": 0.36858895421028137
     },
     {
       "by_branch_coverage": [
@@ -251,21 +251,21 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.09640568494796753,
-          "n": 3589,
-          "normalized": 0.1432153731584549
+          "exact": 0.09648633748292923,
+          "n": 3586,
+          "normalized": 0.14333519339561462
         },
         {
           "branch_coverage": 2,
-          "exact": 0.24970605969429016,
-          "n": 6804,
-          "normalized": 0.3445032238960266
+          "exact": 0.24963267147541046,
+          "n": 6806,
+          "normalized": 0.3442550599575043
         },
         {
           "branch_coverage": 3,
-          "exact": 0.4845099151134491,
-          "n": 5907,
-          "normalized": 0.5860843062400818
+          "exact": 0.48442789912223816,
+          "n": 5908,
+          "normalized": 0.5859851241111755
         }
       ],
       "by_confidence": {
@@ -274,12 +274,12 @@
           "normalized": 0.6263592839241028
         },
         "low": {
-          "n": 2314,
-          "normalized": 0.10198789834976196
+          "n": 2311,
+          "normalized": 0.10168758034706116
         },
         "medium": {
-          "n": 9388,
-          "normalized": 0.3412867486476898
+          "n": 9391,
+          "normalized": 0.34117773175239563
         }
       },
       "by_pos": {
@@ -311,18 +311,18 @@
         "verb": {
           "exact": 0.2347867786884308,
           "n": 4174,
-          "normalized": 0.33948251605033875
+          "normalized": 0.33924293518066406
         }
       },
       "description": "Native POS lemma endings: noun nom.sg, adj -y/-i, verb -ti (§3).",
       "exact_top1": 0.30104294419288635,
-      "mean_normalized_edit_distance": 0.23852278292179108,
+      "mean_normalized_edit_distance": 0.2384786605834961,
       "n": 16300,
       "name": "+lemma-endings",
-      "normalized_top1": 0.38773006200790405,
-      "normalized_top3": 0.4714110493659973,
-      "normalized_top5": 0.4714110493659973,
-      "skeleton_top1": 0.39122700691223145
+      "normalized_top1": 0.3876686990261078,
+      "normalized_top3": 0.4712883532047272,
+      "normalized_top5": 0.4712883532047272,
+      "skeleton_top1": 0.3911656439304352
     },
     {
       "by_branch_coverage": [
@@ -334,35 +334,35 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.09779883176088333,
-          "n": 3589,
-          "normalized": 0.14516578614711761
+          "exact": 0.09788064658641815,
+          "n": 3586,
+          "normalized": 0.14528723061084747
         },
         {
           "branch_coverage": 2,
-          "exact": 0.2564667761325836,
-          "n": 6804,
-          "normalized": 0.35185185074806213
+          "exact": 0.2571260631084442,
+          "n": 6806,
+          "normalized": 0.35277697443962097
         },
         {
           "branch_coverage": 3,
-          "exact": 0.511427104473114,
-          "n": 5907,
-          "normalized": 0.6219739317893982
+          "exact": 0.5116790533065796,
+          "n": 5908,
+          "normalized": 0.6222071647644043
         }
       ],
       "by_confidence": {
         "high": {
           "n": 4598,
-          "normalized": 0.6687690019607544
+          "normalized": 0.6685515642166138
         },
         "low": {
-          "n": 2314,
-          "normalized": 0.10242005437612534
+          "n": 2311,
+          "normalized": 0.1021202951669693
         },
         "medium": {
-          "n": 9388,
-          "normalized": 0.34906262159347534
+          "n": 9391,
+          "normalized": 0.35012245178222656
         }
       },
       "by_pos": {
@@ -372,180 +372,14 @@
           "normalized": 0.30352210998535156
         },
         "adv": {
-          "exact": 0.18569254875183105,
-          "n": 657,
-          "normalized": 0.2831050157546997
-        },
-        "noun": {
-          "exact": 0.39978474378585815,
-          "n": 8362,
-          "normalized": 0.48481225967407227
-        },
-        "num": {
-          "exact": 0.0982142835855484,
-          "n": 112,
-          "normalized": 0.2321428507566452
-        },
-        "pron": {
-          "exact": 0.2626262605190277,
-          "n": 99,
-          "normalized": 0.3030303120613098
-        },
-        "verb": {
-          "exact": 0.23430761694908142,
-          "n": 4174,
-          "normalized": 0.3387637734413147
-        }
-      },
-      "description": "Internationalism ending table: -izm/-cija/-ičny/-alny/-ovati (§5.2).",
-      "exact_top1": 0.3139263689517975,
-      "mean_normalized_edit_distance": 0.2369927614927292,
-      "n": 16300,
-      "name": "+internationalism",
-      "normalized_top1": 0.4042331278324127,
-      "normalized_top3": 0.49067485332489014,
-      "normalized_top5": 0.49067485332489014,
-      "skeleton_top1": 0.4077300727367401
-    },
-    {
-      "by_branch_coverage": [
-        {
-          "branch_coverage": 0,
-          "exact": 0.0,
-          "n": 0,
-          "normalized": 0.0
-        },
-        {
-          "branch_coverage": 1,
-          "exact": 0.10560044646263123,
-          "n": 3589,
-          "normalized": 0.14962385594844818
-        },
-        {
-          "branch_coverage": 2,
-          "exact": 0.2683715522289276,
-          "n": 6804,
-          "normalized": 0.35831862688064575
-        },
-        {
-          "branch_coverage": 3,
-          "exact": 0.5168444514274597,
-          "n": 5907,
-          "normalized": 0.621635377407074
-        }
-      ],
-      "by_confidence": {
-        "high": {
-          "n": 4598,
-          "normalized": 0.6685515642166138
-        },
-        "low": {
-          "n": 2314,
-          "normalized": 0.10847017914056778
-        },
-        "medium": {
-          "n": 9388,
-          "normalized": 0.35385599732398987
-        }
-      },
-      "by_pos": {
-        "adj": {
-          "exact": 0.2220303863286972,
-          "n": 2896,
-          "normalized": 0.30455800890922546
-        },
-        "adv": {
-          "exact": 0.1887366771697998,
-          "n": 657,
-          "normalized": 0.2831050157546997
-        },
-        "noun": {
-          "exact": 0.4044486880302429,
-          "n": 8362,
-          "normalized": 0.48672565817832947
-        },
-        "num": {
-          "exact": 0.0982142835855484,
-          "n": 112,
-          "normalized": 0.2321428507566452
-        },
-        "pron": {
-          "exact": 0.2626262605190277,
-          "n": 99,
-          "normalized": 0.3030303120613098
-        },
-        "verb": {
-          "exact": 0.2568279802799225,
-          "n": 4174,
-          "normalized": 0.34810733795166016
-        }
-      },
-      "description": "Normalize verbal/nominal prefixes råz-/prěd- (§2).",
-      "exact_top1": 0.32257670164108276,
-      "mean_normalized_edit_distance": 0.2361159324645996,
-      "n": 16300,
-      "name": "+prefixes",
-      "normalized_top1": 0.407791405916214,
-      "normalized_top3": 0.49785277247428894,
-      "normalized_top5": 0.49785277247428894,
-      "skeleton_top1": 0.4112883508205414
-    },
-    {
-      "by_branch_coverage": [
-        {
-          "branch_coverage": 0,
-          "exact": 0.0,
-          "n": 0,
-          "normalized": 0.0
-        },
-        {
-          "branch_coverage": 1,
-          "exact": 0.10532181710004807,
-          "n": 3589,
-          "normalized": 0.1510169953107834
-        },
-        {
-          "branch_coverage": 2,
-          "exact": 0.2682245671749115,
-          "n": 6804,
-          "normalized": 0.3619929552078247
-        },
-        {
-          "branch_coverage": 3,
-          "exact": 0.5168444514274597,
-          "n": 5907,
-          "normalized": 0.621635377407074
-        }
-      ],
-      "by_confidence": {
-        "high": {
-          "n": 4598,
-          "normalized": 0.6685515642166138
-        },
-        "low": {
-          "n": 2314,
-          "normalized": 0.10847017914056778
-        },
-        "medium": {
-          "n": 9388,
-          "normalized": 0.3570515513420105
-        }
-      },
-      "by_pos": {
-        "adj": {
-          "exact": 0.2220303863286972,
-          "n": 2896,
-          "normalized": 0.30455800890922546
-        },
-        "adv": {
-          "exact": 0.1887366771697998,
+          "exact": 0.18721461296081543,
           "n": 657,
           "normalized": 0.2846270799636841
         },
         "noun": {
-          "exact": 0.4043291211128235,
+          "exact": 0.4000239074230194,
           "n": 8362,
-          "normalized": 0.48756277561187744
+          "normalized": 0.4852905869483948
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -558,20 +392,20 @@
           "normalized": 0.3030303120613098
         },
         "verb": {
-          "exact": 0.2565883994102478,
+          "exact": 0.23526592552661896,
           "n": 4174,
-          "normalized": 0.3533780574798584
+          "normalized": 0.3397220969200134
         }
       },
-      "description": "Undo East-Slavic pleophony / liquid metathesis (§2).",
-      "exact_top1": 0.32245397567749023,
-      "mean_normalized_edit_distance": 0.23573161661624908,
+      "description": "Internationalism ending table: -izm/-cija/-ičny/-alny/-ovati (§5.2).",
+      "exact_top1": 0.3143558204174042,
+      "mean_normalized_edit_distance": 0.23662877082824707,
       "n": 16300,
-      "name": "+depleophony",
-      "normalized_top1": 0.4096319079399109,
-      "normalized_top3": 0.49987730383872986,
-      "normalized_top5": 0.49987730383872986,
-      "skeleton_top1": 0.4131288230419159
+      "name": "+internationalism",
+      "normalized_top1": 0.40478527545928955,
+      "normalized_top3": 0.49171778559684753,
+      "normalized_top5": 0.49171778559684753,
+      "skeleton_top1": 0.40828222036361694
     },
     {
       "by_branch_coverage": [
@@ -583,35 +417,201 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.10532181710004807,
-          "n": 3589,
-          "normalized": 0.1510169953107834
+          "exact": 0.10568878799676895,
+          "n": 3586,
+          "normalized": 0.1497490257024765
         },
         {
           "branch_coverage": 2,
-          "exact": 0.2708700895309448,
-          "n": 6804,
-          "normalized": 0.3605232238769531
+          "exact": 0.26902732253074646,
+          "n": 6806,
+          "normalized": 0.3592418432235718
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5195530652999878,
-          "n": 5907,
-          "normalized": 0.6206195950508118
+          "exact": 0.5170954465866089,
+          "n": 5908,
+          "normalized": 0.6218686699867249
         }
       ],
       "by_confidence": {
         "high": {
           "n": 4598,
-          "normalized": 0.6672466397285461
+          "normalized": 0.6683340668678284
         },
         "low": {
-          "n": 2314,
-          "normalized": 0.10847017914056778
+          "n": 2311,
+          "normalized": 0.1081782802939415
         },
         "medium": {
-          "n": 9388,
-          "normalized": 0.3559863567352295
+          "n": 9391,
+          "normalized": 0.35491427779197693
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.2220303863286972,
+          "n": 2896,
+          "normalized": 0.30455800890922546
+        },
+        "adv": {
+          "exact": 0.19025875627994537,
+          "n": 657,
+          "normalized": 0.2846270799636841
+        },
+        "noun": {
+          "exact": 0.40468788146972656,
+          "n": 8362,
+          "normalized": 0.48720401525497437
+        },
+        "num": {
+          "exact": 0.0982142835855484,
+          "n": 112,
+          "normalized": 0.2321428507566452
+        },
+        "pron": {
+          "exact": 0.2626262605190277,
+          "n": 99,
+          "normalized": 0.3030303120613098
+        },
+        "verb": {
+          "exact": 0.2577863037586212,
+          "n": 4174,
+          "normalized": 0.3490656316280365
+        }
+      },
+      "description": "Normalize verbal/nominal prefixes råz-/prěd- (§2).",
+      "exact_top1": 0.32300612330436707,
+      "mean_normalized_edit_distance": 0.2357519567012787,
+      "n": 16300,
+      "name": "+prefixes",
+      "normalized_top1": 0.4083435535430908,
+      "normalized_top3": 0.49889570474624634,
+      "normalized_top5": 0.49889570474624634,
+      "skeleton_top1": 0.4118404984474182
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.0,
+          "n": 0,
+          "normalized": 0.0
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.10540992766618729,
+          "n": 3586,
+          "normalized": 0.15114334225654602
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.2688803970813751,
+          "n": 6806,
+          "normalized": 0.3629150688648224
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.5170954465866089,
+          "n": 5908,
+          "normalized": 0.6218686699867249
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 4598,
+          "normalized": 0.6683340668678284
+        },
+        "low": {
+          "n": 2311,
+          "normalized": 0.1081782802939415
+        },
+        "medium": {
+          "n": 9391,
+          "normalized": 0.3581088185310364
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.2220303863286972,
+          "n": 2896,
+          "normalized": 0.30455800890922546
+        },
+        "adv": {
+          "exact": 0.19025875627994537,
+          "n": 657,
+          "normalized": 0.28614917397499084
+        },
+        "noun": {
+          "exact": 0.40456828474998474,
+          "n": 8362,
+          "normalized": 0.48804113268852234
+        },
+        "num": {
+          "exact": 0.0982142835855484,
+          "n": 112,
+          "normalized": 0.2321428507566452
+        },
+        "pron": {
+          "exact": 0.2626262605190277,
+          "n": 99,
+          "normalized": 0.3030303120613098
+        },
+        "verb": {
+          "exact": 0.25754672288894653,
+          "n": 4174,
+          "normalized": 0.35433638095855713
+        }
+      },
+      "description": "Undo East-Slavic pleophony / liquid metathesis (§2).",
+      "exact_top1": 0.3228834271430969,
+      "mean_normalized_edit_distance": 0.23536764085292816,
+      "n": 16300,
+      "name": "+depleophony",
+      "normalized_top1": 0.4101840555667877,
+      "normalized_top3": 0.5009202361106873,
+      "normalized_top5": 0.5009202361106873,
+      "skeleton_top1": 0.4136809706687927
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.0,
+          "n": 0,
+          "normalized": 0.0
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.10540992766618729,
+          "n": 3586,
+          "normalized": 0.15114334225654602
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.271525114774704,
+          "n": 6806,
+          "normalized": 0.3614457845687866
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.5198036432266235,
+          "n": 5908,
+          "normalized": 0.620853066444397
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 4598,
+          "normalized": 0.6670291423797607
+        },
+        "low": {
+          "n": 2311,
+          "normalized": 0.1081782802939415
+        },
+        "medium": {
+          "n": 9391,
+          "normalized": 0.357043981552124
         }
       },
       "by_pos": {
@@ -621,14 +621,14 @@
           "normalized": 0.3028315007686615
         },
         "adv": {
-          "exact": 0.19178082048892975,
+          "exact": 0.19330288469791412,
           "n": 657,
-          "normalized": 0.2846270799636841
+          "normalized": 0.28614917397499084
         },
         "noun": {
-          "exact": 0.40696007013320923,
+          "exact": 0.4071992337703705,
           "n": 8362,
-          "normalized": 0.48612773418426514
+          "normalized": 0.48660606145858765
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -641,20 +641,20 @@
           "normalized": 0.31313130259513855
         },
         "verb": {
-          "exact": 0.2580258846282959,
+          "exact": 0.25898417830467224,
           "n": 4174,
-          "normalized": 0.3533780574798584
+          "normalized": 0.35433638095855713
         }
       },
       "description": "Recover ę/ų nasal vowels from Polish (§2 Phase C).",
-      "exact_top1": 0.3245398700237274,
-      "mean_normalized_edit_distance": 0.23600156605243683,
+      "exact_top1": 0.3249693214893341,
+      "mean_normalized_edit_distance": 0.23563756048679352,
       "n": 16300,
       "name": "+nasals",
-      "normalized_top1": 0.40865030884742737,
-      "normalized_top3": 0.4989570677280426,
-      "normalized_top5": 0.4989570677280426,
-      "skeleton_top1": 0.41214725375175476
+      "normalized_top1": 0.4092024564743042,
+      "normalized_top3": 0.5,
+      "normalized_top5": 0.5,
+      "skeleton_top1": 0.4126994013786316
     },
     {
       "by_branch_coverage": [
@@ -666,35 +666,35 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.19134549796581268,
-          "n": 4437,
-          "normalized": 0.2375478893518448
+          "exact": 0.1915181577205658,
+          "n": 4433,
+          "normalized": 0.2377622425556183
         },
         {
           "branch_coverage": 2,
-          "exact": 0.30695873498916626,
-          "n": 6711,
-          "normalized": 0.390552818775177
+          "exact": 0.3075662851333618,
+          "n": 6714,
+          "normalized": 0.3914209008216858
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5408892631530762,
-          "n": 5038,
-          "normalized": 0.6194918751716614
+          "exact": 0.540980339050293,
+          "n": 5039,
+          "normalized": 0.6195673942565918
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 5667,
-          "normalized": 0.6707252264022827
+          "n": 5666,
+          "normalized": 0.6704906225204468
         },
         "low": {
-          "n": 2265,
-          "normalized": 0.10375276207923889
+          "n": 2262,
+          "normalized": 0.1034482792019844
         },
         "medium": {
-          "n": 8368,
-          "normalized": 0.33652007579803467
+          "n": 8372,
+          "normalized": 0.3376731872558594
         }
       },
       "by_pos": {
@@ -704,14 +704,14 @@
           "normalized": 0.29903313517570496
         },
         "adv": {
-          "exact": 0.1948249638080597,
+          "exact": 0.19634702801704407,
           "n": 657,
-          "normalized": 0.2891933023929596
+          "normalized": 0.29071536660194397
         },
         "noun": {
-          "exact": 0.4392489790916443,
+          "exact": 0.4393685758113861,
           "n": 8362,
-          "normalized": 0.5044247508049011
+          "normalized": 0.504783570766449
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -724,20 +724,20 @@
           "normalized": 0.4040403962135315
         },
         "verb": {
-          "exact": 0.28078582882881165,
+          "exact": 0.281744122505188,
           "n": 4174,
-          "normalized": 0.3622424602508545
+          "normalized": 0.36320075392723083
         }
       },
       "description": "Two-stage §4.4: consensus picks the root, the Proto-Slavic rule engine supplies the flavored form (ě/ć/đ/å/ȯ/y) via a leakage-free descendant+gloss link. Requires the proto cache.",
-      "exact_top1": 0.3485889434814453,
-      "mean_normalized_edit_distance": 0.23333309590816498,
+      "exact_top1": 0.3489570617675781,
+      "mean_normalized_edit_distance": 0.23300422728061676,
       "n": 16300,
       "name": "+proto-derived",
-      "normalized_top1": 0.42036810517311096,
-      "normalized_top3": 0.5217791199684143,
-      "normalized_top5": 0.5242944955825806,
-      "skeleton_top1": 0.4237423241138458
+      "normalized_top1": 0.42085888981819153,
+      "normalized_top3": 0.5226994156837463,
+      "normalized_top5": 0.5252147316932678,
+      "skeleton_top1": 0.4242331385612488
     },
     {
       "by_branch_coverage": [
@@ -749,35 +749,35 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.19153724610805511,
-          "n": 4443,
-          "normalized": 0.23767724633216858
+          "exact": 0.19170984625816345,
+          "n": 4439,
+          "normalized": 0.23789142072200775
         },
         {
           "branch_coverage": 2,
-          "exact": 0.3085867762565613,
-          "n": 6708,
-          "normalized": 0.3922182321548462
+          "exact": 0.30919384956359863,
+          "n": 6711,
+          "normalized": 0.3930859863758087
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5416087508201599,
-          "n": 5035,
-          "normalized": 0.6202582120895386
+          "exact": 0.5416997671127319,
+          "n": 5036,
+          "normalized": 0.6203336119651794
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 5664,
-          "normalized": 0.6709039807319641
+          "n": 5663,
+          "normalized": 0.6706692576408386
         },
         "low": {
-          "n": 2331,
-          "normalized": 0.11325611174106598
+          "n": 2328,
+          "normalized": 0.11297250539064407
         },
         "medium": {
-          "n": 8305,
-          "normalized": 0.3373871147632599
+          "n": 8309,
+          "normalized": 0.33854857087135315
         }
       },
       "by_pos": {
@@ -787,14 +787,14 @@
           "normalized": 0.3024861812591553
         },
         "adv": {
-          "exact": 0.1948249638080597,
+          "exact": 0.19634702801704407,
           "n": 657,
-          "normalized": 0.2891933023929596
+          "normalized": 0.29071536660194397
         },
         "noun": {
-          "exact": 0.4397273361682892,
+          "exact": 0.439846932888031,
           "n": 8362,
-          "normalized": 0.5049031376838684
+          "normalized": 0.5052618980407715
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -807,20 +807,20 @@
           "normalized": 0.4040403962135315
         },
         "verb": {
-          "exact": 0.28078582882881165,
+          "exact": 0.281744122505188,
           "n": 4174,
-          "normalized": 0.3622424602508545
+          "normalized": 0.36320075392723083
         }
       },
       "description": "Prefer the internationalism cluster over native synonyms (ISV design criteria favor international roots for modern vocabulary): aeroplan over samolot.",
-      "exact_top1": 0.3494478464126587,
-      "mean_normalized_edit_distance": 0.23283065855503082,
+      "exact_top1": 0.3498159646987915,
+      "mean_normalized_edit_distance": 0.2325018346309662,
       "n": 16300,
       "name": "+intl-preference",
-      "normalized_top1": 0.42122700810432434,
-      "normalized_top3": 0.5221472382545471,
-      "normalized_top5": 0.5246625542640686,
-      "skeleton_top1": 0.4246012270450592
+      "normalized_top1": 0.4217177927494049,
+      "normalized_top3": 0.5230674743652344,
+      "normalized_top5": 0.5255828499794006,
+      "skeleton_top1": 0.42509201169013977
     },
     {
       "by_branch_coverage": [
@@ -832,52 +832,52 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.19176232814788818,
-          "n": 4443,
-          "normalized": 0.23790231347084045
+          "exact": 0.19193512201309204,
+          "n": 4439,
+          "normalized": 0.23811669647693634
         },
         {
           "branch_coverage": 2,
-          "exact": 0.3193202018737793,
-          "n": 6708,
-          "normalized": 0.4086165726184845
+          "exact": 0.3205185532569885,
+          "n": 6711,
+          "normalized": 0.41007301211357117
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5660377144813538,
-          "n": 5035,
-          "normalized": 0.651439905166626
+          "exact": 0.566123902797699,
+          "n": 5036,
+          "normalized": 0.6513105630874634
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 5664,
-          "normalized": 0.6924434900283813
+          "n": 5663,
+          "normalized": 0.6920360326766968
         },
         "low": {
-          "n": 2331,
-          "normalized": 0.11583011597394943
+          "n": 2328,
+          "normalized": 0.11554982513189316
         },
         "medium": {
-          "n": 8305,
-          "normalized": 0.3542444407939911
+          "n": 8309,
+          "normalized": 0.35587915778160095
         }
       },
       "by_pos": {
         "adj": {
-          "exact": 0.2986878454685211,
+          "exact": 0.30006906390190125,
           "n": 2896,
-          "normalized": 0.39502763748168945
+          "normalized": 0.39606353640556335
         },
         "adv": {
-          "exact": 0.1948249638080597,
+          "exact": 0.19634702801704407,
           "n": 657,
-          "normalized": 0.2891933023929596
+          "normalized": 0.29071536660194397
         },
         "noun": {
-          "exact": 0.4397273361682892,
+          "exact": 0.439846932888031,
           "n": 8362,
-          "normalized": 0.5049031376838684
+          "normalized": 0.5052618980407715
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -890,20 +890,20 @@
           "normalized": 0.4040403962135315
         },
         "verb": {
-          "exact": 0.28078582882881165,
+          "exact": 0.281744122505188,
           "n": 4174,
-          "normalized": 0.3622424602508545
+          "normalized": 0.36320075392723083
         }
       },
       "description": "Drop a South-Slavic adjective's fleeting vowel before -y, gated on East/West consonant adjacency (dobar→dobry, zelen stays).",
-      "exact_top1": 0.36147239804267883,
-      "mean_normalized_edit_distance": 0.230355367064476,
+      "exact_top1": 0.36208587884902954,
+      "mean_normalized_edit_distance": 0.23002324998378754,
       "n": 16300,
       "name": "+adj-fleeting",
-      "normalized_top1": 0.43766871094703674,
-      "normalized_top3": 0.5418404936790466,
-      "normalized_top5": 0.5443558096885681,
-      "skeleton_top1": 0.44110429286956787
+      "normalized_top1": 0.4383435547351837,
+      "normalized_top3": 0.5429447889328003,
+      "normalized_top5": 0.5454601049423218,
+      "skeleton_top1": 0.44177913665771484
     },
     {
       "by_branch_coverage": [
@@ -915,52 +915,52 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.19176232814788818,
-          "n": 4443,
-          "normalized": 0.23790231347084045
+          "exact": 0.19193512201309204,
+          "n": 4439,
+          "normalized": 0.23811669647693634
         },
         {
           "branch_coverage": 2,
-          "exact": 0.3193202018737793,
-          "n": 6708,
-          "normalized": 0.4086165726184845
+          "exact": 0.3205185532569885,
+          "n": 6711,
+          "normalized": 0.41007301211357117
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5660377144813538,
-          "n": 5035,
-          "normalized": 0.651439905166626
+          "exact": 0.566123902797699,
+          "n": 5036,
+          "normalized": 0.6513105630874634
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 5664,
-          "normalized": 0.6924434900283813
+          "n": 5663,
+          "normalized": 0.6920360326766968
         },
         "low": {
-          "n": 2331,
-          "normalized": 0.11583011597394943
+          "n": 2328,
+          "normalized": 0.11554982513189316
         },
         "medium": {
-          "n": 8305,
-          "normalized": 0.3542444407939911
+          "n": 8309,
+          "normalized": 0.35587915778160095
         }
       },
       "by_pos": {
         "adj": {
-          "exact": 0.2986878454685211,
+          "exact": 0.30006906390190125,
           "n": 2896,
-          "normalized": 0.39502763748168945
+          "normalized": 0.39606353640556335
         },
         "adv": {
-          "exact": 0.1948249638080597,
+          "exact": 0.19634702801704407,
           "n": 657,
-          "normalized": 0.2891933023929596
+          "normalized": 0.29071536660194397
         },
         "noun": {
-          "exact": 0.4397273361682892,
+          "exact": 0.439846932888031,
           "n": 8362,
-          "normalized": 0.5049031376838684
+          "normalized": 0.5052618980407715
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -973,20 +973,20 @@
           "normalized": 0.4040403962135315
         },
         "verb": {
-          "exact": 0.28078582882881165,
+          "exact": 0.281744122505188,
           "n": 4174,
-          "normalized": 0.3622424602508545
+          "normalized": 0.36320075392723083
         }
       },
       "description": "Seed alternatives from secondary translations (below every primary candidate) so the official lemma surfaces in top-3/top-5 when it is a 2nd/3rd translation.",
-      "exact_top1": 0.36147239804267883,
-      "mean_normalized_edit_distance": 0.230355367064476,
+      "exact_top1": 0.36208587884902954,
+      "mean_normalized_edit_distance": 0.23002324998378754,
       "n": 16300,
       "name": "+synonym-alts",
-      "normalized_top1": 0.43766871094703674,
-      "normalized_top3": 0.5436196327209473,
-      "normalized_top5": 0.5714110136032104,
-      "skeleton_top1": 0.44110429286956787
+      "normalized_top1": 0.4383435547351837,
+      "normalized_top3": 0.5446012020111084,
+      "normalized_top5": 0.5725767016410828,
+      "skeleton_top1": 0.44177913665771484
     },
     {
       "by_branch_coverage": [
@@ -998,52 +998,52 @@
         },
         {
           "branch_coverage": 1,
-          "exact": 0.19751165807247162,
-          "n": 4501,
-          "normalized": 0.24327927827835083
+          "exact": 0.19768734276294708,
+          "n": 4497,
+          "normalized": 0.2434956580400467
         },
         {
           "branch_coverage": 2,
-          "exact": 0.32483601570129395,
-          "n": 6708,
-          "normalized": 0.4110018014907837
+          "exact": 0.326031893491745,
+          "n": 6711,
+          "normalized": 0.4124571681022644
         },
         {
           "branch_coverage": 3,
-          "exact": 0.5677523016929626,
-          "n": 4974,
-          "normalized": 0.6481704711914062
+          "exact": 0.5678392052650452,
+          "n": 4975,
+          "normalized": 0.6480401754379272
         }
       ],
       "by_confidence": {
         "high": {
-          "n": 5958,
-          "normalized": 0.6908358335494995
+          "n": 5957,
+          "normalized": 0.6904482245445251
         },
         "low": {
-          "n": 2302,
-          "normalized": 0.11294526606798172
+          "n": 2299,
+          "normalized": 0.11265767365694046
         },
         "medium": {
-          "n": 8040,
-          "normalized": 0.34315919876098633
+          "n": 8044,
+          "normalized": 0.34485331177711487
         }
       },
       "by_pos": {
         "adj": {
-          "exact": 0.2983425557613373,
+          "exact": 0.299723744392395,
           "n": 2896,
-          "normalized": 0.3933010995388031
+          "normalized": 0.3943370282649994
         },
         "adv": {
-          "exact": 0.1948249638080597,
+          "exact": 0.19634702801704407,
           "n": 657,
-          "normalized": 0.2891933023929596
+          "normalized": 0.29071536660194397
         },
         "noun": {
-          "exact": 0.44008609652519226,
+          "exact": 0.4402056932449341,
           "n": 8362,
-          "normalized": 0.5050227046012878
+          "normalized": 0.5053814649581909
         },
         "num": {
           "exact": 0.0982142835855484,
@@ -1056,20 +1056,20 @@
           "normalized": 0.4040403962135315
         },
         "verb": {
-          "exact": 0.29252514243125916,
+          "exact": 0.2934834659099579,
           "n": 4174,
-          "normalized": 0.3634403347969055
+          "normalized": 0.36439865827560425
         }
       },
       "description": "Grow proto-link coverage: strip a shared prefix off the cognates, link the bare root, re-attach the Interslavic prefix (råzprostirati from *prostirati).",
-      "exact_top1": 0.3646012246608734,
-      "mean_normalized_edit_distance": 0.23031800985336304,
+      "exact_top1": 0.3652147352695465,
+      "mean_normalized_edit_distance": 0.22998589277267456,
       "n": 16300,
       "name": "+prefix-strip (production)",
-      "normalized_top1": 0.437730073928833,
-      "normalized_top3": 0.5455828309059143,
-      "normalized_top5": 0.5735582709312439,
-      "skeleton_top1": 0.44116565585136414
+      "normalized_top1": 0.43840491771698,
+      "normalized_top3": 0.5465644001960754,
+      "normalized_top5": 0.5747238993644714,
+      "skeleton_top1": 0.4418404996395111
     }
   ]
 }

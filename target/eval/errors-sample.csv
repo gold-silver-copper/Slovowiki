@@ -28,6 +28,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 23588,luminescence,noun,luminescencija,luminiscencija,0.071,3,11
 3411,naturalistic,adj,naturalističny,naturalistyčny,0.071,3,12
 34839,unpredictable,adj,neprědvidlivy,nepredvidljivy,0.071,1,12
+35832,"neutralisation, neutralization",noun,nevtralizacija,neutralizacija,0.071,3,12
 35831,"neutralise, neutralize",verb,nevtralizovati,nejtralizovati,0.071,2,10
 22463,Nicaraguan,adj,nikaraguansky,nikaraguanjsky,0.071,3,12
 16997,Pan-Slavist,adj,panslavističny,panslavistyčny,0.071,2,11
@@ -73,7 +74,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 1203,"spokesman, representative",noun,prědstavitelj,prědstavitel,0.077,2,26
 1524,"present, introduce, represent",verb,prědstavjati,prědstavljati,0.077,2,22
 4291,persecution,noun,prěslědovańje,presladovanje,0.077,3,13
-35604,exaggeration,noun,prěuveličeńje,prevveličenje,0.077,2,17
 36563,Transnistria,noun,Pridněstrovje,pridnestrovie,0.077,2,13
 20657,affiliation,noun,prinaležnosť,prinadležnosť,0.077,2,16
 35569,manufacturer,noun,proizvoditelj,proizvoditel,0.077,2,16
@@ -135,6 +135,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 5653,superstition,noun,pråzdnověŕje,praznoverje,0.083,1,18
 5408,pay in advance,verb,prědplatiti,prědoplatiti,0.083,2,16
 11308,"movement, relocation",noun,prěmešćeńje,premieščenje,0.083,2,17
+22288,exaggerate,verb,prěuveličiti,preuveličati,0.083,2,15
 36734,landing,noun,prizemjeńje,prizemljenje,0.083,2,18
 34919,professional,noun,profesional,professional,0.083,2,16
 22318,"arbitrary, high-handed",adj,proizvoljny,proizvoljany,0.083,2,21
@@ -145,6 +146,7 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 5900,"disappointed, disenchanted, frustrated",adj,råzočarovany,råzčarovany,0.083,3,18
 36194,disorder (mental),noun,råzstrojstvo,råztrojstvo,0.083,2,20
 30581,"amuse, cheer up",verb,råzveseljati,råzveselati,0.083,1,25
+34930,"restore (a house, painting, old film)",verb,restavrovati,restaurovati,0.083,1,11
 35522,"resolution (decisiveness), decisiveness",noun,rěšiteljnosť,rešitelnosť,0.083,2,16
 3266,"revolutionary, revolutionist",noun,revolucioner,revolucionar,0.083,3,13
 4154,suicide,noun,samoubijstvo,samoubojstvo,0.083,3,19
@@ -223,6 +225,8 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 31991,"harmless, innoculous",adj,neškodlivy,neškodljivy,0.091,3,19
 28533,impatient,adj,netŕpělivy,netrpeljivy,0.091,3,13
 35068,intolerance,noun,netŕpimosť,netȯrpimost,0.091,2,20
+9680,neuromorphic,adj,nevromorfny,neuromorfny,0.091,3,12
+5037,neutrality,noun,nevtraľnosť,neutraľnosť,0.091,2,18
 3608,explanation,noun,objasnjeńje,objašnjenje,0.091,3,21
 23247,observation,noun,observacija,opservacija,0.091,1,20
 5167,"handle, operate",verb,obslugovati,obslugivati,0.091,2,9
@@ -395,7 +399,3 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 482,"exclude, except",verb,izključiti,isključiti,0.100,2,16
 35758,"destruction, annihilation",noun,izniščeńje,zniščenje,0.100,2,16
 20869,test,verb,izpytyvati,ispytyvati,0.100,1,22
-26285,lamb meat,noun,jagnętina,jagnjetina,0.100,2,12
-3851,simultaneous,adj,jednočasny,jednočesny,0.100,2,16
-26429,censer,noun,kadiľnica,kadilinica,0.100,2,12
-26455,stony,adj,kamenisty,kamienisty,0.100,3,13
