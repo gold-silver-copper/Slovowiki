@@ -111,6 +111,10 @@ pub struct ConsensusConfig {
     /// Repair verb conjugation-class endings: jat after hushing is a
     /// (-žati/-čati/-šati), statives take -ěti on East/West e-stem evidence.
     pub verb_class_repair: bool,
+    /// Repair voicing alternations the representative's orthography leaks:
+    /// devoiced prefixes bes-/is- → bez-/iz- and the loan nz → ns, each
+    /// corroborated by a cognate with the voiced/Latin spelling.
+    pub voicing_repair: bool,
 }
 
 impl ConsensusConfig {
@@ -138,6 +142,7 @@ impl ConsensusConfig {
             proto_prefix_stripping: false,
             loan_stem_repair: false,
             verb_class_repair: false,
+            voicing_repair: false,
         }
     }
 
@@ -167,6 +172,7 @@ impl ConsensusConfig {
             proto_prefix_stripping: true,
             loan_stem_repair: true,
             verb_class_repair: true,
+            voicing_repair: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -195,6 +201,7 @@ impl ConsensusConfig {
             proto_prefix_stripping: true,
             loan_stem_repair: true,
             verb_class_repair: true,
+            voicing_repair: true,
         }
     }
 }
@@ -614,7 +621,74 @@ fn reconstruct(
             form = fixed;
         }
     }
+
+    // Repair 8: voicing alternations (devoiced prefixes, loan nz/ns).
+    if cfg.voicing_repair {
+        let (fixed, steps) = voicing_repair(&form, per_lang, input);
+        if fixed != form {
+            trace.extend(steps);
+            form = fixed;
+        }
+    }
     (form, trace)
+}
+
+/// Voicing repairs (see `ConsensusConfig::voicing_repair`):
+///   (a) South-Slavic/orthographic prefix devoicing undone: bes-/is- → bez-/iz-
+///       (besplatny→bezplatny, isključiti→izključiti) when a cognate attests
+///       the voiced prefix — Interslavic always writes the voiced form. Roots
+///       that merely begin bes-/is- (beseda, iskra, istorija) have no voiced
+///       cognate and are untouched.
+///   (b) Latin loans keep etymological ns (compensare): nz → ns when a cognate
+///       spells ns (kompenzovati→kompensovati; benzin has no ns cognate).
+fn voicing_repair(
+    form: &str,
+    per_lang: &BTreeMap<&str, &SourceForm>,
+    input: &MeaningInput,
+) -> (String, Vec<RuleStep>) {
+    let mut w = form.to_string();
+    let mut steps = Vec::new();
+
+    for (devoiced, voiced) in [("bes", "bez"), ("is", "iz")] {
+        if let Some(rest) = w.strip_prefix(devoiced) {
+            let cons_stem = rest.chars().next().map(is_cons).unwrap_or(false);
+            if cons_stem && rest.chars().count() >= 3 {
+                let confirmed = per_lang
+                    .values()
+                    .any(|f| f.norm.latin.to_lowercase().starts_with(voiced));
+                if confirmed {
+                    let fixed = format!("{voiced}{rest}");
+                    steps.push(RuleStep::new(
+                        "prefix-voicing",
+                        w.clone(),
+                        fixed.clone(),
+                        format!("Predpona {voiced}- piše sę zvųčno (ne {devoiced}-)."),
+                        Some(DOC_ORTHO),
+                    ));
+                    w = fixed;
+                }
+            }
+        }
+    }
+
+    if (input.is_intl_meaning || is_international_form(&w)) && w.contains("nz") {
+        let confirmed = per_lang
+            .values()
+            .any(|f| f.norm.latin.to_lowercase().contains("ns"));
+        if confirmed {
+            let fixed = w.replace("nz", "ns");
+            steps.push(RuleStep::new(
+                "loan-ns",
+                w.clone(),
+                fixed.clone(),
+                "Latinska zaimka drži etimologično ns (compensare → kompensovati).".to_string(),
+                Some(DOC_ORTHO),
+            ));
+            w = fixed;
+        }
+    }
+
+    (w, steps)
 }
 
 /// Verb conjugation-class repairs (see `ConsensusConfig::verb_class_repair`):
@@ -1494,5 +1568,32 @@ mod tests {
         let cs = form("cs", Branch::West, "navádět");
         let per_cs: BTreeMap<&str, &SourceForm> = [("cs", &cs)].into_iter().collect();
         assert_eq!(verb_class_repair("navoditi", &per_cs).0, "navoditi");
+    }
+
+    #[test]
+    fn voicing_repairs() {
+        let intl = meaning(Pos::Noun, None, true);
+        let native = meaning(Pos::Adjective, None, false);
+
+        // (a) Devoiced prefix undone on a voiced-cognate witness.
+        let pl = form("pl", Branch::West, "bezplatny");
+        let per: BTreeMap<&str, &SourceForm> = [("pl", &pl)].into_iter().collect();
+        assert_eq!(voicing_repair("besplatny", &per, &native).0, "bezplatny");
+        // A root that merely begins is-/bes- has no voiced cognate: untouched.
+        let ru = form("ru", Branch::East, "istorija");
+        let per_ist: BTreeMap<&str, &SourceForm> = [("ru", &ru)].into_iter().collect();
+        assert_eq!(voicing_repair("istorija", &per_ist, &intl).0, "istorija");
+
+        // (b) Loan nz → ns only with an ns cognate (benzin stays).
+        let ru_ns = form("ru", Branch::East, "kompensirovat");
+        let per_ns: BTreeMap<&str, &SourceForm> = [("ru", &ru_ns)].into_iter().collect();
+        let verb = meaning(Pos::Verb, None, true);
+        assert_eq!(
+            voicing_repair("kompenzovati", &per_ns, &verb).0,
+            "kompensovati"
+        );
+        let pl_nz = form("pl", Branch::West, "benzyna");
+        let per_nz: BTreeMap<&str, &SourceForm> = [("pl", &pl_nz)].into_iter().collect();
+        assert_eq!(voicing_repair("benzin", &per_nz, &intl).0, "benzin");
     }
 }

@@ -1241,21 +1241,104 @@
       "by_branch_coverage": [
         {
           "branch_coverage": 0,
+          "exact": 0.47457626461982727,
+          "n": 118,
+          "normalized": 0.5508474707603455
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.21194690465927124,
+          "n": 4520,
+          "normalized": 0.26061946153640747
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.3387024700641632,
+          "n": 6705,
+          "normalized": 0.4278896450996399
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.6064151525497437,
+          "n": 4957,
+          "normalized": 0.6869074106216431
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 5972,
+          "normalized": 0.7275619506835938
+        },
+        "low": {
+          "n": 2299,
+          "normalized": 0.12005219608545303
+        },
+        "medium": {
+          "n": 8029,
+          "normalized": 0.36069250106811523
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.33701658248901367,
+          "n": 2896,
+          "normalized": 0.4343922734260559
+        },
+        "adv": {
+          "exact": 0.19786910712718964,
+          "n": 657,
+          "normalized": 0.2952815890312195
+        },
+        "noun": {
+          "exact": 0.4655584692955017,
+          "n": 8362,
+          "normalized": 0.5326476693153381
+        },
+        "num": {
+          "exact": 0.0982142835855484,
+          "n": 112,
+          "normalized": 0.2321428507566452
+        },
+        "pron": {
+          "exact": 0.39393940567970276,
+          "n": 99,
+          "normalized": 0.4040403962135315
+        },
+        "verb": {
+          "exact": 0.2975563108921051,
+          "n": 4174,
+          "normalized": 0.37014853954315186
+        }
+      },
+      "description": "Voicing correspondences: devoiced prefixes bes-/is- -> bez-/iz- and loan nz -> ns, each corroborated by a cognate with the voiced/Latin spelling.",
+      "exact_top1": 0.3859509229660034,
+      "mean_normalized_edit_distance": 0.22619733214378357,
+      "n": 16300,
+      "name": "+voicing",
+      "normalized_top1": 0.4611656367778778,
+      "normalized_top3": 0.5666871070861816,
+      "normalized_top5": 0.5946012139320374,
+      "skeleton_top1": 0.46478527784347534
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
           "exact": 0.4285714328289032,
           "n": 49,
           "normalized": 0.4897959232330322
         },
         {
           "branch_coverage": 1,
-          "exact": 0.13880303502082825,
+          "exact": 0.13964596390724182,
           "n": 3559,
-          "normalized": 0.18179263174533844
+          "normalized": 0.1829165518283844
         },
         {
           "branch_coverage": 2,
-          "exact": 0.30930233001708984,
+          "exact": 0.3109123408794403,
           "n": 5590,
-          "normalized": 0.39624330401420593
+          "normalized": 0.3982110917568207
         },
         {
           "branch_coverage": 3,
@@ -1267,22 +1350,22 @@
       "by_confidence": {
         "high": {
           "n": 6834,
-          "normalized": 0.676616907119751
+          "normalized": 0.6764705777168274
         },
         "low": {
           "n": 2227,
-          "normalized": 0.11764705926179886
+          "normalized": 0.11944320052862167
         },
         "medium": {
           "n": 7239,
-          "normalized": 0.3686973452568054
+          "normalized": 0.3703550100326538
         }
       },
       "by_pos": {
         "adj": {
-          "exact": 0.34564918279647827,
+          "exact": 0.3480663001537323,
           "n": 2896,
-          "normalized": 0.43991711735725403
+          "normalized": 0.4426795542240143
         },
         "adv": {
           "exact": 0.199391171336174,
@@ -1290,9 +1373,9 @@
           "normalized": 0.29223743081092834
         },
         "noun": {
-          "exact": 0.46878737211227417,
+          "exact": 0.46926572918891907,
           "n": 8362,
-          "normalized": 0.5328868627548218
+          "normalized": 0.5336043834686279
         },
         "num": {
           "exact": 0.1160714253783226,
@@ -1305,20 +1388,20 @@
           "normalized": 0.38383838534355164
         },
         "verb": {
-          "exact": 0.3068998456001282,
+          "exact": 0.30713942646980286,
           "n": 4174,
-          "normalized": 0.3756588399410248
+          "normalized": 0.37589842081069946
         }
       },
       "description": "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.",
-      "exact_top1": 0.39159509539604187,
-      "mean_normalized_edit_distance": 0.22774426639080048,
+      "exact_top1": 0.3923313021659851,
+      "mean_normalized_edit_distance": 0.2274918556213379,
       "n": 16300,
       "name": "+explicit-etymology (production)",
-      "normalized_top1": 0.4634969234466553,
-      "normalized_top3": 0.5718404650688171,
-      "normalized_top5": 0.5991411209106445,
-      "skeleton_top1": 0.4666871130466461
+      "normalized_top1": 0.4644171893596649,
+      "normalized_top3": 0.5729447603225708,
+      "normalized_top5": 0.600368082523346,
+      "skeleton_top1": 0.4676073491573334
     }
   ]
 }

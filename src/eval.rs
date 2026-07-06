@@ -62,7 +62,9 @@ fn kept_ladder() -> Vec<Rung> {
     loanrepair.loan_stem_repair = true;
     let mut verbclass = loanrepair;
     verbclass.verb_class_repair = true;
-    let mut explicit = verbclass;
+    let mut voicing = verbclass;
+    voicing.voicing_repair = true;
+    let mut explicit = voicing;
     explicit.explicit_etymology = true;
 
     vec![
@@ -81,6 +83,7 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+prefix-strip", description: "Grow proto-link coverage: strip a shared prefix off the cognates, link the bare root, re-attach the Interslavic prefix (råzprostirati from *prostirati).", cfg: prefixstrip },
         Rung { name: "+loan-stem-repair", description: "Repair national adaptation quirks the representative leaks into a loan stem: Polish y→i, South-Slavic epenthetic vowel (akcenat→akcent), -ac→-ec, final -ia→-ija, masculine -a drop — each corroborated by a cognate or the internationalism gate.", cfg: loanrepair },
         Rung { name: "+verb-class", description: "Verb conjugation classes: jat after hushing spelled a (drzati, slysati), statives -eti on East/West e-stem evidence (kameneti).", cfg: verbclass },
+        Rung { name: "+voicing", description: "Voicing correspondences: devoiced prefixes bes-/is- -> bez-/iz- and loan nz -> ns, each corroborated by a cognate with the voiced/Latin spelling.", cfg: voicing },
         Rung { name: "+explicit-etymology (production)", description: "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.", cfg: explicit },
     ]
 }

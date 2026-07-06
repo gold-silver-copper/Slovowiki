@@ -175,16 +175,22 @@ id,gloss,pos,official,baseline_pred,final_pred
 24630,soulless,adj,bezdušny,bezdušnyj,bezdušny
 24633,headless,adj,bezglåvy,bezgolovyj,bezglavy
 6516,"nameless, anonymous",adj,bezimenny,bezymannyj,bezimenny
+24637,boneless,adj,bezkostny,beskostnyj,bezkostny
 6524,treeless,adj,bezlěsny,bezlesnyj,bezlesny
 6525,leafless,adj,bezlistny,bezlistnyj,bezlistny
 24644,uninhabited,adj,bezljudny,bezludnyj,bezljudny
 4345,hopeless,adj,beznadějny,beznadožnyj,beznadějny
 24647,apodal,adj,beznogy,beznogij,beznogy
 19494,non-aligned (politician),adj,bezpartijny,bezpartyjny,bezpartijny
+20848,"gratuitous, free of charge, for free",adj,bezplatny,besplatnyj,bezplatny
+24653,"infertile, sterile",adj,bezplodny,neplodny,bezplodny
+33019,fruitless,adj,bezplodny,besplodnyj,bezplodny
 36639,"rootless, not having any family",adj,bezrodny,bezrodnyj,bezrodny
 24655,hornless,adj,bezrogy,bezrogij,bezrogy
 24656,armless,adj,bezrųky,bezrukij,bezrųky
+24657,powerless,adj,bezsiľny,bessilnyj,bezsilny
 24658,snowless,adj,bezsněžny,bezsniežny,bezsněžny
+24659,insomnia,noun,bezsȯnnica,nesanica,bezsonnica
 24661,"fearless, dauntless, intrepid",adj,bezstrašny,besstrašnyj,bezstrašny
 24008,insanity,noun,bezumje,bezumie,bezumje
 15248,"crazy, mad, insane, fuckwitted",adj,bezumny,bezumnyj,bezumny
@@ -836,9 +842,13 @@ id,gloss,pos,official,baseline_pred,final_pred
 16733,edition,noun,izdańje,izdanie,izdanje
 26181,loss,noun,izguba,zguba,izguba
 26182,lose,verb,izgubiti,zahubyty,izgubiti
+19743,"skilful, skillful, experienced",adj,izkusny,iskusnyj,izkusny
 26213,isogloss,noun,izoglosa,izoglossa,izoglosa
 26217,"plough, plow",verb,izorati,zorati,izorati
+19752,confession,noun,izpověď,ispoved,izpoved
 4742,Israeli,adj,izraeľsky,izrailskij,izraelsky
+13636,"east, eastern",adj,iztočny,istočny,iztočny
+15642,east,noun,iztok,istok,iztok
 32399,apology,noun,izvinjeńje,izvinenie,izvinjenje
 1528,Japanese,adj,japonsky,japonskij,japonsky
 26304,radiant,adj,jarky,jarkij,jarky
@@ -987,6 +997,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 1964,commission,noun,komisija,komissija,komisija
 35375,compatible,adj,kompatibiľny,kompatybilny,kompatibilny
 4972,compensation,noun,kompensacija,kompenzace,kompensacija
+524,compensate,verb,kompensovati,kompenzovati,kompensovati
 35964,competent,adj,kompetentny,kompetentnyj,kompetentny
 15958,computerized,adj,kompjuterizovany,komputerizovany,kompjuterizovany
 15959,computerize,verb,kompjuterizovati,komputerizovati,kompjuterizovati
@@ -999,6 +1010,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 1065,communistic,adj,komunističny,komunisticky,komunističny
 4402,communism,noun,komunizm,kommunizm,komunizm
 20413,conceptual,adj,konceptuaľny,konceptualnyj,konceptualny
+37002,condensation,noun,kondensacija,kondenzace,kondensacija
+37003,condensate,noun,kondensat,kondenzat,kondensat
+37004,capacitor (electrical),noun,kondensator,kondenzator,kondensator
 8557,"final, end, ultimate",adj,konečny,konečnyj,konečny
 823,congress,noun,kongres,kongress,kongres
 26642,horse meat,noun,konina,konjske maso,konina
@@ -1012,7 +1026,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 35013,connotation,noun,konotacija,konnotacija,konotacija
 33321,"canned food, tinned food",noun,konserva,konservy,konserva
 8574,conservativeness,noun,konservativnosť,konzervativnost,konservativnosť
+2889,conservative,adj,konservativny,konzervativny,konservativny
 26658,horse’s,adj,konsky,konskij,konsky
+37013,console,noun,konsola,konzole,konsola
 35233,constitutional,adj,konstitucijny,konstitucionnyj,konstitucijny
 5926,consul,noun,konsul,konzul,konsul
 19795,contraction,noun,kontrakcija,kontrakcja,kontrakcija
@@ -2444,7 +2460,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 23260,stitch,noun,šev,šov,šev
 12835,encryption,noun,šifrovańje,šifrovanie,šifrovanje
 12841,neck,noun,šija,šeja,šija
-34428,chimpanzee,noun,šimpanz,šimpanze,šimpanz
 196,wide,adj,široky,širokij,široky
 3884,school,adj,škoľny,školnyj,školny
 35053,Scotland,noun,Škotska,skotsko,škotska

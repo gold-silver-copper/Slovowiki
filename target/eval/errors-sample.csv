@@ -46,7 +46,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 227,function,verb,funkcionovati,funkcjonovati,0.077,2,11
 19712,heterogeneity,noun,heterogennosť,heterogenosť,0.077,3,22
 16948,simultaneously,adv,jednovrěmenno,ednovremenno,0.077,2,16
-2889,conservative,adj,konservativny,konzervativny,0.077,2,11
 22460,Costa Rican,adj,kostarikansky,kostrikansky,0.077,3,12
 35282,"short-lasting, short-lived, ephemeral",adj,kråtkotrajny,kratkotrajany,0.077,1,17
 27381,"Magyarisation, Magyarization",noun,madjarizacija,mađarizacija,0.077,3,14
@@ -83,7 +82,9 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 36615,"provision, security, procuring",noun,zabezpečeńje,zabezpiečenje,0.077,2,23
 3577,earthquake,noun,zemjetręseńje,zemetresenje,0.077,2,13
 36860,"malevolence, malice",noun,zlonaměrnosť,zlonamjernosť,0.077,2,21
+6519,"infinity, perpetuality",noun,bezkonečnosť,bezkonačnosť,0.083,2,18
 36721,hopelessness,noun,beznadějnosť,beznadežnosť,0.083,2,16
+33232,"unequalled, unparalleled, unexampled, unheard of",adj,bezpriměrny,bezprimjerny,0.083,2,29
 19662,kindly disposed,adj,blågosklonny,blahosklonny,0.083,1,24
 35308,long-lasting,adj,dȯlgotrajny,dolgotrajeny,0.083,1,15
 21721,dignity,noun,dostojenstvo,dostojanstvo,0.083,2,11
@@ -96,8 +97,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 8306,"unilaterally, one-way, one-sidedly",adv,jednostrånno,jednostrano,0.083,3,16
 1781,"unilateral, one-way, one-sided",adj,jednostrånny,jednostrany,0.083,3,13
 37347,cyberspace,noun,kiberprostor,kyberprostor,0.083,2,13
-524,compensate,verb,kompensovati,kompenzovati,0.083,1,13
-37002,condensation,noun,kondensacija,kondenzacija,0.083,2,17
 2730,ministry,noun,ministerstvo,ministrstvo,0.083,3,11
 34917,versatile,adj,mnogostrånny,mnogostrany,0.083,2,16
 36688,"inheritence, heirdom",noun,naslědovańje,nasleduvanje,0.083,2,23
@@ -162,11 +161,11 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 19717,homogeneity,noun,homogennosť,homogenosť,0.091,2,18
 35756,infrared,adj,infračrveny,infracrveny,0.091,3,11
 5309,initiative,noun,iniciativa,inicijativa,0.091,3,14
+8024,exception,noun,izključeńje,izklučenje,0.091,1,13
 21308,explore,verb,izslědovati,issledovati,0.091,1,14
 8282,singular,adj,jedinstveny,edinstveny,0.091,2,18
 36380,southeast,adj,jugoiztočny,jugoistočny,0.091,1,11
 8462,keyboard,noun,klaviatura,klavijatura,0.091,3,14
-37004,capacitor (electrical),noun,kondensator,kondenzator,0.091,2,11
 1856,consumerism,noun,konsumerizm,konsumeryzm,0.091,2,15
 32026,xenophobia,noun,ksenofobija,ksenofobiji,0.091,3,11
 2687,Liechtenstein,noun,Lihtenštejn,lihtenštajn,0.091,3,11
@@ -302,7 +301,6 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 35440,"sideburns, whiskers",noun,bakenbardy,bakenbardi,0.100,2,16
 2864,Belarusian,adj,bělorussky,belorusky,0.100,3,11
 37352,"jobless, unemployed",adj,bezråbotny,bezrobotny,0.100,3,13
-24659,insomnia,noun,bezsȯnnica,bessonnica,0.100,1,14
 6641,fearfully,adv,bojazlivo,bojazljivo,0.100,3,18
 6642,fearful,adj,bojazlivy,bojazljivy,0.100,3,23
 473,nipple,noun,brådavička,brådavika,0.100,3,12
@@ -399,3 +397,5 @@ id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 20937,"absolution, remission (sins)",noun,odpušćeńje,odpuščanje,0.100,3,24
 5556,"sever, cut off",verb,odrězyvati,odrezivati,0.100,2,14
 4372,"scare off, frighten away",verb,odstrašiti,odsrašiti,0.100,1,24
+29253,shear away,verb,odstrigati,odstrygati,0.100,2,10
+36386,untie (sth./sbd. from sth.),verb,odvęzyvati,odvezivati,0.100,2,13
