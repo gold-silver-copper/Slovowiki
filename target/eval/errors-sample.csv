@@ -1,401 +1,401 @@
 id,gloss,pos,official,predicted,norm_edit,branch_cov,n_langs
 37320,national socialist,adj,nacionalsocialističny,nacionalsocijalističny,0.045,1,11
+37321,national socialist,noun,nacionalsocialist,nacionalsocijalist,0.056,2,10
+37319,national socialism,noun,nacionalsocializm,nacionalsocijalizm,0.056,1,11
+31777,interlinguistic,adj,interlingvističny,interlinhvističny,0.059,3,16
 5171,representation,noun,prědstaviteljstvo,prědstavitelstvo,0.059,2,20
-35202,"improbable, unlikely",adj,nepravdopodobny,niepravdopodobny,0.062,2,18
+15958,computerized,adj,kompjuterizovany,komputerizovany,0.062,3,12
+15959,computerize,verb,kompjuterizovati,komputerizovati,0.062,3,10
+20120,"circulation, dissemination",noun,råzprostrånjeńje,råzprostranenje,0.062,2,22
 19635,Anglo-Saxon,adj,anglosaksonsky,anglo-saksonsky,0.067,2,11
-35974,exponential,adj,eksponenciaľny,eksponencijalny,0.067,2,11
-4425,South Slavic,adj,južnoslovjansky,južnoslovansky,0.067,2,12
-35365,crystallize,verb,kristalizovati,kristallizovati,0.067,2,13
-4964,"nationalise, nationalize",verb,nacionalizovati,nacjonalizovati,0.067,2,11
+35202,"improbable, unlikely",adj,nepravdopodobny,nepravdepodobny,0.067,2,18
+28488,"enmity, hostility",noun,neprijateljstvo,neprijatelstvo,0.067,2,18
 10980,"consecutively, successively, subsequently",adv,poslědovateljno,posledovatelno,0.067,2,29
 2333,"consecutive, successive, sequential, subsequent",adj,poslědovateljny,posledovatelny,0.067,2,27
-34893,rename,verb,prěimenovyvati,pereimenovyvati,0.067,2,14
-36564,Transnistrian,adj,pridněstrovsky,pridnjestrovsky,0.067,2,12
-36351,streamlined,adj,racionalizovany,racionalizovny,0.067,3,17
-37378,Slavophilia,noun,slovjanofiľstvo,slovanofilstvo,0.067,3,15
-36306,"specialism, specialisation, specialization",noun,specializacija,specijalizacija,0.067,3,16
-83,"highway, motorway, freeway, autobahn",noun,avtomagistralj,avtomagistral,0.071,1,22
-5574,"bless, beatify",verb,blågoslavjati,blagoslavljati,0.071,2,16
+22773,North Korean,adj,sěvernokorejsky,severokorejsky,0.067,2,11
+22975,grace,noun,blågosklonnosť,blahosklonnosť,0.071,2,26
 5901,blessing,noun,blågoslovjeńje,blagoslovenje,0.071,1,14
+36604,philanthropic,adj,člověkoljubivy,čovekoljubivy,0.071,1,20
 25093,dactyloscopy,noun,daktyloskopija,daktiloskopija,0.071,3,12
 7448,enthusiastically,adv,entuziastično,entuzijastično,0.071,2,19
 7449,"enthusiastic, enthused",adj,entuziastičny,entuzijastičny,0.071,2,19
-26079,idolater,noun,idolopoklonnik,idolopoklonik,0.071,2,14
 23588,luminescence,noun,luminescencija,luminiscencija,0.071,3,11
 34839,unpredictable,adj,neprědvidlivy,nepredvidljivy,0.071,1,12
+28487,hostile,adj,neprijateljsky,neprijatelsky,0.071,3,17
 35832,"neutralisation, neutralization",noun,nevtralizacija,neutralizacija,0.071,3,12
-35831,"neutralise, neutralize",verb,nevtralizovati,nejtralizovati,0.071,2,10
-22463,Nicaraguan,adj,nikaraguansky,nikaraguanjsky,0.071,3,12
+35831,"neutralise, neutralize",verb,nevtralizovati,neutralizovati,0.071,2,10
 16997,Pan-Slavist,adj,panslavističny,panslavistyčny,0.071,2,11
 3649,guarantee,noun,porųčiteljstvo,poručitelstvo,0.071,1,20
+34893,rename,verb,prěimenovyvati,premenovyvati,0.071,2,14
 23221,irritability,noun,råzdražlivosť,råzdražljivost,0.071,1,16
-12208,northwestern,adj,sěverozapadny,sjeverozapadny,0.071,2,11
+10294,"slavicise, slavicize",verb,slovjanizovati,slovanizovati,0.071,3,20
 2223,socialistic,adj,socialističny,socijalističny,0.071,2,11
-459,bodyguard,noun,tělohrånitelj,tjelohranitelj,0.071,2,17
-31065,vegetarian,adj,vegetariansky,vegetarijansky,0.071,3,11
 36695,morbidity (rate),noun,zabolěvajemosť,zabolevaemost,0.071,2,18
-5175,interested,adj,zainteresovany,zaintersovany,0.071,3,13
 3717,legislative,adj,zakonodateljny,zakonodatelny,0.071,2,13
-3979,bureaucratic,adj,bjurokratičny,biurokratičny,0.077,3,11
-17179,bulgarization,noun,bulgarizacija,bolgarizacija,0.077,3,12
-17193,Czecho-Slovak,adj,čehoslovačsky,čehoslovačky,0.077,3,11
+34777,poaching,noun,brakonierstvo,brakonjerstvo,0.077,2,15
+17179,bulgarization,noun,bulgarizacija,bȯlgarizacija,0.077,3,12
+6894,philanthropist,noun,člověkoljubec,čovekoljubec,0.077,1,21
 25092,fingerspelling,noun,daktylologija,daktilologija,0.077,3,12
 36242,complementary,adj,dopȯlniteljny,dopȯlnitelny,0.077,2,18
-227,function,verb,funkcionovati,funkcjonovati,0.077,2,11
 19712,heterogeneity,noun,heterogennosť,heterogenosť,0.077,3,22
+19731,intellectual,adj,intelektuaľny,intlektualny,0.077,3,11
 16948,simultaneously,adv,jednovrěmenno,ednovremenno,0.077,2,16
-22460,Costa Rican,adj,kostarikansky,kostrikansky,0.077,3,12
-35282,"short-lasting, short-lived, ephemeral",adj,kråtkotrajny,kratkotrajany,0.077,1,17
-27381,"Magyarisation, Magyarization",noun,madjarizacija,mađarizacija,0.077,3,14
+27381,"Magyarisation, Magyarization",noun,madjarizacija,madžarizacija,0.077,3,14
 17849,accumulation,noun,nagromađeńje,nagromadzenje,0.077,2,15
 23878,perfume,verb,naparfumovati,naparfemovati,0.077,1,15
-35665,inconsistency,noun,nedoslědnosť,nedosljednosť,0.077,2,12
-9598,"unexpectedness, suddenness",noun,neočekyvanosť,neočekivanosť,0.077,2,19
+20534,misunderstanding,noun,nedoråzuměńje,nedorozumenje,0.077,2,13
+9598,"unexpectedness, suddenness",noun,neočekyvanosť,neočekavanosť,0.077,2,19
 9608,"indefinitely, indeterminately",adv,neoprěděljeno,neopredeleno,0.077,2,17
 9609,"indefinite, indeterminate",adj,neoprěděljeny,neopredeleny,0.077,2,20
-28497,inaccessibility,noun,nepristųpnosť,nepristȯpnosť,0.077,3,18
 33821,waterproof,adj,nepromokajemy,nepromokaemy,0.077,2,14
-17950,"discontented, displeased, dissatisfied",adj,nezadovoljeny,nezadovoljny,0.077,3,18
+4387,Proto-Slavic,adj,praslovjansky,praslovansky,0.077,3,13
 1199,prehistory,noun,prědhistorija,predistorija,0.077,2,16
-3131,"president, chairman",noun,prědsědatelj,prědsjedatelj,0.077,2,16
 1524,"present, introduce, represent",verb,prědstavjati,prědstavljati,0.077,2,22
-4291,persecution,noun,prěslědovańje,presladovanje,0.077,3,13
+11264,"#introduction, presentation, performance (theater)",noun,prědstavjeńje,prědstavlenje,0.077,2,24
 36563,Transnistria,noun,Pridněstrovje,pridnestrovie,0.077,2,13
 20657,affiliation,noun,prinaležnosť,prinadležnosť,0.077,2,16
-20669,equability,noun,råvnoměrnosť,ravnomjernosť,0.077,3,13
-2409,"exasperation, irritation",noun,råzdražnjeńje,råzdražnienje,0.077,2,21
-30160,partition,noun,råzdrobjeńje,råzdrobljenje,0.077,2,27
 41,"disappointment, disenchantment, frustration",noun,råzočarovańje,råzčarovanje,0.077,3,19
 5543,"work out, draw up, elaborate",verb,råzråbotyvati,råzrabatyvati,0.077,1,14
 35519,republican,noun,republikanec,respublikanec,0.077,1,11
+15534,North Sea,adj,sěvernomorsky,severomorsky,0.077,2,13
+12200,northeast,adj,sěveroiztočny,severoistočny,0.077,1,12
 12259,confiscate,verb,skonfiskovati,konfiskovati,0.077,2,16
+20186,Serbo-Croat,adj,sŕbohrvatsky,srbohorvatsky,0.077,2,14
 36706,"concentrated, focused, intent",adj,sųsrědotočeny,sȯsredotočeny,0.077,2,16
-262,terrorist,adj,terorističny,terrorističny,0.077,3,11
+12831,hexagon,noun,šestivųgȯľnik,šestiugolnik,0.077,3,14
 31064,vegetarian,noun,vegetarianec,vegetarijanec,0.077,2,11
-32754,vegetarian,noun,vegetarianka,vegetarijanka,0.077,3,11
-36615,"provision, security, procuring",noun,zabezpečeńje,zabezpiečenje,0.077,2,23
 3577,earthquake,noun,zemjetręseńje,zemetresenje,0.077,2,13
-36860,"malevolence, malice",noun,zlonaměrnosť,zlonamjernosť,0.077,2,21
-6519,"infinity, perpetuality",noun,bezkonečnosť,bezkonačnosť,0.083,2,18
+1495,"abuse, misuse",verb,zloupotrěbiti,zlupotrebiti,0.077,2,10
+24163,accompaniment,noun,akompanement,akampanement,0.083,2,13
 36721,hopelessness,noun,beznadějnosť,beznadežnosť,0.083,2,16
-33232,"unequalled, unparalleled, unexampled, unheard of",adj,bezpriměrny,bezprimjerny,0.083,2,29
 19662,kindly disposed,adj,blågosklonny,blahosklonny,0.083,1,24
-35308,long-lasting,adj,dȯlgotrajny,dolgotrajeny,0.083,1,15
-21721,dignity,noun,dostojenstvo,dostojanstvo,0.083,2,11
-26060,"idealisation, idealization",noun,idealizacija,idelizacija,0.083,3,12
-37141,informational,adj,informacijny,informaciony,0.083,3,11
-3174,intellectual,noun,intelektual,intellektual,0.083,2,11
+17154,Epiphany,noun,Bogojavjeńje,bogojavlenje,0.083,2,15
+6098,fratricide,noun,bratobijstvo,bratubijstvo,0.083,3,11
+32531,ambitious,adj,čestiljubivy,čestoljubivy,0.083,2,23
+16448,four times,adv,četyrikråtno,četirikratno,0.083,2,13
+21721,dignity,noun,dostojenstvo,dostojnstvo,0.083,2,11
+35839,preciousness,noun,drågocěnnosť,dragocenosť,0.083,2,17
+16793,housekeeping,noun,gospodaŕstvo,hospodarstvo,0.083,3,21
+26059,idealistic,adj,idealističny,idealistyčny,0.083,3,11
+2630,empress,noun,imperatorica,imperatrica,0.083,3,15
+35756,infrared,adj,infračrveny,infračerveny,0.083,3,11
+290,engineering,noun,inženjerstvo,inženerstvo,0.083,2,18
 4855,publishing house,noun,izdateljstvo,izdatelstvo,0.083,2,12
-19761,monolingual,adj,jednojęzyčny,jednojezičny,0.083,3,15
-8301,one-way,adj,jednosměrny,jednosmjerny,0.083,2,13
-8306,"unilaterally, one-way, one-sidedly",adv,jednostrånno,jednostrano,0.083,3,16
-1781,"unilateral, one-way, one-sided",adj,jednostrånny,jednostrany,0.083,3,13
+19761,monolingual,adj,jednojęzyčny,jednojazyčny,0.083,3,15
+21310,uniform,adj,jednoobrazny,ednoobrazny,0.083,2,22
+21311,homogeneity,noun,jednorodnosť,ednorodnosť,0.083,2,25
+8306,"unilaterally, one-way, one-sidedly",adv,jednostrånno,jednostranne,0.083,3,16
+35687,calligraphic,adj,kaligrafičny,kalihrafičny,0.083,2,13
 37347,cyberspace,noun,kiberprostor,kyberprostor,0.083,2,13
-2730,ministry,noun,ministerstvo,ministrstvo,0.083,3,11
+35282,"short-lasting, short-lived, ephemeral",adj,kråtkotrajny,kratkotraeny,0.083,1,17
 34917,versatile,adj,mnogostrånny,mnogostrany,0.083,2,16
 36688,"inheritence, heirdom",noun,naslědovańje,nasleduvanje,0.083,2,23
+19883,"insufficiently, not enough",adv,nedostatȯčno,nedostatočne,0.083,3,15
+36686,"forbidden, not allowed",adj,nedozvoljeny,nedozvoleny,0.083,2,23
 37261,necromancy,noun,nekromantija,nekromancija,0.083,2,11
+9603,irresponsible,adj,neodgovorny,neodgovorany,0.083,1,12
 36651,disapproval,noun,neodobrjeńje,neodobrenje,0.083,2,22
 19895,unlimited,adj,neograničeny,neograničny,0.083,3,19
-36687,"forbidden, not allowed",adj,nepozvoljeny,nedozvoljeny,0.083,2,23
-37159,"unpleasantness, trouble",noun,neprijemnosť,neprijetnosť,0.083,2,18
-13222,unification,noun,objedinjeńje,objedinenje,0.083,1,19
 21377,process,verb,obråbotyvati,obrabatyvati,0.083,1,11
-1124,orientation,noun,orientacija,orijentacija,0.083,3,11
-34650,"lighting, illumination",noun,osvětljeńje,osvjetljenje,0.083,3,18
+29627,defiler,noun,oskvŕnitelj,oskvernitelj,0.083,2,16
 36456,subset (mathematics),noun,podmnožstvo,podmnožestvo,0.083,2,11
-22778,"eavesdrop, wiretap",verb,podslušivati,podsluhivati,0.083,2,10
-4373,potential,adj,potenciaľny,potencijalny,0.083,3,16
+10888,peninsular,adj,poluostrovny,poloostrovny,0.083,2,11
+6019,"advise, counsel",verb,posȯvětovati,posavetovati,0.083,2,12
 5653,superstition,noun,pråzdnověŕje,praznoverje,0.083,1,18
-5408,pay in advance,verb,prědplatiti,predoplatiti,0.083,2,16
-11308,"movement, relocation",noun,prěmešćeńje,premieščenje,0.083,2,17
+35309,prescribe,verb,prědpisyvati,prědpisovati,0.083,2,12
 22288,exaggerate,verb,prěuveličiti,preuveličati,0.083,2,15
-36734,landing,noun,prizemjeńje,prizemljenje,0.083,2,18
-34919,professional,noun,profesional,professional,0.083,2,16
+18444,"surpass, exceed",verb,prěvȯzhoditi,prevoshoditi,0.083,2,24
+4128,"friendly, amiable, amicable",adj,prijateljsky,prijatelsky,0.083,2,19
 22318,"arbitrary, high-handed",adj,proizvoljny,proizvoljany,0.083,2,21
+21484,"contradict, deny, negate",verb,protivrěčiti,protirečiti,0.083,2,22
 759,"fractious, irritable, quarrelsome",adj,råzdražlivy,råzdražljivy,0.083,1,20
+30160,partition,noun,råzdrobjeńje,råzdroblenje,0.083,2,27
 20126,"tell, narrate, relate, recount",verb,råzkazyvati,råzskazyvati,0.083,1,26
-11817,situation,noun,råzměšćeńje,råzmieščenje,0.083,2,20
 5900,"disappointed, disenchanted, frustrated",adj,råzočarovany,råzčarovany,0.083,3,18
 34000,unsaddle,verb,råzsedlyvati,rasedlyvati,0.083,2,11
 36194,disorder (mental),noun,råzstrojstvo,råztrojstvo,0.083,2,20
 30581,"amuse, cheer up",verb,råzveseljati,råzveselati,0.083,1,25
 34930,"restore (a house, painting, old film)",verb,restavrovati,restaurovati,0.083,1,11
 35522,"resolution (decisiveness), decisiveness",noun,rěšiteljnosť,rešitelnosť,0.083,2,16
-3266,"revolutionary, revolutionist",noun,revolucioner,revolucionar,0.083,3,13
-4154,suicide,noun,samoubijstvo,samoubojstvo,0.083,3,19
+4154,suicide,noun,samoubijstvo,samubijstvo,0.083,3,19
 2874,deform,verb,sdeformovati,zdeformovati,0.083,1,13
-12206,northwest,noun,sěverozapad,sjeverozapad,0.083,2,11
 23632,sociological,adj,sociologičny,socjologičny,0.083,2,11
-31716,speciality,noun,speciaľnosť,specijaľnosť,0.083,2,16
+5903,modernity,noun,sȯvrěmennosť,sovremenosť,0.083,2,14
 35925,speculative,adj,spekulativny,špekulativny,0.083,3,13
-661,"just, equitable, fair, righteous",adj,spravědlivy,spraviedlivy,0.083,3,15
 35220,comparative,adj,sråvniteljny,sravnitelny,0.083,2,16
-22304,wilful,adj,svojevoljny,svojevoljany,0.083,3,22
+17046,degrees of comparison,noun,stųpnjevańje,stupnjovanje,0.083,2,12
+262,terrorist,adj,terorističny,terarističny,0.083,3,11
 13384,"established, fixed",adj,ustanovjeny,ustanovljeny,0.083,2,24
 22284,majestic,adj,veličstveny,veličestveny,0.083,2,20
-914,acrimony,noun,zajedlivosť,zajedljivost,0.083,1,21
+36000,narrow gauge,noun,vųzkokolejka,uzkokolejka,0.083,2,14
+13633,alpine,adj,vysokogorsky,vysokohorsky,0.083,2,16
+35853,"worried, disquieted",adj,zanepokojeny,znepokojeny,0.083,2,23
 21662,earn,verb,zaråbotyvati,zarabatyvati,0.083,1,11
+2294,conquer,verb,zavojevyvati,zavojovyvati,0.083,2,22
 16777,agriculture,noun,zemjeděľstvo,zemedelstvo,0.083,2,20
 15673,"malevolence, malice",noun,zloumysľnosť,zlomyslnosť,0.083,1,23
-24054,absorption,noun,absorbcija,absorbacija,0.091,2,24
-24326,artillery,noun,artilerija,artiljerija,0.091,3,15
-28504,"joyless, cheerless, dismal",adj,bezradostny,bezradosny,0.091,2,32
+24265,aluminium,adj,aluminijevy,aluminievy,0.091,3,14
+52,American,adj,amerikansky,amerykansky,0.091,3,11
+4359,automatic,adj,avtomatičny,avtamatičny,0.091,2,13
+19494,non-aligned (politician),adj,bezpartijny,bezpartieny,0.091,3,15
 35341,Byzantine,adj,bizantijsky,vizantijsky,0.091,2,12
 22297,"show benevolence, show goodwill",verb,blågovolěti,blagovoliti,0.091,2,14
 37508,armadillo,noun,brȯnjenosėc,bronenosec,0.091,2,12
+37366,"accountant (f.), bookkeeper (f.)",noun,buhhalterka,buhhaltarka,0.091,1,16
+348,Montenegrin,adj,črnogorsky,černogorsky,0.091,3,11
 25152,make one’s debut,verb,debjutovati,debutovati,0.091,2,10
-2851,decade,noun,desętilěťje,desetletje,0.091,3,18
+2851,decade,noun,desętilěťje,desetiletie,0.091,3,18
 35942,dialectical,adj,dialektičny,dialektyčny,0.091,3,12
+25276,volunteer,noun,dobrovoljec,dobrovolec,0.091,2,17
+17277,voluntary,adj,dobrovoljny,dobrovolny,0.091,3,17
+35308,long-lasting,adj,dȯlgotrajny,dȯlgotraeny,0.091,1,15
+7205,complement,noun,dopȯlnjeńje,dopȯlnenje,0.091,3,18
 21726,deliver,verb,dostavjati,dostavljati,0.091,2,11
+7421,nobility,noun,dvorjanstvo,dvoranstvo,0.091,2,21
+2882,"bilateral, two-sided",adj,dvustrånny,dvoustranny,0.091,3,14
 17365,ambiguity,noun,dvuznačnosť,dvoznačnosť,0.091,3,17
-17391,genius,noun,geniaľnosť,genijaľnosť,0.091,2,14
-20380,heterogeneous,adj,heterogenny,heterogeny,0.091,3,21
+35673,energy,adj,energetičny,enerhetičny,0.091,3,11
+33007,deaf-and-dumbness,noun,gluhuněmota,gluhonemota,0.091,2,11
+25937,hierarchic,adj,hierarhičny,ierarhičny,0.091,2,12
 19717,homogeneity,noun,homogennosť,homogenosť,0.091,2,18
-35756,infrared,adj,infračrveny,infracrveny,0.091,3,11
-5309,initiative,noun,iniciativa,inicijativa,0.091,3,14
+22387,Honduran,adj,hondurassky,hondurasky,0.091,3,11
+3174,intellectual,noun,intelektual,intlektual,0.091,2,11
 8024,exception,noun,izključeńje,izklučenje,0.091,1,13
 21308,explore,verb,izslědovati,issledovati,0.091,1,14
 8282,singular,adj,jedinstveny,edinstveny,0.091,2,18
+17618,unanimously,adv,jednoglåsno,ednoglasno,0.091,3,13
+17619,unanimous,adj,jednoglåsny,jednoglosny,0.091,3,13
+17620,"explicitly, unambiguously, unequivocally",adv,jednoznačno,ednoznačno,0.091,3,22
 36380,southeast,adj,jugoiztočny,jugoistočny,0.091,1,11
-8462,keyboard,noun,klaviatura,klavijatura,0.091,3,14
-1856,consumerism,noun,konsumerizm,konsumeryzm,0.091,2,15
-2687,Liechtenstein,noun,Lihtenštejn,lihtenštajn,0.091,3,11
-33371,massage,verb,masirovati,massirovati,0.091,2,9
-27449,material,adj,materiaľny,materijalny,0.091,3,11
+35876,air-conditioner,noun,kondicioner,kondycioner,0.091,1,14
 35446,dreamy,adj,mečtateljny,mečtatelny,0.091,2,21
-22302,"involuntary, unintentional",adj,mimovoljny,mimovoljany,0.091,3,25
 16971,polysyllabic,adj,mnogosložny,mnogusložny,0.091,2,14
 2762,oil pipeline,noun,naftoprovod,neftoprovod,0.091,2,12
-9361,strangest,adj,najdivnějši,nejdivnejši,0.091,2,15
+17850,accumulate,verb,nagromaditi,nahromaditi,0.091,3,15
 35936,mood (grammar),noun,naklonjeńje,naklonenje,0.091,1,11
-2928,rebuke,verb,napominati,napominjati,0.091,3,14
-9459,inheritress,noun,naslědnica,nasljednica,0.091,2,14
-761,"heritage, inheritance, legacy",noun,naslědstvo,nasljedstvo,0.091,2,21
-35664,inconsistently,adv,nedoslědno,nedosljedno,0.091,2,12
-35666,inconsistent,adj,nedoslědny,nedosljedny,0.091,2,13
-33013,"insatiability, sitomania, voracity",noun,nenasytnosť,nenasitnosť,0.091,3,23
-28446,"hateful, odious",adj,nenavistny,nienavistny,0.091,2,20
+32227,underdeveloped,adj,nedoråzvity,nedarazvity,0.091,2,12
 19894,inexplicable,adj,neobjasnimy,neobasnimy,0.091,2,16
 3860,"unexpectedly, suddenly",adv,neočekyvano,neočekivano,0.091,3,29
 19896,indescribable,adj,neopisujemy,neopisuemy,0.091,2,18
 19901,"unceasingly, incessantly",adv,neprěstanno,neprestano,0.091,1,21
 28482,"unceasing, incessant",adj,neprěstanny,neprestany,0.091,1,22
-28494,"indiscernible, imperceptible, unnoticeable",adj,neprimětny,neprimjetny,0.091,2,21
-28496,"indecent, inappropriate, obscene",adj,nepristojny,napristojny,0.091,3,17
+19903,incomprehension,noun,neråzuměńje,nerazumenne,0.091,1,13
+9653,unfortunate,adj,neščęstlivy,neščęslivy,0.091,2,22
 31991,"harmless, innoculous",adj,neškodlivy,neškodljivy,0.091,3,19
-28533,impatient,adj,netŕpělivy,netrpeljivy,0.091,3,13
-35068,intolerance,noun,netŕpimosť,netȯrpimost,0.091,2,20
+35068,intolerance,noun,netŕpimosť,neterpimost,0.091,2,20
 9680,neuromorphic,adj,nevromorfny,neuromorfny,0.091,3,12
 5037,neutrality,noun,nevtraľnosť,neutraľnosť,0.091,2,18
-3608,explanation,noun,objasnjeńje,objašnjenje,0.091,3,21
+3608,explanation,noun,objasnjeńje,objasnenje,0.091,3,21
 23247,observation,noun,observacija,opservacija,0.091,1,20
-5167,"handle, operate",verb,obslugovati,obslugivati,0.091,2,9
-6282,counterpart,noun,odpovědnik,odpoviednik,0.091,2,21
 36005,"pack, package, wrap",verb,opakovyvati,upakovyvati,0.091,1,15
 10230,"mourning, grief",noun,oplakyvańje,oplakivanje,0.091,3,22
 10237,definitely,adv,oprěděljeno,opredeleno,0.091,2,24
+10238,definite,adj,oprěděljeny,opredeleny,0.091,2,23
 14807,"destruction, desolation, devastation",noun,opustošeńje,spustošenje,0.091,2,29
-10269,"squire, weapons-bearer",noun,orųžjenosec,orožjenosec,0.091,2,15
-10330,abandonment,noun,ostavjeńje,ostavljenje,0.091,2,19
+10269,"squire, weapons-bearer",noun,orųžjenosec,oruženosec,0.091,2,15
+34650,"lighting, illumination",noun,osvětljeńje,osvetlenje,0.091,3,18
 23877,perfume,verb,parfumovati,parfemovati,0.091,1,13
-35681,patriarchate,noun,patriarhat,patrijarhat,0.091,3,11
 35316,pasigraphy,noun,pazigrafija,pasigrafija,0.091,2,11
 4319,perversity,noun,perversnosť,perverznosť,0.091,2,18
 2837,"underline, emphasize",verb,podčrknųti,podčerknuti,0.091,2,14
-21426,detail,noun,podrobnosť,podrobnosti,0.091,3,18
+1117,"sign, subscribe",verb,podpisyvati,podpisovati,0.091,2,11
 2093,suspect,verb,podzrěvati,podozrevati,0.091,3,14
-10818,"appearance, emergence",noun,pojavjeńje,pojavljenje,0.091,2,23
 36780,"room, facility, premises, quarters",noun,poměščeńje,pomieščenje,0.091,2,17
-25756,visitor,noun,posětitelj,posjetitelj,0.091,2,16
 33385,silver-plated,adj,posrěbrjeny,posrebreny,0.091,3,12
-22335,"agent, trustee, commissioner",noun,pověrjennik,poverjenik,0.091,2,33
-11254,preside,verb,prědsědati,prědsjedati,0.091,2,11
-31909,"outsmart, outfox",verb,prěhytrjati,prehytrati,0.091,2,16
+21034,Orthodoxy,noun,pravoslavje,pravoslavie,0.091,3,11
+11302,switch,verb,prěključiti,preklučiti,0.091,2,16
 36601,"revalue, reassess",verb,prěocěniti,pereoceniti,0.091,2,26
-5529,"rewrite, copy",verb,prěpisyvati,prepisivati,0.091,3,9
+5529,"rewrite, copy",verb,prěpisyvati,prepisovati,0.091,3,9
 3528,cross,verb,prěpravjati,prepravlati,0.091,1,13
-23360,respawning,noun,prěrođeńje,prerodzenje,0.091,2,13
-1358,press release,noun,presa-reliz,press-reliz,0.091,1,13
+1358,press release,noun,presa-reliz,pres-reliz,0.091,1,13
 2931,reshuffle,verb,prěstavjati,prestavlati,0.091,1,16
 1709,"afraid, scared, frightened, terrified",adj,prěstrašeny,prěstrašny,0.091,2,27
 32336,"criminality, crime rate",noun,prěstųpnosť,prestapnosť,0.091,2,17
 22149,transform,verb,prětvarjati,pretvarati,0.091,2,18
+35779,being near the border,adj,prigraničny,prihraničny,0.091,3,14
 4342,"friend, girlfriend",noun,prijateljka,prijatelka,0.091,2,18
-18487,"attribute, ascribe",verb,pripisyvati,pripisivati,0.091,3,11
+20078,"command, order",verb,prikazyvati,prikazovati,0.091,2,17
+18487,"attribute, ascribe",verb,pripisyvati,pripisovati,0.091,3,11
 21076,season,verb,pripravjati,pripravlati,0.091,1,19
-21483,tie (to smth.),verb,privęzyvati,privezivati,0.091,3,11
-22588,"adherent, supporter",noun,privŕženec,priverženec,0.091,2,31
-26249,perforate,verb,prodiraviti,prodyraviti,0.091,2,20
-5489,drive through,verb,proježđati,preježdžati,0.091,2,11
+4299,press,verb,pritisknųti,pritisnuti,0.091,3,19
+21483,tie (to smth.),verb,privęzyvati,privezovati,0.091,3,11
+36734,landing,noun,prizemjeńje,prizemlenje,0.091,2,18
+26249,perforate,verb,prodiraviti,prodiraveti,0.091,2,20
+5588,break through,verb,prolamyvati,prolamovati,0.091,2,16
 36579,"glorify, extol",verb,proslavjati,proslavlati,0.091,1,33
-361,protestant,noun,protestant,protestanti,0.091,3,14
-4623,air out,verb,provětriti,provjetriti,0.091,3,10
-23780,"steadily, evenly",adv,råvnoměrno,ravnomjerno,0.091,3,17
-20670,"even, uniform, steady, equable",adj,råvnoměrny,ravnomjerny,0.091,3,19
+428,"famous, glorious, acclaimed",adj,proslavjeny,proslaveny,0.091,2,26
+18588,"equal, coequal",adj,råvnopravny,ravnapravny,0.091,3,14
 35356,"enrage, infuriate",verb,råzběsniti,råzbjesniti,0.091,2,25
 11771,"exasperate, irritate, annoy",verb,råzdražniti,råzdražiti,0.091,2,18
-23924,"vexed, angry",adj,råzgněvany,råzgnievany,0.091,3,22
+30198,"warm up, heat up",verb,råzgrěvati,razogrevati,0.091,3,13
 33826,"throw around, scatter",verb,råzkydyvati,råzkidyvati,0.091,1,16
-33894,"spread, smear, smudge",verb,råzmazyvati,råzmazivati,0.091,3,14
-128,"place, situate, deploy, arrange, distribute",verb,råzměstiti,råzmjestiti,0.091,3,21
-1262,"place, situate, deploy, arrange, distribute",verb,råzměšćati,råzmieščati,0.091,2,23
-3004,mix up,verb,råzměšivati,råzmešavati,0.091,3,18
-32599,scatter,verb,råzmetyvati,råzmotyvati,0.091,2,19
+5589,break up,verb,råzlamyvati,råzlamovati,0.091,2,10
 30464,"examine, consider",verb,råzsmotriti,råzsmotreti,0.091,1,25
 21782,distance,noun,råzstojańje,råztojanje,0.091,2,18
 21918,"disturb, upset, put out of tune, disorganise, disorganize",verb,råzstrojiti,råztrojiti,0.091,2,21
 1866,scatter,verb,råzsypyvati,råzsypavati,0.091,1,13
+3601,"extension, expansion, extension, widening",noun,råzširjeńje,råzširenje,0.091,2,21
 22153,dissolve (in a liquid),verb,råztvarjati,råztvarati,0.091,2,15
-22199,"untie, unbind, unlace",verb,råzvęzyvati,råzvezivati,0.091,3,23
-21557,"wilful, unauthorized, wayward",adj,samovoljny,samovoljeny,0.091,3,20
+16356,self-service,noun,samoobsluga,samoobsluha,0.091,1,12
+12201,northeast,noun,sěveroiztok,severoistok,0.091,1,11
 37379,Slavophile,noun,slovjanofil,slovanofil,0.091,3,15
 4719,"Slavdom, Slavic world",noun,slovjanstvo,slovanstvo,0.091,3,17
-5129,specialist,noun,specialist,specijalist,0.091,3,19
+15026,contemporary,noun,sȯvrěmennik,sovremenik,0.091,2,14
 23825,"shy, timid, bashful, shamefaced",adj,sråmęžlivy,sramežljivy,0.091,2,27
-34897,pointsman,noun,strělȯčnik,streločnika,0.091,2,11
+1186,strategic,adj,strategičny,stratehičny,0.091,2,11
 5135,"accompany, escort, convoy",verb,sųprovoditi,soprovoditi,0.091,2,13
 21898,compassion,noun,sųstradańje,sȯstradanje,0.091,2,21
-20223,triumphant,adj,triumfaľny,trijumfalny,0.091,3,15
+5765,sovereignty,noun,suverenitet,suvrenitet,0.091,2,17
+36770,television,adj,televizijny,tlevizijny,0.091,2,11
 19000,"diligence, industriousness",noun,trudoljubje,trudoljubie,0.091,2,21
+2948,participate,verb,učęstvovati,učastvovati,0.091,2,11
 19061,pack,verb,upakovyvati,upakovivati,0.091,1,17
-13576,"probability, likeliness, likelihood",noun,věrojętnosť,verjetnosť,0.091,2,15
+5877,appeasement,noun,uspokojeńje,uspokoenje,0.091,2,25
+30958,"immortalise, immortalize",verb,uvěkověčiti,ovekovečiti,0.091,2,10
+13576,"probability, likeliness, likelihood",noun,věrojętnosť,verojatnosť,0.091,2,15
 36225,traitor,noun,věrolomnik,vjerolomnik,0.091,2,25
 36795,"attentive, sensitive, observant",adj,vnimateljny,vnimatelny,0.091,2,31
+22376,"intestines, bowels",noun,vnųtrnosti,vnutornosti,0.091,2,25
 36775,voivodship,noun,vojevodstvo,vojvodstvo,0.091,3,11
-21643,imagination,noun,vȯobražeńje,vyobraženje,0.091,3,20
 31339,"be resurrected, rise from the dead",verb,vȯzkresnųti,vȯzkrisnųti,0.091,3,15
 22724,"high-flown, pompous",adj,vysokoparny,visokoparny,0.091,2,29
+526,"satisfied, pleased",adj,zadovoljeny,zadovoleny,0.091,3,16
+914,acrimony,noun,zajedlivosť,zajadlivost,0.091,1,21
 23715,cough,verb,zakašljati,zakašȯljati,0.091,3,9
-33665,wedge,verb,zaklinovati,zaklinivati,0.091,2,23
 20306,conclusion,noun,zaključeńje,zaklučenje,0.091,2,22
+14105,bloodstained,adj,zakrvavjeny,zakrvaveny,0.091,1,19
 9026,slowdown,noun,zamedljeńje,zamedlenje,0.091,1,16
-14754,neglect,noun,zanedbańje,zaniedbanje,0.091,2,22
 16257,neglect,verb,zanedbyvati,zanedbavati,0.091,1,18
 19401,"initiate, commence, kick off, originate, start up",verb,započinati,započinjati,0.091,2,28
 22513,"seize, take possession of",verb,zavladyvati,zavladavati,0.091,2,21
 31636,"ill-intentioned, evil-minded, malicious, mischievous",adj,zlonaměrny,zlonamereny,0.091,2,16
 35507,breeder (of animals),noun,životinovod,životnovȯd,0.091,2,16
-32986,joviality,noun,žoviaľnosť,žovijaľnosť,0.091,2,24
-4898,Antarctica,noun,Antarktida,antarktyda,0.100,3,11
-15690,appellate,adj,apelacijny,apelaciony,0.100,3,15
+106,African,adj,afrikansky,afrykansky,0.100,3,11
 36413,arrange (music),verb,aranževati,aranžovati,0.100,2,12
 122,arrest,verb,areštovati,arestovati,0.100,1,11
 36749,autistic,adj,autističny,avtističny,0.100,3,12
-64,airline,noun,avialinija,aviolinija,0.100,2,15
 15773,authorities,noun,avtoritety,avtoriteti,0.100,1,20
-35440,"sideburns, whiskers",noun,bakenbardy,bakenbardi,0.100,2,16
 2864,Belarusian,adj,bělorussky,belorusky,0.100,3,11
 37352,"jobless, unemployed",adj,bezråbotny,bezrobotny,0.100,3,13
-6641,fearfully,adv,bojazlivo,bojazljivo,0.100,3,18
-6642,fearful,adj,bojazlivy,bojazljivy,0.100,3,23
+24659,insomnia,noun,bezsȯnnica,bezsonica,0.100,1,14
+21264,honorable (title),adj,blågorodny,blahorodny,0.100,3,24
+24769,heracleum,noun,bȯrščevnik,barščevnik,0.100,1,12
 473,nipple,noun,brådavička,brådavika,0.100,3,12
 37230,Purgatory,noun,čistilišče,čistilište,0.100,1,13
 25068,wormhole,noun,črvotočina,crvotočina,0.100,2,13
 2181,ninety,num,devęťdesęt,devedeset,0.100,2,11
-25248,diamond,adj,diamantovy,diamentovy,0.100,2,15
 37051,"disc jockey, DJ",noun,diskdžokej,diskžokej,0.100,2,19
 7162,prove,verb,dokazyvati,dokazovati,0.100,3,10
 7206,"complement, supplement",verb,dopȯlnjati,dopolnati,0.100,2,13
-1059,"reach, attain, achieve",verb,dosęgnųti,dosięgnųti,0.100,2,22
+7287,allowed,adj,dozvoljeny,dozvoleny,0.100,2,20
+23995,precious,adj,drågocěnny,drahocenny,0.100,3,17
 22993,bilingual,adj,dvujęzyčny,dvųjezičny,0.100,3,14
-25456,diarchy,noun,dvuvlasťje,dvuvlastie,0.100,2,12
 3291,gentleman,noun,džentelmen,džentlmen,0.100,3,16
-3582,expansion,noun,ekspansija,ekspansja,0.100,2,24
 25473,exterior,noun,eksterier,eksterijer,0.100,3,20
 3586,enthusiast,noun,entuziast,entuzijast,0.100,3,20
 7452,enthusiasm,noun,entuziazm,entuzijazm,0.100,3,26
-32902,flirt,verb,flirtovati,flertovati,0.100,3,13
-23430,piano,noun,fortepiano,fortepian,0.100,3,17
-35155,Glagolitic alphabet,noun,glagolica,glagoljica,0.100,3,12
-17449,surgical,adj,hirugičny,hirurgičny,0.100,2,11
+19690,"possibly, conceivably",adv,eventuaľno,eventualne,0.100,2,20
+1020,French,adj,francuzsky,francusky,0.100,2,12
+1336,voting,noun,glåsovańje,hlasovanje,0.100,3,13
+6328,grammatical,adj,gramatičny,hramatičny,0.100,3,11
+35189,hygienic,adj,higieničny,hihieničny,0.100,3,13
+23847,impressive,adj,imponujųći,imponųjuci,0.100,2,21
+6408,Indian (American),adj,indijansky,indiansky,0.100,3,12
 482,"exclude, except",verb,izključiti,isključiti,0.100,2,16
-35758,"destruction, annihilation",noun,izniščeńje,zniščenje,0.100,2,16
+26191,"uproot, extirpate",verb,izkoreniti,iskoreniti,0.100,2,21
 20869,test,verb,izpytyvati,ispytyvati,0.100,1,22
+32399,apology,noun,izvinjeńje,izvinenje,0.100,2,16
 3851,simultaneous,adj,jednočasny,jednočesny,0.100,2,16
 26429,censer,noun,kadiľnica,kadilinica,0.100,3,12
-26455,stony,adj,kamenisty,kamienisty,0.100,3,13
-2566,careerist,noun,karierist,karijerist,0.100,3,11
 19775,Catalan,adj,katalansky,katalonsky,0.100,3,11
-14647,client,adj,klientsky,klijentsky,0.100,3,11
-20148,component,noun,komponent,komponento,0.100,2,17
-36684,conversion,noun,konversija,konversja,0.100,2,18
+8431,"annually, yearly, every year",adv,každoročno,každoročne,0.100,1,18
+1623,crown,verb,koronovati,korunovati,0.100,2,10
+26833,short-legged,adj,kråtkonogy,kratkonohy,0.100,3,13
 35720,baptist (person who baptizes),noun,krestitelj,krstitelj,0.100,3,11
-26883,bow-legged,adj,krivonogy,krrivonogy,0.100,3,12
-20882,"chronicler, annalist",noun,lětopisec,ljetopisec,0.100,2,22
-3011,hypocrisy,noun,liceměŕje,licemjerje,0.100,2,19
-8875,hypocrite,noun,liceměrka,licemjerka,0.100,2,15
-8877,hypocritically,adv,liceměrno,licemjerno,0.100,3,20
-8878,hypocritical,adj,liceměrny,licemjerny,0.100,3,22
-20434,"curious, inquisitive",adj,ljubopytny,ljubopitny,0.100,2,25
-8916,"lover, mistress (in an extramarital relationship)",noun,ljubȯvnica,ljubavnica,0.100,2,12
+16482,"credulous, gullible",adj,legkověrny,lehkoverny,0.100,3,24
+332,liturgical,adj,liturgičny,liturhičny,0.100,3,16
 20446,trifle,noun,malenjkosť,malenkost,0.100,1,19
-20448,"minor, underage",adj,malolětny,maloljetny,0.100,2,15
+27412,sparsely populated,adj,maloljudny,maloludny,0.100,3,21
 20450,taciturn,adj,malomȯlvny,malomovny,0.100,2,23
 17763,diligence,noun,marlivosť,marljivost,0.100,1,19
-34780,alms,noun,milostynja,milostinja,0.100,2,14
-35302,miniature,noun,miniatura,minijatura,0.100,3,11
+27582,misalliance,noun,mezalians,mezalijans,0.100,3,18
+22302,"involuntary, unintentional",adj,mimovoljny,mimovolny,0.100,3,25
 5131,"perennial, long-years, long-term, long standing, lasting many years",adj,mnogolětny,mnoguletny,0.100,2,25
-3841,"newest, state-of-the-art",adj,najnovějši,nejnovejši,0.100,2,21
-19876,"inclination, tendency",noun,naklonnosť,naklonosť,0.100,3,16
-32865,dig up,verb,nakopyvati,nakapyvati,0.100,2,9
+9360,richest,adj,najbogatši,najbohatši,0.100,3,11
 32677,throw on,verb,nakydyvati,nakidyvati,0.100,1,10
 33051,"correct, repair, set right, make good",verb,napravjati,napravlati,0.100,1,21
 2767,tension,noun,naprųžeńje,napreženje,0.100,2,23
-5542,draw,verb,narysovati,narisovati,0.100,2,12
 2787,population,noun,naseljeńje,naselenje,0.100,2,17
 33213,tie on,verb,navęzyvati,navazyvati,0.100,1,18
-20532,something left unsaid,noun,nedomȯlvka,nedomovka,0.100,1,15
-1018,"shortage, lack, scarcity, dearth",noun,nedostatȯk,nedostatak,0.100,3,25
 22172,"perplexity, consternation",noun,nedouměńje,nedumenje,0.100,2,28
-33112,inevitably,adv,neizběžno,neizbježno,0.100,2,16
-33111,"inevitable, unavoidable, inescapable",adj,neizběžny,neizbježny,0.100,2,19
 35690,inseparable,adj,neoddělimy,neotdelimy,0.100,2,17
 35715,Neolithic,adj,neolitičny,neolityčny,0.100,2,12
 9610,unfounded,adj,neosnovany,neosnovny,0.100,1,16
-28501,impassable,adj,neprohodny,neprehodny,0.100,3,16
-28518,unheard of,adj,neslyhany,nieslyhany,0.100,2,13
-35256,imperfect,adj,nesȯvŕšeny,nesavršeny,0.100,2,19
+17937,intransitive,adj,neprěhodny,nepruhodny,0.100,3,11
+33495,unconscious,adj,nepritomny,neprytomny,0.100,2,18
+28501,impassable,adj,neprohodny,neprahodny,0.100,3,16
+28505,inseparable,adj,neråzlųčny,nerozlųčny,0.100,2,18
 28534,impatience,noun,netŕpěńje,netȯrpenje,0.100,2,18
 34975,"unlucky person, loser, outsider",noun,neudačnik,nieudačnik,0.100,2,27
-35638,"inappropriate, irrelevant",adj,neuměstny,neumjestny,0.100,2,25
-28543,"unintentional, unintended",adj,neumysľny,nieumyslny,0.100,2,23
-28555,"infidelity, disloyalty",noun,nevěrnosť,nevjernosť,0.100,2,24
-1425,independent,adj,nezaležny,niezaležny,0.100,2,18
 3059,awkward,adj,nezgrabny,niezgrabny,0.100,2,28
 34077,bark at,verb,oblajivati,oblajavati,0.100,2,12
 18005,lick,verb,oblizyvati,oblizivati,0.100,2,11
 5372,coil around,verb,obmotyvati,obmatyvati,0.100,1,24
 151,"renew, refurbish",verb,obnavjati,obnavljati,0.100,2,17
 35428,"generalisation, generalization",noun,obobćeńje,obobščenje,0.100,1,16
-9887,outline,verb,obrysovati,obrisovati,0.100,2,20
-34191,tie sth. round,verb,obvęzyvati,obvezivati,0.100,3,15
-4504,"accusation, blame",noun,obvinjeńje,obvinienje,0.100,2,17
+3067,"highlight, light up",verb,obsvětliti,osvetliti,0.100,2,10
+4504,"accusation, blame",noun,obvinjeńje,obvinenje,0.100,2,17
 35230,expectation,noun,očekyvańje,očekivanje,0.100,3,15
 6283,"read (e.g. meters, temperature)",verb,odčityvati,odčitavati,0.100,2,23
 29087,dissuade,verb,odgovoriti,otgovoriti,0.100,1,20
+9955,responsible,adj,odgovorny,odgovorany,0.100,1,13
 19954,"decline (proposal), reject, dismiss (proposal)",verb,odklanjati,otklanjati,0.100,2,22
 10011,"approval, approbation",noun,odobrjeńje,odobrenje,0.100,2,19
 3295,"rest, relax",verb,odpočivati,otpočivati,0.100,3,14
-20937,"absolution, remission (sins)",noun,odpušćeńje,odpuščanje,0.100,3,24
 5556,"sever, cut off",verb,odrězyvati,odrezivati,0.100,2,14
 4372,"scare off, frighten away",verb,odstrašiti,odsrašiti,0.100,1,24
-29253,shear away,verb,odstrigati,odstrygati,0.100,2,10
 36386,untie (sth./sbd. from sth.),verb,odvęzyvati,odvezivati,0.100,2,13
-291,official,adj,oficiaľny,oficijalny,0.100,3,15
 19988,limited,adj,ograničeny,ograničny,0.100,3,15
-37268,olympiad,noun,olimpiada,olimpijada,0.100,3,11
-36006,packaging,noun,opakovańje,pakovanje,0.100,3,16
 10231,"mourn, grieve, cry over, lament over",verb,oplakyvati,oplakivati,0.100,3,9
-10290,weakening,noun,oslabjeńje,oslabienje,0.100,1,19
-29638,"blinding, dazzlement",noun,oslěpjeńje,oslepienje,0.100,1,13
+18141,"fertilisation, fertilization, insemination",noun,oplođeńje,oplodnenje,0.100,2,17
+35414,entitled,adj,opravnjeny,opravneny,0.100,1,15
+33472,"defile, debase, taint, desecrate",verb,oskvŕniti,oskverniti,0.100,2,28
+10290,weakening,noun,oslabjeńje,oslabenje,0.100,1,19
+29638,"blinding, dazzlement",noun,oslěpjeńje,oslepenje,0.100,1,13
 505,"leave, leave behind, abandon",verb,ostavjati,ostavljati,0.100,2,18
+10330,abandonment,noun,ostavjeńje,ostavlenje,0.100,2,19
 3201,left,adj,ostavjeny,ostavljeny,0.100,2,18
 22491,"master, gain proficiency in",verb,ovladyvati,ovladavati,0.100,2,21
 10401,cure,verb,ozdravjati,ozdravlati,0.100,1,22
 36819,"health resort, sanatorium",noun,ozdråvnica,zdravnica,0.100,1,30
-32097,periphery,noun,periferija,pariferija,0.100,3,12
 4318,perversion,noun,perversija,perverzija,0.100,2,16
-32492,pianist,noun,pianistka,pijanistka,0.100,3,12
-36367,pedestal,noun,piedestal,pijedestal,0.100,3,15
 35729,brewery,noun,pivovarnja,pivovarna,0.100,2,17
+14842,niece,noun,plemenica,plemennica,0.100,2,18
+5575,thank,verb,podękovati,podakovati,0.100,2,9
+6221,subconscous,adj,podsvědomy,podvědomy,0.100,1,12
+10818,"appearance, emergence",noun,pojavjeńje,pojavlenje,0.100,2,23
+1108,show,verb,pokazyvati,pokazivati,0.100,2,11
+2431,generation,noun,pokoljeńje,pokolenje,0.100,3,16
+18297,christen,verb,pokrestiti,pokrstiti,0.100,3,15
+18311,"crawl, creep",verb,popȯlzati,popolezati,0.100,2,14
+18317,injury,noun,poranjeńje,poranenje,0.100,2,27
+21741,"continuously, steadily, constantly, permanently",adv,postojanno,postojano,0.100,2,28
+35580,testify,verb,posvědčiti,dosvedčiti,0.100,1,15
+5628,"occasionally, from time to time",adv,povrěmenno,povremeno,0.100,1,26
+11175,justice,noun,pravosųďje,pravosudie,0.100,2,17
+22231,"omen, portent",noun,prědvěsťje,prědvestie,0.100,2,28
+31908,"outsmart, outfox",verb,prěhytriti,prehitriti,0.100,1,19
+11349,migrant,noun,prěselenec,preslenec,0.100,1,21
+11353,migrate,verb,prěseljati,preselati,0.100,1,12
+2364,suffer,verb,prětŕpěti,pretrpieti,0.100,3,14
+4229,assignment,noun,pridělańje,pridelenje,0.100,2,21
+35686,swear (oath),verb,prisęgnųti,prisagnuti,0.100,2,17
+11502,presence,noun,prisųtstvo,prisustvo,0.100,1,14
+351,"accustom, inure",verb,privyknųti,priviknuti,0.100,2,20
+5326,manifest,verb,projavjati,projavlati,0.100,1,17
+2315,industrialist,noun,promysľnik,prumyslnik,0.100,2,19
+4456,pervasion,noun,pronikańje,prenikanje,0.100,1,14
+35552,"pervading, insightful, perceptive",adj,proniklivy,praniklivy,0.100,3,22
+36453,"uncultured, uncivilized, boorish",adj,prostačsky,prostačky,0.100,3,26
+5784,#enlighten,verb,prosvětiti,prosvititi,0.100,2,17
+20670,"even, uniform, steady, equable",adj,råvnoměrny,rovnomerny,0.100,3,19

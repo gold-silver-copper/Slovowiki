@@ -142,6 +142,15 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// Representative-selection headroom: measure how much of the +3.7pp
+    /// oracle-representative ceiling a *leakage-free* rule (medoid / modal-skeleton
+    /// / shortest) recovers vs the fixed REP_PRIORITY surface choice.
+    RepEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -196,6 +205,7 @@ fn main() -> Result<()> {
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),
         Command::SelectEval { official, out } => eval::run_select_eval(&official, &out),
+        Command::RepEval { official, out } => eval::run_rep_eval(&official, &out),
         Command::Evaluate {
             official,
             dump,

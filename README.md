@@ -59,7 +59,7 @@ committed and the site build stays self-contained.
   by a generated word (of ~21.4k), one representative page per lemma (homographs and
   duplicate sets deduped), with no leakage from the dictionary into the generation.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
-  **56.6% exact / 61.0% normalized** on the ~7.4k entries with a known ancestor.
+  **58.3% exact / 62.8% normalized** on the ~7.4k entries with a known ancestor.
 - `data/novel-words.tsv` — 2,066 high/medium-confidence words the engine derived that
   are **not** in the official dictionary (candidate new vocabulary, with ancestors).
 
@@ -83,14 +83,14 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.52% | **39.92%** | +12.40 pp |
-| normalized top-1 | 35.23% | **47.09%** | +11.86 pp |
-| normalized top-3 | 43.26% | **57.90%** | +14.64 pp |
-| normalized top-5 | — | **60.62%** | — |
+| exact top-1 | 27.52% | **41.01%** | +13.49 pp |
+| normalized top-1 | 35.23% | **48.88%** | +13.65 pp |
+| normalized top-3 | 43.26% | **59.57%** | +16.31 pp |
+| normalized top-5 | — | **62.19%** | — |
 | mean normalized edit distance | 0.252 | **0.226** | −0.026 |
 
 The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
-(`cargo run -- corpus-eval`): **56.6% exact / 61.0% normalized** on the ~7.4k entries
+(`cargo run -- corpus-eval`): **58.3% exact / 62.8% normalized** on the ~7.4k entries
 where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
 headline because it only scores words the site actually derives from a known ancestor.
 
@@ -105,8 +105,9 @@ word-choice), ~21% *root-absent* (unfixable from evidence), ~18%
 *rule engine*. 89.5% of meanings split across ≥3 cognate clusters. A companion
 **oracle ladder** (`cargo run --release -- oracle`, diagnostic-only) measures each
 stage's upper-bound headroom: cluster +3.9pp / representative +3.7pp / proto-link
-+2.6pp exact — the single biggest *non-editorial* lever is representative
-selection.
++2.6pp exact. The representative lever was the recoverable one: shipping the
+**medoid** representative (below) captured +1.1pp of it, and ~+2.6pp of
+oracle-representative ceiling remains.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
 (`cargo run --release -- proto-eval`): on the 20.1% of words it confidently links
@@ -117,8 +118,8 @@ normalized** accuracy.
 
 | confidence | n | normalized match |
 |---|---:|---:|
-| high | 6,996 | 68% |
-| medium | 7,089 | 37% |
+| high | 6,975 | 72% |
+| medium | 7,110 | 38% |
 | low | 2,215 | 12% |
 
 Full metrics, POS-specific accuracy, branch-coverage analysis, regression/improvement
@@ -164,6 +165,13 @@ snapshot is under version control).
     reflexive verbs are cited `<lemma> sę` after stripping the cognates' markers.
 13. **Synonym alternatives** — surface secondary translations as top-3/top-5
     alternatives (scored below every primary candidate; never changes top-1).
+14. **Medoid representative** — pick the winning cluster's surface as the *medoid*
+    (the member minimizing total folded edit distance to the others — the most
+    central attested form) instead of a fixed language-priority list, avoiding
+    dialectal/oblique outliers. Found by the `rep-eval` probe, which measured this
+    against the diagnostic oracle-representative ceiling; **+1.09 pp exact** — the
+    single biggest generation win after the two-stage proto model, and the first
+    representative-selection rule to beat the fixed priority.
 
 ## What was rejected (regressed the benchmark)
 

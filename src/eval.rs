@@ -66,6 +66,8 @@ fn kept_ladder() -> Vec<Rung> {
     voicing.voicing_repair = true;
     let mut explicit = voicing;
     explicit.explicit_etymology = true;
+    let mut medoid = explicit;
+    medoid.medoid_representative = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -84,7 +86,8 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+loan-stem-repair", description: "Repair national adaptation quirks the representative leaks into a loan stem: Polish y→i, South-Slavic epenthetic vowel (akcenat→akcent), -ac→-ec, final -ia→-ija, masculine -a drop — each corroborated by a cognate or the internationalism gate.", cfg: loanrepair },
         Rung { name: "+verb-class", description: "Verb conjugation classes: jat after hushing spelled a (drzati, slysati), statives -eti on East/West e-stem evidence (kameneti).", cfg: verbclass },
         Rung { name: "+voicing", description: "Voicing correspondences: devoiced prefixes bes-/is- -> bez-/iz- and loan nz -> ns, each corroborated by a cognate with the voiced/Latin spelling.", cfg: voicing },
-        Rung { name: "+explicit-etymology (production)", description: "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.", cfg: explicit },
+        Rung { name: "+explicit-etymology", description: "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.", cfg: explicit },
+        Rung { name: "+medoid-rep (production)", description: "Pick the winning cluster's representative as the medoid — the member minimizing total folded edit distance to the others (the most central attested form) — instead of the fixed REP_PRIORITY, avoiding dialectal/oblique outliers. Measured by rep-eval (+1.09pp exact), the biggest recoverable slice of the +3.7pp oracle-representative ceiling.", cfg: medoid },
     ]
 }
 
@@ -811,6 +814,7 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
                     representative: rep,
                     proto_link: pl,
                     force_cluster_key: None,
+                    rep_rule: None,
                 };
                 crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
             };
@@ -1003,6 +1007,7 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                     representative: false,
                     proto_link: false,
                     force_cluster_key: Some(k.as_str()),
+                    rep_rule: None,
                 };
                 crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
             } else {
@@ -1086,6 +1091,117 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     writeln!(s, "\n- **production** — the real branch-balanced six-subgroup vote (reference).\n- **max-langs / max-branches** — force the cluster attested by the most distinct languages / branches (a raw recognizability proxy).\n- **intl-first** — force any internationalism cluster (tests extending the genesis=I preference to every meaning).\n- **oracle-cluster** — force the official cluster (upper bound; reads the answer).")?;
     std::fs::write(out_dir.join("cluster-selection.md"), s)?;
     println!("Wrote {}", out_dir.join("cluster-selection.md").display());
+    Ok(())
+}
+
+/// Representative-selection headroom (the rep-eval probe). Oracle-representative
+/// showed ~+3.7pp is available from picking a better surface *within the winning
+/// cluster* — and, unlike cluster choice, that is a mechanical (non-editorial)
+/// decision a leakage-free rule might actually make. This measures how much of
+/// that ceiling answer-blind rules recover: force the representative by a rule
+/// (medoid / modal-skeleton / shortest) and score the real pipeline, vs the fixed
+/// REP_PRIORITY (production) and the answer-reading oracle-representative.
+pub fn run_rep_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+
+    let run_pass = |rule: &str| -> (usize, usize, usize) {
+        let (mut ex, mut nm, mut denom) = (0usize, 0usize, 0usize);
+        for entry in &entries {
+            let input = build_input(entry);
+            if !input.forms.iter().any(|f| f.modern) {
+                continue;
+            }
+            denom += 1;
+            let (cands, _) = if rule == "production" {
+                crate::pipeline::generate(&input, proto.as_ref(), &cfg)
+            } else {
+                let oracle = consensus::Oracle {
+                    official: &entry.isv,
+                    cluster: false,
+                    representative: rule == "oracle-representative",
+                    proto_link: false,
+                    force_cluster_key: None,
+                    rep_rule: if rule == "oracle-representative" {
+                        None
+                    } else {
+                        Some(rule)
+                    },
+                };
+                crate::pipeline::generate_oracle(&input, proto.as_ref(), &cfg, Some(&oracle))
+            };
+            let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+            ex += ortho::exact_match(&pred, &entry.isv) as usize;
+            nm += ortho::normalized_match(&pred, &entry.isv) as usize;
+        }
+        (ex, nm, denom)
+    };
+
+    let rules = [
+        "production",
+        "medoid",
+        "modal-skeleton",
+        "shortest",
+        "oracle-representative",
+    ];
+    let (base_ex, base_nm, denom) = run_pass("production");
+    let pct = |a: usize| {
+        if denom == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / denom as f32
+        }
+    };
+    println!(
+        "Representative-selection headroom (leakage-free rules vs REP_PRIORITY vs oracle; {denom} meanings):"
+    );
+    println!(
+        "  {:<22} {:>7}  {:>8}  {:>7}  {:>8}",
+        "rule", "exact", "Δexact", "norm", "Δnorm"
+    );
+    let mut rows: Vec<(String, f32, f32, f32, f32)> = Vec::new();
+    for rule in rules {
+        let (ex, nm) = if rule == "production" {
+            (base_ex, base_nm)
+        } else {
+            let (e, n, _) = run_pass(rule);
+            (e, n)
+        };
+        let (dex, dnm) = (pct(ex) - pct(base_ex), pct(nm) - pct(base_nm));
+        println!(
+            "  {:<22} {:>6.2}%  {:>+7.2}  {:>6.2}%  {:>+7.2}",
+            rule,
+            pct(ex),
+            dex,
+            pct(nm),
+            dnm
+        );
+        rows.push((rule.to_string(), pct(ex), dex, pct(nm), dnm));
+    }
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# Representative-selection headroom (rep-eval)\n")?;
+    writeln!(
+        s,
+        "Given the right cluster, which attested surface should represent it? This forces the winning group's representative by a **leakage-free** rule (except `oracle-representative`, which reads the answer as the ceiling) and scores the real pipeline over {denom} meanings.\n"
+    )?;
+    writeln!(s, "| Rule | exact | Δ exact | norm | Δ norm |")?;
+    writeln!(s, "|---|---:|---:|---:|---:|")?;
+    for (name, ex, dex, nm, dnm) in &rows {
+        writeln!(
+            s,
+            "| {} | {:.2}% | {:+.2}pp | {:.2}% | {:+.2}pp |",
+            name, ex, dex, nm, dnm
+        )?;
+    }
+    writeln!(s, "\n- **production** — the fixed REP_PRIORITY (sl, hr, sr, pl, …) surface choice.\n- **medoid** — the group member minimizing total folded edit distance to the others (most central form).\n- **modal-skeleton** — the most common ascii-skeleton in the group, then REP_PRIORITY among its members.\n- **shortest** — the shortest attested form (nominatives tend shorter than oblique cases).\n- **oracle-representative** — the member folded-closest to the official lemma (ceiling; reads the answer).")?;
+    std::fs::write(out_dir.join("rep-selection.md"), s)?;
+    println!("Wrote {}", out_dir.join("rep-selection.md").display());
     Ok(())
 }
 

@@ -1,163 +1,149 @@
 gloss,pos,official,predicted,n_clusters,miss_class,stage,stage_detail
-"Abkhaz, Abkhazian",adj,abhazsky,abhazijsky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-"subscription, season ticket",noun,abonement,abonament,13,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-"subscribe, engage",verb,abonovati,podpisyvatsa,17,root-absent,8-merge-rank,diff-root-editorial
+"subscribe, engage",verb,abonovati,podpisyvatsa,17,root-absent,0-root-absent,evidence-gap
 apricot,noun,abrikos,kajsija,6,wrong-cluster,8-merge-rank,diff-root-editorial
 absence,noun,absencija,vidsutnist,10,wrong-cluster,3-cluster/vote,wrong-cluster
-absorption,noun,absorbcija,absorbacija,14,right-cluster-wrong-form,1-normalize/representative,residual:length
+absinthe,noun,absint,absent,4,right-cluster-wrong-form,7-endings,ending-residual
+absorb,verb,absorbovati,absarbavac,13,wrong-cluster,8-merge-rank,diff-root-editorial
 "abstract, summary, abridgement",noun,abstrakt,referat,17,wrong-cluster,8-merge-rank,diff-root-editorial
 adagio,noun,adadžo,adagio,3,wrong-cluster,8-merge-rank,diff-root-editorial
-adjutant,noun,adjutant,adiutant,6,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 administrate,verb,administrovati,spravovati,7,wrong-cluster,3-cluster/vote,wrong-cluster
 admirality,noun,admiraľstvo,admiralitet,6,wrong-cluster,3-cluster/vote,wrong-cluster
-Afghan,adj,afgansky,afganjsky,4,right-cluster-wrong-form,1-normalize/representative,residual:length
-African,adj,afrikansky,afrykanjsky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+African,adj,afrikansky,afrykansky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 "Acorus calamus, sweet flag",noun,ajir,air,12,right-cluster-wrong-form,1-normalize/representative,residual:length
+iceberg,noun,ajsberg,ajsberh,10,right-cluster-wrong-form,7-endings,ending-residual
 academic,adj,akademičsky,akademičny,4,wrong-cluster,3-cluster/vote,wrong-cluster
-accentuation,noun,akcentuacija,akcentovanje,11,wrong-cluster,3-cluster/vote,wrong-cluster
-stockholder,noun,akcioner,akcionar,5,right-cluster-wrong-form,7-endings,ending-residual
-accompaniment,noun,akompanement,akompaniament,7,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+accentuation,noun,akcentuacija,akcentavanne,11,wrong-cluster,3-cluster/vote,wrong-cluster
+accompaniment,noun,akompanement,akampanement,7,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 accompany,verb,akompanovati,pråtiti,10,wrong-cluster,3-cluster/vote,wrong-cluster
 acrobatic,adj,akrobatsky,akrobatičny,4,wrong-cluster,8-merge-rank,diff-root-editorial
 axial,adj,aksiaľny,aksijalny,6,right-cluster-wrong-form,1-normalize/representative,residual:length
 activity,noun,aktivitet,aktivnosť,6,root-absent,0-root-absent,evidence-gap
-shark,noun,akula,ajkula,4,right-cluster-wrong-form,1-normalize/representative,residual:length
 accumulate,verb,akumulovati,hromaditi,13,wrong-cluster,3-cluster/vote,wrong-cluster
 exactly,adv,akurat,točno,10,wrong-cluster,3-cluster/vote,wrong-cluster
 accuracy,noun,akuratnosť,točnosť,9,wrong-cluster,3-cluster/vote,wrong-cluster
 accurate,adj,akuratny,tȯčny,7,wrong-cluster,3-cluster/vote,wrong-cluster
 accusative,noun,akuzativ,vinitelen padež,7,wrong-cluster,8-merge-rank,diff-root-editorial
 watercolor,noun,akvarelj,akvarel,2,right-cluster-wrong-form,7-endings,ending-residual
-aquarium,noun,akvarium,akvarijum,2,right-cluster-wrong-form,7-endings,ending-residual
 aqueduct,noun,akvedukt,akvadukt,2,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 alarm,noun,alarm,tryvoga,6,wrong-cluster,8-merge-rank,diff-root-editorial
 alphabetical,adj,alfabetičny,abecedny,6,wrong-cluster,8-merge-rank,diff-root-editorial
-alchemy,noun,alhimija,alhemija,2,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-alchemist,noun,alhimik,alhemik,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+alliance,noun,alians,aljans,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+allegro,noun,allegro,alegro,1,right-cluster-wrong-form,1-normalize/representative,residual:length
 diamond,noun,almaz,diamant,2,wrong-cluster,8-merge-rank,diff-root-editorial
-aloe,noun,aloe,aloja,2,right-cluster-wrong-form,7-endings,ending-residual
 alpine,adj,alpijsky,alpsky,1,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-Alps,noun,Alpy,alpe,1,right-cluster-wrong-form,7-endings,ending-residual
 viola,noun,alt,viola,3,wrong-cluster,8-merge-rank,diff-root-editorial
-aluminium,adj,aluminijevy,aluminiovy,6,right-cluster-wrong-form,1-normalize/representative,residual:length
+aluminium,adj,aluminijevy,aluminievy,6,right-cluster-wrong-form,1-normalize/representative,residual:length
+Algeria,noun,Alžirija,alžir,3,right-cluster-wrong-form,7-endings,ending-residual
 porthole,noun,ambrazura,luk,8,wrong-cluster,3-cluster/vote,wrong-cluster
-American,adj,amerikansky,amerykanjsky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+American,adj,amerikansky,amerykansky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 ammonia,noun,amonijak,amoniak,3,right-cluster-wrong-form,7-endings,ending-residual
 amoral,adj,amoraľny,nemoralny,3,wrong-cluster,8-merge-rank,diff-root-editorial
-ammunition,noun,amunicija,municija,4,right-cluster-wrong-form,1-normalize/representative,residual:length
 "illiteracy, analphabetism",noun,analfabetizm,nepismenosť,8,wrong-cluster,8-merge-rank,diff-root-editorial
-"Anglophone, English-speaking",adj,anglijskojęzyčny,anglųjęzyčny,9,wrong-cluster,3-cluster/vote,wrong-cluster
-English,adj,anglijsky,anglešky,2,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+annex,verb,aneksovati,aneksavac,12,wrong-cluster,3-cluster/vote,wrong-cluster
+"Anglophone, English-speaking",adj,anglijskojęzyčny,anglųjazičny,9,wrong-cluster,3-cluster/vote,wrong-cluster
 Anglo-Saxon,adj,anglosaksonsky,anglo-saksonsky,3,wrong-cluster,8-merge-rank,diff-root-editorial
-Antarctica,noun,Antarktida,antarktyda,2,right-cluster-wrong-form,7-endings,ending-residual
 antiquity,noun,antičnosť,antika,8,wrong-cluster,8-merge-rank,diff-root-editorial
-antibody,noun,antitělo,antitijelo,5,right-cluster-wrong-form,1-normalize/representative,residual:length
 cancellation,noun,anulacija,anulovanje,11,wrong-cluster,3-cluster/vote,wrong-cluster
 "cancel, nullify",verb,anulovati,zrušiti,14,wrong-cluster,8-merge-rank,diff-root-editorial
-appellate,adj,apelacijny,apelaciony,7,right-cluster-wrong-form,7-endings,ending-residual
-uploading,noun,aplodovańje,zagruzka,16,wrong-cluster,3-cluster/vote,wrong-cluster
+uploading,noun,aplodovańje,zahruzka,16,wrong-cluster,3-cluster/vote,wrong-cluster
 upload,verb,aplodovati,nahrati,14,root-absent,0-root-absent,evidence-gap
 April,noun,aprilj,april,8,right-cluster-wrong-form,7-endings,ending-residual
 a priori,adj,apriorny,apriory,4,wrong-cluster,8-merge-rank,diff-root-editorial
-pharmacy,noun,apteka,apoteka,3,right-cluster-wrong-form,1-normalize/representative,residual:length
 arrange (music),verb,aranževati,aranžovati,7,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-arbiter,noun,arbiter,arbitr,6,right-cluster-wrong-form,4-repair,loan-epenthesis
+arbiter,noun,arbiter,arbitr,6,right-cluster-wrong-form,7-endings,ending-residual
 archduke,noun,arcivojevoda,erchercog,4,wrong-cluster,3-cluster/vote,wrong-cluster
-arrest,verb,areštovati,arestovati,6,right-cluster-wrong-form,8-merge-rank,same-root-surface
-artillery,noun,artilerija,artiljerija,3,right-cluster-wrong-form,1-normalize/representative,residual:length
+arrest,verb,areštovati,arestovati,6,right-cluster-wrong-form,1-normalize/representative,residual:flavored-letter
+Arctic,adj,arktičny,arktyčny,4,right-cluster-wrong-form,8-merge-rank,same-root-surface
 artist,noun,artist,hųdog,8,wrong-cluster,8-merge-rank,diff-root-editorial
 astronaut,noun,astronavt,astronaut,2,wrong-cluster,8-merge-rank,diff-root-editorial
-Athens,noun,Atiny,atene,2,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+Athens,noun,Atiny,ateny,2,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 Atlantic,adj,atlantičny,atlanticky,4,wrong-cluster,3-cluster/vote,wrong-cluster
 trump,noun,atut,kozir,5,wrong-cluster,3-cluster/vote,wrong-cluster
 aura,noun,aura,avra,2,wrong-cluster,3-cluster/vote,wrong-cluster
+"aureola, aureole",noun,aureola,areol,9,right-cluster-wrong-form,1-normalize/representative,residual:length
 autist,noun,autist,avtist,2,wrong-cluster,3-cluster/vote,wrong-cluster
 autistic,adj,autističny,avtističny,4,wrong-cluster,8-merge-rank,diff-root-editorial
 autism,noun,autizm,avtizm,4,wrong-cluster,8-merge-rank,diff-root-editorial
-"airplane ticket, airline ticket, plane ticket",noun,aviakarta,aviabilet,13,wrong-cluster,3-cluster/vote,wrong-cluster
-airline,noun,avialinija,aviolinija,9,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-Australian,adj,avstralijsky,avstralsky,2,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-Austro-Hungarian,adj,avstro-vųgȯrsky,avstro-vengerskiji,7,root-absent,0-root-absent,evidence-gap
-Austria-Hungary,noun,Avstro-Vųgrija,avstro-vengrija,10,root-absent,0-root-absent,evidence-gap
+advance,verb,avansovati,avansavac,11,root-absent,0-root-absent,evidence-gap
+"airplane ticket, airline ticket, plane ticket",noun,aviakarta,avijabilet,13,wrong-cluster,3-cluster/vote,wrong-cluster
+Austrian,noun,Avstrijec,avstriec,4,right-cluster-wrong-form,7-endings,ending-residual
+Austro-Hungarian,adj,avstro-vųgȯrsky,avstro-venhersky,7,root-absent,0-root-absent,evidence-gap
+Austria-Hungary,noun,Avstro-Vųgrija,avstra-venhrija,10,root-absent,0-root-absent,evidence-gap
 "car, auto",noun,avto,avtomobil,9,wrong-cluster,8-merge-rank,diff-root-editorial
+autobiographical,adj,avtobiografičny,avtobiohrafičniji,6,right-cluster-wrong-form,8-merge-rank,same-root-surface
 car bomb,noun,avtobomba,avtomobil-bomba,13,wrong-cluster,3-cluster/vote,wrong-cluster
-"highway, motorway, freeway, autobahn",noun,avtomagistralj,avtomagistral,11,right-cluster-wrong-form,7-endings,ending-residual
+autograph,noun,avtograf,avtohraf,4,right-cluster-wrong-form,8-merge-rank,same-root-surface
+"highway, motorway, freeway, autobahn",noun,avtomagistralj,avtamahistral,11,right-cluster-wrong-form,1-normalize/representative,residual:length
+automatic,adj,avtomatičny,avtamatičny,7,right-cluster-wrong-form,8-merge-rank,same-root-surface
+car,adj,avtomobiľny,avtomobilniji,6,right-cluster-wrong-form,7-endings,ending-residual
 car industry,noun,avtopromysl,avtomobilovi prumisl,10,root-absent,0-root-absent,evidence-gap
 authoritatively,adv,avtoritativno,avtoritetno,3,wrong-cluster,8-merge-rank,diff-root-editorial
-authoritative,adj,avtoritativny,avtoritetny,3,wrong-cluster,8-merge-rank,diff-root-editorial
+authoritative,adj,avtoritativny,avtoritetniji,3,wrong-cluster,8-merge-rank,diff-root-editorial
 authority,noun,avtoritetnosť,avtoriteta,7,wrong-cluster,8-merge-rank,diff-root-editorial
+authoritative,adj,avtoritetny,avtoritetniji,4,right-cluster-wrong-form,7-endings,ending-residual
 authorities,noun,avtoritety,avtoriteti,11,right-cluster-wrong-form,7-endings,ending-residual
-hitchhiking,noun,avtostop,avtoštop,6,right-cluster-wrong-form,8-merge-rank,same-root-surface
-hitchhiker,noun,avtostopnik,avtoštopar,8,wrong-cluster,3-cluster/vote,wrong-cluster
+hitchhiker,noun,avtostopnik,avtostoper,8,wrong-cluster,3-cluster/vote,wrong-cluster
 hitchhike,verb,avtostopovati,putešestvovat avtostopom,11,root-absent,0-root-absent,evidence-gap
-car insurance,noun,avtostrahovka,avtostrahovanje,9,wrong-cluster,3-cluster/vote,wrong-cluster
-autogyro,noun,avtožir,avtožiro,11,right-cluster-wrong-form,7-endings,ending-residual
-azalea,noun,azalija,azaleja,2,right-cluster-wrong-form,7-endings,ending-residual
-nitrous,adj,azotisty,azotasty,11,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+car insurance,noun,avtostrahovka,avtastrahavanne,9,wrong-cluster,3-cluster/vote,wrong-cluster
+car factory,noun,avtozavod,avtazavod,9,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 Aztec,adj,aztečsky,acteksky,5,root-absent,0-root-absent,evidence-gap
 Aztec,noun,Aztek,actek,3,wrong-cluster,8-merge-rank,diff-root-editorial
-azure,adj,azurny,lazurny,7,wrong-cluster,8-merge-rank,diff-root-editorial
-grandmother,noun,babica,babika,10,wrong-cluster,8-merge-rank,diff-root-editorial
+azure,adj,azurny,lazurniji,7,wrong-cluster,8-merge-rank,diff-root-editorial
+grandmother,noun,babica,babika,10,wrong-cluster,3-cluster/vote,wrong-cluster
 grandma’s,adj,babin,babiny,7,right-cluster-wrong-form,7-endings,adj-hard-y
 womanish,adj,babsky,žensky,8,wrong-cluster,3-cluster/vote,wrong-cluster
-grandma,noun,babuška,babica,9,wrong-cluster,8-merge-rank,diff-root-editorial
+grandma,noun,babuška,babcija,9,wrong-cluster,8-merge-rank,diff-root-editorial
 "trifle, triviality",noun,bagatela,sitnica,18,wrong-cluster,3-cluster/vote,wrong-cluster
 "downplay, underestimate",verb,bagatelizovati,preumenšati,13,wrong-cluster,8-merge-rank,diff-root-editorial
-swamp,noun,bagno,blåto,11,wrong-cluster,8-merge-rank,diff-root-editorial
+swamp,noun,bagno,blåto,11,wrong-cluster,3-cluster/vote,wrong-cluster
 Bahamas,noun,Bahamy,bahami,2,right-cluster-wrong-form,7-endings,ending-residual
 "babble, tell fables, narrate",verb,bajati,bajiti,15,right-cluster-wrong-form,7-endings,ending-residual
-"practise sorcery, conjure",verb,bajati,čarovati,13,wrong-cluster,3-cluster/vote,wrong-cluster
+"practise sorcery, conjure",verb,bajati,čaravac,13,wrong-cluster,3-cluster/vote,wrong-cluster
 tank,noun,bak,rezervoar,6,wrong-cluster,8-merge-rank,diff-root-editorial
-#beacon,noun,baken,bakan,9,right-cluster-wrong-form,7-endings,ending-residual
-"sideburns, whiskers",noun,bakenbardy,bakenbardi,10,right-cluster-wrong-form,7-endings,ending-residual
 bale,noun,bala,tuk,9,wrong-cluster,8-merge-rank,diff-root-editorial
-#equalizer,noun,balansir,balansor,6,right-cluster-wrong-form,7-endings,ending-residual
+balance,verb,balansovati,balansavac,10,wrong-cluster,8-merge-rank,diff-root-editorial
 Balkans,noun,Balkany,balkan,2,right-cluster-wrong-form,7-endings,ending-residual
-ballot,verb,balotovati,glasovati,7,root-absent,8-merge-rank,diff-root-editorial
-Baltic,adj,baltičsky,baltsky,2,root-absent,0-root-absent,evidence-gap
+ballot,verb,balotovati,hlasovati,7,root-absent,8-merge-rank,diff-root-editorial
+Baltic,adj,baltičsky,baltijsky,2,root-absent,0-root-absent,evidence-gap
 boulder,noun,balvan,valun,15,wrong-cluster,8-merge-rank,diff-root-editorial
 "idiot, blockhead",noun,balvan,idiot,13,wrong-cluster,3-cluster/vote,wrong-cluster
 banjo,noun,bandžo,bendžo,2,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+bankrupt (insolvent person),noun,bankrot,bankrut,8,right-cluster-wrong-form,7-endings,ending-residual
 drum,noun,baraban,bųben,4,wrong-cluster,8-merge-rank,diff-root-editorial
 hut,noun,barak,baraka,12,right-cluster-wrong-form,7-endings,ending-residual
-berberis,noun,barbaris,berberis,8,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-barrier,noun,bariera,barijera,4,right-cluster-wrong-form,1-normalize/representative,residual:length
 Baroque,noun,baroko,barok,1,right-cluster-wrong-form,7-endings,ending-residual
 baron,noun,baron,baran,1,right-cluster-wrong-form,8-merge-rank,same-root-surface
-badger,noun,barsuk,jazvec,3,wrong-cluster,3-cluster/vote,wrong-cluster
+badger,noun,barsuk,jazvec,3,wrong-cluster,8-merge-rank,diff-root-editorial
 "paint, colour, color",verb,barviti,malovati,9,wrong-cluster,3-cluster/vote,wrong-cluster
 paint,noun,barvivo,farba,6,wrong-cluster,3-cluster/vote,wrong-cluster
 barium,noun,baryj,barij,2,right-cluster-wrong-form,7-endings,ending-residual
 baritone,noun,baryton,bariton,1,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 barge,noun,barža,čȯln,6,wrong-cluster,8-merge-rank,diff-root-editorial
 bass (voice),noun,bas,běs,1,right-cluster-wrong-form,8-merge-rank,same-root-surface
-fairytale,noun,basnj,basen,9,right-cluster-wrong-form,8-merge-rank,same-root-surface
+swimming pool,noun,basen,basejn,2,right-cluster-wrong-form,7-endings,ending-residual
+fairytale,noun,basnj,basna,9,right-cluster-wrong-form,8-merge-rank,same-root-surface
 terrific,adj,basnjesloveny,basnoslovny,15,right-cluster-wrong-form,1-normalize/representative,residual:length
 fabulous,adj,basnjevy,baječny,17,wrong-cluster,3-cluster/vote,wrong-cluster
 "bastard, crossbred",noun,bastard,kopile,21,wrong-cluster,8-merge-rank,diff-root-editorial
 battalion,noun,batalion,bataljon,3,right-cluster-wrong-form,7-endings,ending-residual
-cotton,noun,bavȯlna,bavelna,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-vigil,noun,bděńje,bedenje,7,right-cluster-wrong-form,1-normalize/representative,residual:length
-be awake,verb,bděti,bedeti,13,right-cluster-wrong-form,1-normalize/representative,residual:length
+cotton,noun,bavȯlna,bavlna,5,right-cluster-wrong-form,1-normalize/representative,residual:length
 vigilance,noun,bditeljnosť,budnosť,7,wrong-cluster,3-cluster/vote,wrong-cluster
 vigilant,adj,bditeljny,pilny,9,wrong-cluster,3-cluster/vote,wrong-cluster
-poverty,noun,běda,hudoba,13,wrong-cluster,8-merge-rank,diff-root-editorial
+poverty,noun,běda,hudoba,13,wrong-cluster,3-cluster/vote,wrong-cluster
 ladybird,noun,bedrenec,bubamara,11,root-absent,0-root-absent,evidence-gap
 hip,noun,bedro,stegno,11,wrong-cluster,8-merge-rank,diff-root-editorial
-running,noun,běg,bieganje,7,root-absent,0-root-absent,evidence-gap
-race,noun,běg,zabeg,10,wrong-cluster,3-cluster/vote,wrong-cluster
-fluency,noun,běglosť,bieglosć,18,wrong-cluster,3-cluster/vote,wrong-cluster
-fluent,adj,běgly,biegly,10,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-"fugitive, on the run, at large",adj,běgly,zbiegly,9,wrong-cluster,3-cluster/vote,wrong-cluster
-escape,noun,běgstvo,bagstvo,9,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+running,noun,běg,behanje,7,root-absent,0-root-absent,evidence-gap
+race,noun,běg,zabeh,10,wrong-cluster,3-cluster/vote,wrong-cluster
+fluency,noun,běglosť,behlasc,18,wrong-cluster,3-cluster/vote,wrong-cluster
+fluent,adj,běgly,behly,10,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+"fugitive, on the run, at large",adj,běgly,zbehly,9,wrong-cluster,3-cluster/vote,wrong-cluster
 run,verb,běgti,běžati,7,wrong-cluster,3-cluster/vote,wrong-cluster
 trotter,noun,běgun,rysak,4,root-absent,0-root-absent,evidence-gap
-baseball,noun,bejsbol,baseball,2,right-cluster-wrong-form,1-normalize/representative,residual:length
-whitish,adj,bělavy,bialavy,7,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+whitish,adj,bělavy,balavy,7,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 whitener,noun,bělilo,bělina,10,wrong-cluster,3-cluster/vote,wrong-cluster
 Belize,noun,Beliz,belize,1,right-cluster-wrong-form,7-endings,ending-residual
-protein,noun,bělȯk,bialko,6,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-Belarus,noun,Běloruś,belorusija,2,right-cluster-wrong-form,7-endings,ending-residual
+protein,noun,bělȯk,balok,6,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+Belarus,noun,Běloruś,belarus,2,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 Belarusian,adj,bělorussky,belorusky,1,right-cluster-wrong-form,7-endings,ending-residual
 whiteness,noun,bělosť,bělina,6,wrong-cluster,3-cluster/vote,wrong-cluster
 beryllium,noun,berylij,berilij,2,right-cluster-wrong-form,1-normalize/representative,residual:y/i
@@ -166,16 +152,15 @@ concrete,adj,betonny,betonnyji,4,right-cluster-wrong-form,7-endings,ending-resid
 painlessly,adv,bezbolěsno,bezbolno,8,wrong-cluster,3-cluster/vote,wrong-cluster
 painless,adj,bezbolěsny,bezbolny,7,wrong-cluster,8-merge-rank,diff-root-editorial
 "godlessness, ungodliness, atheism",noun,bezbožje,bezbožie,13,right-cluster-wrong-form,7-endings,ending-residual
-"defenceless, defenseless, vulnerable",adj,bezbrånny,bezbronny,17,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-"dishonor, dishonour",noun,bezčesťje,hanjba,12,wrong-cluster,3-cluster/vote,wrong-cluster
-"dishonorable, dishonourable, infamous",adj,bezčestny,haniebny,13,root-absent,0-root-absent,evidence-gap
-dishonest,adj,bezčestny,nečastny,13,root-absent,0-root-absent,evidence-gap
+"dishonor, dishonour",noun,bezčesťje,hanba,12,wrong-cluster,3-cluster/vote,wrong-cluster
+"dishonorable, dishonourable, infamous",adj,bezčestny,hanebny,13,root-absent,0-root-absent,evidence-gap
+dishonest,adj,bezčestny,nečestny,13,root-absent,0-root-absent,evidence-gap
 abyss,noun,bezdna,propast,9,wrong-cluster,3-cluster/vote,wrong-cluster
-bottomless,adj,bezdȯnny,bezdny,4,right-cluster-wrong-form,8-merge-rank,same-root-surface
+bottomless,adj,bezdȯnny,bezdenny,4,right-cluster-wrong-form,8-merge-rank,same-root-surface
 dry spell,noun,bezdȯžďje,suša,13,wrong-cluster,8-merge-rank,diff-root-editorial
-treeless,adj,bezdrěvny,obezlesny,9,wrong-cluster,3-cluster/vote,wrong-cluster
-breathless,adj,bezdyšny,bezdahany,13,root-absent,0-root-absent,evidence-gap
-"tailless, anurous",adj,bezhvosty,bezhvostyji,12,right-cluster-wrong-form,8-merge-rank,same-root-surface
+treeless,adj,bezdrěvny,bazlesny,9,wrong-cluster,3-cluster/vote,wrong-cluster
+breathless,adj,bezdyšny,bezdyhannyji,13,root-absent,0-root-absent,evidence-gap
+"tailless, anurous",adj,bezhvosty,bashvosty,12,wrong-cluster,8-merge-rank,diff-root-editorial
 "flawless, impeccable",adj,bezhybny,bezuprečny,16,wrong-cluster,8-merge-rank,diff-root-editorial
 anonymously,adv,bezimenno,anonimno,5,wrong-cluster,3-cluster/vote,wrong-cluster
 hopelessness (situation),noun,bezizhodnosť,bezizlaznosť,13,wrong-cluster,3-cluster/vote,wrong-cluster
@@ -183,28 +168,30 @@ hopelessness (situation),noun,bezizhodnosť,bezizlaznosť,13,wrong-cluster,3-clu
 impunity,noun,bezkarnosť,beznakazanosť,9,wrong-cluster,3-cluster/vote,wrong-cluster
 with impunity,adj,bezkarny,beznakazany,9,wrong-cluster,8-merge-rank,diff-root-editorial
 "colourless, colorless",adj,bezkolorny,bezbojany,10,wrong-cluster,3-cluster/vote,wrong-cluster
-perpetuity,noun,bezkonečje,bezkonačnosť,12,root-absent,0-root-absent,evidence-gap
+perpetuity,noun,bezkonečje,bezkonečnosť,12,root-absent,0-root-absent,evidence-gap
 "endlessly, perpetually",adv,bezkonečno,neskončno,10,root-absent,0-root-absent,evidence-gap
-"infinity, perpetuality",noun,bezkonečnosť,bezkonačnosť,12,root-absent,0-root-absent,evidence-gap
 "endless, infinite, perpetual",adj,bezkonečny,neskončny,13,wrong-cluster,3-cluster/vote,wrong-cluster
 non-profit,adj,bezkoristny,neprofitny,12,root-absent,0-root-absent,evidence-gap
-"wingless, apterous",adj,bezkrily,bezkrylyji,7,right-cluster-wrong-form,8-merge-rank,same-root-surface
+boneless,adj,bezkostny,bezkostnyji,8,right-cluster-wrong-form,8-merge-rank,same-root-surface
+"wingless, apterous",adj,bezkrily,baskryly,7,wrong-cluster,8-merge-rank,diff-root-editorial
+uninhabited,adj,bezljudny,bezludny,12,right-cluster-wrong-form,1-normalize/representative,residual:length
 "boundlessness, immensity",noun,bezměrnosť,neizmernosť,15,wrong-cluster,3-cluster/vote,wrong-cluster
-"vast, boundless, immense",adj,bezměrny,bezmierny,16,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 speechless,adj,bezmȯlvny,bezmovny,16,wrong-cluster,3-cluster/vote,wrong-cluster
 brainless,adj,bezmozgy,bezmyšlenkovity,17,wrong-cluster,8-merge-rank,diff-root-editorial
-"duty-free, tax-free, toll-free",adj,bezmytny,bezmitny,10,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+"duty-free, tax-free, toll-free",adj,bezmytny,bazmytny,10,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 hopelessness,noun,beznadějnosť,beznadežnosť,9,wrong-cluster,8-merge-rank,diff-root-editorial
+apodal,adj,beznogy,beznohy,7,right-cluster-wrong-form,7-endings,ending-residual
 "safety, security",noun,bezopasnosť,sigurnosť,10,wrong-cluster,8-merge-rank,diff-root-editorial
-"safe, secure",adj,bezopasny,bezpiečny,6,wrong-cluster,3-cluster/vote,wrong-cluster
-forgetful,adj,bezpamętny,zabyvčivyji,14,root-absent,0-root-absent,evidence-gap
-"safe, secure",adj,bezpečny,bezpiečny,8,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+"safe, secure",adj,bezopasny,bezpečny,6,wrong-cluster,3-cluster/vote,wrong-cluster
+forgetful,adj,bezpamętny,zabyvčyvy,14,root-absent,0-root-absent,evidence-gap
+non-aligned (politician),adj,bezpartijny,bezpartieny,8,right-cluster-wrong-form,8-merge-rank,same-root-surface
 featherless,adj,bezpery,neopereny,9,wrong-cluster,3-cluster/vote,wrong-cluster
+"infertile, sterile",adj,bezplodny,basplodny,7,wrong-cluster,3-cluster/vote,wrong-cluster
 "disturbing, troubling, upsetting, bothersome",adj,bezpokojęći,bespokojaščiji,25,root-absent,0-root-absent,evidence-gap
 disturbance,noun,bezpokojeńje,rušeni,18,root-absent,0-root-absent,evidence-gap
 "disturb, trouble, upset, bother",verb,bezpokojiti,bespokoiti,22,root-absent,0-root-absent,evidence-gap
-restless,adj,bezpokojny,niespokojny,8,root-absent,0-root-absent,evidence-gap
-"unrest, trouble",noun,bezpokojstvo,niepokoj,18,root-absent,0-root-absent,evidence-gap
+restless,adj,bezpokojny,nespakojny,8,root-absent,0-root-absent,evidence-gap
+"unrest, trouble",noun,bezpokojstvo,nepokoj,18,root-absent,0-root-absent,evidence-gap
 helplessly,adv,bezpomoćno,bezmocne,12,wrong-cluster,3-cluster/vote,wrong-cluster
 helplessness,noun,bezpomoćnosť,bezmocnosť,12,root-absent,0-root-absent,evidence-gap
 helpless,adj,bezpomoćny,bezmocny,11,wrong-cluster,3-cluster/vote,wrong-cluster
@@ -213,11 +200,12 @@ continuously,adv,bezprěryvno,nepreryvno,17,root-absent,0-root-absent,evidence-g
 continuous,adj,bezprěryvny,nepreryvnyji,19,wrong-cluster,3-cluster/vote,wrong-cluster
 causeless,adj,bezpričinny,bezduvodny,15,wrong-cluster,3-cluster/vote,wrong-cluster
 "unequalled, unparalleled, unexampled, unheard of",adj,bezprikladny,bezprimjerny,22,wrong-cluster,3-cluster/vote,wrong-cluster
-"unequalled, unparalleled, unexampled, unheard of",adj,bezpriměrny,bezprimjerny,21,root-absent,0-root-absent,evidence-gap
 "jobless, unemployed",adj,bezråbotny,bezrobotny,8,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-"joyless, cheerless, dismal",adj,bezradostny,bezradosny,20,wrong-cluster,3-cluster/vote,wrong-cluster
+"joyless, cheerless, dismal",adj,bezradostny,bazradasny,20,wrong-cluster,3-cluster/vote,wrong-cluster
+hornless,adj,bezrogy,bezrohy,7,right-cluster-wrong-form,7-endings,ending-residual
 nonsense,noun,bezsmyslica,besmislica,15,wrong-cluster,3-cluster/vote,wrong-cluster
 "pointless, senseless",adj,bezsmysľny,bezmislny,11,wrong-cluster,3-cluster/vote,wrong-cluster
+insomnia,noun,bezsȯnnica,bezsonica,7,root-absent,0-root-absent,evidence-gap
 sleepless,adj,bezsȯnny,bezsenny,10,right-cluster-wrong-form,8-merge-rank,same-root-surface
 "shamelessness, effrontery",noun,bezstydnosť,bezstydstvo,13,root-absent,0-root-absent,evidence-gap
 shameless,adj,bezstydny,bezramny,14,root-absent,0-root-absent,evidence-gap
@@ -226,57 +214,55 @@ quietness,noun,bezšumnosť,tišina,15,wrong-cluster,3-cluster/vote,wrong-cluste
 weightlessly,adv,beztęžno,nevesomo,12,wrong-cluster,3-cluster/vote,wrong-cluster
 weightlessness,noun,beztęžnosť,nevesomost,13,root-absent,0-root-absent,evidence-gap
 weightless,adj,beztęžny,beztežinsky,11,wrong-cluster,3-cluster/vote,wrong-cluster
-fuckwit,noun,bezumnik,šaleniec,15,wrong-cluster,8-merge-rank,diff-root-editorial
-effortlessness,noun,bezusiľje,logkost,16,root-absent,0-root-absent,evidence-gap
+fuckwit,noun,bezumnik,šilenec,15,wrong-cluster,8-merge-rank,diff-root-editorial
+effortlessness,noun,bezusiľje,lehkost,16,root-absent,0-root-absent,evidence-gap
 effortlessly,adv,bezusiľno,legȯk,19,wrong-cluster,3-cluster/vote,wrong-cluster
-effortlessness,noun,bezusiľnosť,logkost,16,root-absent,0-root-absent,evidence-gap
+effortlessness,noun,bezusiľnosť,lehkost,16,root-absent,0-root-absent,evidence-gap
 effortless,adj,bezusiľny,legky,19,wrong-cluster,8-merge-rank,diff-root-editorial
-unsuccessful,adj,bezuspěšny,neuspěšny,8,wrong-cluster,3-cluster/vote,wrong-cluster
+unsuccessful,adj,bezuspěšny,neuspěšny,8,wrong-cluster,8-merge-rank,diff-root-editorial
 inconsolable,adj,bezutěšny,bezutešnyji,10,right-cluster-wrong-form,7-endings,ending-residual
 "atheism, lack of faith",noun,bezvěŕje,bezverie,15,right-cluster-wrong-form,7-endings,ending-residual
-lost without a trace,adj,bezvěstny,neizvjestny,15,wrong-cluster,3-cluster/vote,wrong-cluster
+lost without a trace,adj,bezvěstny,nezvestny,15,wrong-cluster,3-cluster/vote,wrong-cluster
 calm (wind),noun,bezvětŕje,bezvetrie,8,right-cluster-wrong-form,7-endings,ending-residual
-innocent,adj,bezvinny,neviny,9,wrong-cluster,3-cluster/vote,wrong-cluster
-powerlessness,noun,bezvladnosť,bezsilie,9,wrong-cluster,3-cluster/vote,wrong-cluster
+innocent,adj,bezvinny,nevinny,9,wrong-cluster,3-cluster/vote,wrong-cluster
+powerlessness,noun,bezvladnosť,bassille,9,wrong-cluster,3-cluster/vote,wrong-cluster
 paralysis,noun,bezvladnosť,paraliza,10,wrong-cluster,3-cluster/vote,wrong-cluster
-powerless,adj,bezvladny,bezsilnyji,10,wrong-cluster,8-merge-rank,diff-root-editorial
+powerless,adj,bezvladny,bassilny,10,wrong-cluster,8-merge-rank,diff-root-editorial
 anarchy,noun,bezvlasťje,anarhija,9,wrong-cluster,3-cluster/vote,wrong-cluster
 hairless,adj,bezvlåsy,bezvlosy,11,right-cluster-wrong-form,7-endings,ending-residual
-"hopeless (situation), desperate (situation)",adj,bezvyhodny,bezvyhodnyji,13,right-cluster-wrong-form,7-endings,ending-residual
-"defenceless, defenseless, vulnerable",adj,bezzaščitny,bezbronny,14,wrong-cluster,3-cluster/vote,wrong-cluster
-refugee,noun,běženec,bežanec,9,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-refugee,noun,běženica,bežanka,10,root-absent,0-root-absent,evidence-gap
+"defenceless, defenseless, vulnerable",adj,bezzaščitny,bezbranny,14,wrong-cluster,3-cluster/vote,wrong-cluster
+refugee,noun,běženica,beženka,10,root-absent,0-root-absent,evidence-gap
 escape,noun,běžeńje,unik,10,wrong-cluster,3-cluster/vote,wrong-cluster
 beige,adj,beževy,bežovy,2,right-cluster-wrong-form,7-endings,ending-residual
 "unvoiced (consonant), voiceless",adj,bezzvųčny,bezvučny,11,right-cluster-wrong-form,1-normalize/representative,residual:length
 "beefsteak, steak",noun,bifštek,biftek,8,wrong-cluster,3-cluster/vote,wrong-cluster
-billboard,noun,bilbord,billboard,5,right-cluster-wrong-form,1-normalize/representative,residual:length
 binoculars,noun,binoklj,binokl,6,right-cluster-wrong-form,7-endings,ending-residual
 bismuth,noun,bismut,bizmut,4,wrong-cluster,3-cluster/vote,wrong-cluster
-beating,noun,biťje,bitjo,9,right-cluster-wrong-form,7-endings,ending-residual
+beating,noun,biťje,biti,9,right-cluster-wrong-form,7-endings,ending-residual
 "fight, tussle",noun,bitka,bojka,12,wrong-cluster,8-merge-rank,diff-root-editorial
 Byzantium,noun,Bizantija,vizantija,4,wrong-cluster,3-cluster/vote,wrong-cluster
 Byzantine,adj,bizantijsky,vizantijsky,3,wrong-cluster,3-cluster/vote,wrong-cluster
-business,noun,biznes,biznis,7,right-cluster-wrong-form,7-endings,ending-residual
-"business man, business person",noun,biznesmen,biznismen,10,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 business,adj,biznesny,biznesovy,13,root-absent,0-root-absent,evidence-gap
-bulletin,noun,bjuleten,biuletyn,6,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+bulletin,noun,bjuleten,buleten,6,right-cluster-wrong-form,1-normalize/representative,residual:length
 bureaucracy,noun,bjurokracija,birokracija,2,right-cluster-wrong-form,1-normalize/representative,residual:length
-bureaucrat,noun,bjurokrat,birokrat,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-bureaucratic,adj,bjurokratičny,biurokratičny,4,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-bust,noun,bjust,biust,5,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-thank,verb,blågodariti,dekovati,5,wrong-cluster,8-merge-rank,diff-root-editorial
+bureaucrat,noun,bjurokrat,burokrat,3,right-cluster-wrong-form,1-normalize/representative,residual:length
+bureaucratic,adj,bjurokratičny,burakratičny,4,right-cluster-wrong-form,1-normalize/representative,residual:length
+bust,noun,bjust,bust,5,right-cluster-wrong-form,1-normalize/representative,residual:length
+thank,verb,blågodariti,dakovati,5,wrong-cluster,8-merge-rank,diff-root-editorial
 thanks,noun,blågodarjeńje,blagodarnosť,8,wrong-cluster,3-cluster/vote,wrong-cluster
 "favour, favor",noun,blågomilosť,usluga,15,root-absent,0-root-absent,evidence-gap
 "favourable, favorable",adj,blågomily,priznivy,15,root-absent,0-root-absent,evidence-gap
+honorable (title),adj,blågorodny,blahorodny,13,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+grace,noun,blågosklonnosť,blahosklonnosť,17,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 "favourable, favorable, beneficial, propitious",adj,blågosklonny,blagoprijatny,16,root-absent,0-root-absent,evidence-gap
 kindly disposed,adj,blågosklonny,blahosklonny,17,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-"bless, beatify",verb,blågoslavjati,blagoslavljati,11,wrong-cluster,3-cluster/vote,wrong-cluster
+"bless, beatify",verb,blågoslavjati,blagoslovlati,11,wrong-cluster,3-cluster/vote,wrong-cluster
 blessing,noun,blågoslovjeńje,blagoslovenje,10,right-cluster-wrong-form,1-normalize/representative,residual:length
 beatification,noun,blågoslovjeńje,beatifikacija,7,root-absent,0-root-absent,evidence-gap
 "beatific, beatifical, beatified",adj,blågoslovny,blaženy,8,wrong-cluster,3-cluster/vote,wrong-cluster
-"prosperity, well-being",noun,blågostańje,dobrobyt,11,wrong-cluster,8-merge-rank,diff-root-editorial
+"prosperity, well-being",noun,blågostańje,dabrabyt,11,wrong-cluster,8-merge-rank,diff-root-editorial
 beneficial,adj,blågotvorny,koristny,8,wrong-cluster,3-cluster/vote,wrong-cluster
+Annunciation,noun,Blågověšćeńje,blahaveščanne,6,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 "show benevolence, show goodwill",verb,blågovolěti,blagovoliti,11,right-cluster-wrong-form,7-endings,ending-residual
 benevolent,adj,blågovoljny,dobronamereny,9,wrong-cluster,3-cluster/vote,wrong-cluster
 congratulation,noun,blågoželańje,pozdravlenje,11,wrong-cluster,3-cluster/vote,wrong-cluster
@@ -284,21 +270,22 @@ congratulate,verb,blågoželati,čestitati,8,wrong-cluster,3-cluster/vote,wrong-
 blissful,adj,blågy,blaženy,4,wrong-cluster,3-cluster/vote,wrong-cluster
 membrane,noun,blåna,membrana,5,wrong-cluster,8-merge-rank,diff-root-editorial
 "jester, madman",noun,blazn,šut,14,wrong-cluster,3-cluster/vote,wrong-cluster
-henbane,noun,blen,blena,7,right-cluster-wrong-form,8-merge-rank,same-root-surface
+behave like a fool,verb,blaznovati,blaznavac,16,wrong-cluster,3-cluster/vote,wrong-cluster
+turn pale,verb,blědněti,blednuti,4,right-cluster-wrong-form,7-endings,ending-residual
 "flash, shine",verb,blěskati,blyskat se,21,wrong-cluster,3-cluster/vote,wrong-cluster
 "lightning, thunderbolt",noun,blěskavica,mȯldni,9,wrong-cluster,3-cluster/vote,wrong-cluster
-brilliant,adj,blěskavy,blaskavy,13,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+brilliant,adj,blěskavy,blyskavy,13,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 brilliant,adj,blěsklivy,blyskotlivy,18,root-absent,0-root-absent,evidence-gap
 "flash, shine",verb,blěsknųti,blysknųti,13,right-cluster-wrong-form,6-proto-rule,yers
-shine,verb,blěstěti,blyščati,9,wrong-cluster,8-merge-rank,diff-root-editorial
+shine,verb,blěstěti,blyščati,9,wrong-cluster,3-cluster/vote,wrong-cluster
 pancake,noun,blin,mlin,4,wrong-cluster,8-merge-rank,diff-root-editorial
 "almost, nearly",adv,bliz,počti,16,wrong-cluster,3-cluster/vote,wrong-cluster
 "near, close",adv,blizko,bliz,7,wrong-cluster,8-merge-rank,diff-root-editorial
 twin brothers,noun,blizneci,blizanci,8,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 Gemini,noun,Blizneci,blizanci,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-twin sisters,noun,bliznečky,blizniački,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+twin sisters,noun,bliznečky,bliznački,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 twin,adj,bliznečsky,blizanačky,8,root-absent,0-root-absent,evidence-gap
-nearer,adj,blizši,bližji,7,wrong-cluster,3-cluster/vote,wrong-cluster
+nearer,adj,blizši,bliži,7,wrong-cluster,3-cluster/vote,wrong-cluster
 saucer,noun,bljudce,bludce,11,right-cluster-wrong-form,1-normalize/representative,residual:length
 "dish, plate",noun,bljudo,bjudo,12,wrong-cluster,6-proto-rule,soft-consonants
 "dish (food), course (of a meal)",noun,bljudo,strava,11,wrong-cluster,3-cluster/vote,wrong-cluster
@@ -306,83 +293,90 @@ vomit,verb,bljunųti,otrygnuti,18,wrong-cluster,8-merge-rank,diff-root-editorial
 ivy,noun,bljušč,bjušč,4,wrong-cluster,6-proto-rule,yers
 vomit,verb,bljuvati,bjvati,13,wrong-cluster,8-merge-rank,same-root-surface
 flea,noun,blȯha,blha,5,right-cluster-wrong-form,3-cluster/vote,wrong-cluster
-"wander, roam",verb,blųditi,blųdziti,12,wrong-cluster,8-merge-rank,diff-root-editorial
+"wander, roam",verb,blųditi,blųdzic,12,wrong-cluster,8-merge-rank,diff-root-editorial
 wander,verb,blųkati,toulat se,14,wrong-cluster,3-cluster/vote,wrong-cluster
-beaver,adj,bobŕji,bobrovy,5,wrong-cluster,3-cluster/vote,wrong-cluster
+leguminous,adj,bobovy,bobovyji,9,right-cluster-wrong-form,7-endings,ending-residual
+beaver,adj,bobŕji,bobrovyji,5,wrong-cluster,3-cluster/vote,wrong-cluster
 stork,noun,boćan,stŕk,8,wrong-cluster,3-cluster/vote,wrong-cluster
-barrel,noun,bȯčva,bȯčka,8,wrong-cluster,3-cluster/vote,wrong-cluster
+barrel,noun,bȯčva,bȯčka,8,wrong-cluster,8-merge-rank,diff-root-editorial
 "pierce, stab",verb,bodati,klåti,12,wrong-cluster,8-merge-rank,diff-root-editorial
-"spike, prick",noun,bodec,šip,9,wrong-cluster,3-cluster/vote,wrong-cluster
+"spike, prick",noun,bodec,šip,9,wrong-cluster,8-merge-rank,diff-root-editorial
 cooper,noun,bȯdnaŕ,bondar,7,wrong-cluster,3-cluster/vote,wrong-cluster
 "pierce, stab",verb,bodnųti,bodnouti,13,right-cluster-wrong-form,1-normalize/representative,residual:length
 "cheerful, brisk, spirited",adj,bodry,bdry,13,right-cluster-wrong-form,8-merge-rank,same-root-surface
 "richness, wealth",noun,bogatosť,bogatstvo,10,wrong-cluster,3-cluster/vote,wrong-cluster
-richer,adj,bogatši,bogatejši,8,right-cluster-wrong-form,1-normalize/representative,residual:length
-hero,noun,bogatyr,bohater,6,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-heroically,adv,bogatyrsko,hrejično,10,wrong-cluster,3-cluster/vote,wrong-cluster
+richer,adj,bogatši,bohatši,8,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+hero,noun,bogatyr,bohatyr,6,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+heroically,adv,bogatyrsko,heraična,10,wrong-cluster,3-cluster/vote,wrong-cluster
 heroic,adj,bogatyrsky,bohatersky,8,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 blaspheme,verb,bogohuliti,rouhat se,11,wrong-cluster,3-cluster/vote,wrong-cluster
 blasphemy,noun,bogohuljeńje,bluznierstvo,10,wrong-cluster,3-cluster/vote,wrong-cluster
 blasphemy,noun,bogohuľstvo,bluznierstvo,10,wrong-cluster,8-merge-rank,diff-root-editorial
-Epiphany,noun,Bogojavjeńje,bogojavljanje,7,root-absent,0-root-absent,evidence-gap
+Epiphany,noun,Bogojavjeńje,bogojavlenje,7,root-absent,0-root-absent,evidence-gap
 theologist,noun,bogoslovec,bogoslov,3,wrong-cluster,3-cluster/vote,wrong-cluster
 theology,noun,bogoslovje,teologija,3,wrong-cluster,3-cluster/vote,wrong-cluster
 goddess,noun,bogynja,bogyni,2,right-cluster-wrong-form,6-proto-rule,proto-rule-residual
 "loaf, bread loaf",noun,bohanka,hlěb,10,wrong-cluster,3-cluster/vote,wrong-cluster
 combat,noun,boj,borba,8,wrong-cluster,3-cluster/vote,wrong-cluster
-fearfully,adv,bojazlivo,bojazljivo,7,right-cluster-wrong-form,1-normalize/representative,residual:length
-fearful,adj,bojazlivy,bojazljivy,11,right-cluster-wrong-form,1-normalize/representative,residual:length
+bouy,noun,boja,buj,4,right-cluster-wrong-form,1-normalize/representative,residual:length
+buoy,noun,boja,buj,6,right-cluster-wrong-form,1-normalize/representative,residual:length
 "fear, anxiety",noun,bojaznj,strah,12,wrong-cluster,3-cluster/vote,wrong-cluster
 "fearful, fearing",adj,bojazny,bojazlivy,14,wrong-cluster,3-cluster/vote,wrong-cluster
 fight,verb,bojevati,vojevati,13,wrong-cluster,3-cluster/vote,wrong-cluster
-"warrior, fighter, militant",noun,bojevnik,vojin,11,wrong-cluster,8-merge-rank,diff-root-editorial
-"brawl, fight",noun,bojka,bijatyka,13,wrong-cluster,3-cluster/vote,wrong-cluster
+"warrior, fighter, militant",noun,bojevnik,vojin,11,wrong-cluster,3-cluster/vote,wrong-cluster
+"brawl, fight",noun,bojka,bijatyka,13,wrong-cluster,8-merge-rank,diff-root-editorial
 "battle, fighting, military",adj,bojny,bojevy,10,wrong-cluster,3-cluster/vote,wrong-cluster
 painfully,adv,bolěsno,bolezneno,10,wrong-cluster,3-cluster/vote,wrong-cluster
-sickly,adv,bolězlivo,hvrablyvo,14,wrong-cluster,3-cluster/vote,wrong-cluster
-sickly,adj,bolězlivy,hvrablyvyji,15,wrong-cluster,3-cluster/vote,wrong-cluster
+"be ill, be sick",verb,bolěti,blati,10,right-cluster-wrong-form,1-normalize/representative,residual:length
+sickly,adv,bolězlivo,hvarabliva,14,wrong-cluster,3-cluster/vote,wrong-cluster
+sickly,adj,bolězlivy,hvarablivy,15,wrong-cluster,3-cluster/vote,wrong-cluster
 "disease, illness",noun,bolěznj,hvoroba,7,wrong-cluster,3-cluster/vote,wrong-cluster
 pathogenic,adj,bolěznjetvorny,patogeny,9,wrong-cluster,3-cluster/vote,wrong-cluster
-more,adv,bolje,bolj,6,right-cluster-wrong-form,7-endings,ending-residual
+hemlock,noun,boliglåv,bolehlav,8,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+more,adv,bolje,bolee,6,right-cluster-wrong-form,7-endings,ending-residual
 hospital,noun,boljnica,bolnica,5,right-cluster-wrong-form,6-proto-rule,yers
 "ill, sick, diseased",adj,boljny,hvory,6,wrong-cluster,3-cluster/vote,wrong-cluster
 majority,noun,boljšesť,bolšinstvo,10,wrong-cluster,3-cluster/vote,wrong-cluster
 "bigger, greater, larger",adj,boljši,vęćiji,7,wrong-cluster,3-cluster/vote,wrong-cluster
-candy,noun,bonbon,cukierek,6,wrong-cluster,8-merge-rank,diff-root-editorial
+candy,noun,bonbon,cukerka,6,wrong-cluster,8-merge-rank,diff-root-editorial
 pine,noun,bor,sosna,5,wrong-cluster,8-merge-rank,diff-root-editorial
 brothel,noun,bordelj,bordel,5,right-cluster-wrong-form,7-endings,ending-residual
 borscht,noun,bȯršč,bŕšč,2,right-cluster-wrong-form,8-merge-rank,same-root-surface
-heracleum,noun,bȯrščevnik,borščivnyk,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+heracleum,noun,bȯrščevnik,barščevnik,9,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 Bosnia,noun,Bosnija,bosna,1,right-cluster-wrong-form,7-endings,ending-residual
 Bosnian,adj,bosnijsky,bosansky,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-Bosnian,adj,bosnjačsky,bošnjačky,3,root-absent,0-root-absent,evidence-gap
-Bosnian,noun,Bosnjak,bošnjak,3,right-cluster-wrong-form,1-normalize/representative,residual:flavored-letter
+Bosnian,adj,bosnjačsky,bosniacky,3,root-absent,0-root-absent,evidence-gap
 barefooted,adj,bosonogy,bosy,2,wrong-cluster,8-merge-rank,diff-root-editorial
 "pierce, stab",verb,bosti,bodati,13,wrong-cluster,8-merge-rank,diff-root-editorial
 elderberry,noun,bȯzina,bȯz,9,wrong-cluster,3-cluster/vote,wrong-cluster
+God’s,adj,božji,boži,1,right-cluster-wrong-form,7-endings,ending-residual
 divine,adj,božsky,božestvny,6,wrong-cluster,8-merge-rank,diff-root-editorial
 deity,noun,božstvo,božestvo,4,right-cluster-wrong-form,1-normalize/representative,residual:length
+bearded man,noun,brådač,brodač,9,right-cluster-wrong-form,8-merge-rank,same-root-surface
 wart,noun,brådavica,brådavika,3,wrong-cluster,8-merge-rank,diff-root-editorial
 nipple,noun,brådavička,brådavika,6,root-absent,0-root-absent,evidence-gap
-"hairdresser, barber, friseur",noun,brådobrivec,fryzjer,14,root-absent,0-root-absent,evidence-gap
+"hairdresser, barber, friseur",noun,brådobrivec,frizer,14,root-absent,0-root-absent,evidence-gap
 "flaw, defect",noun,brak,vada,13,wrong-cluster,8-merge-rank,diff-root-editorial
+poacher,noun,brakonier,brakonjer,5,right-cluster-wrong-form,7-endings,ending-residual
+poaching,noun,brakonierstvo,brakonjerstvo,7,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 brother,noun,brat,bratr,3,wrong-cluster,8-merge-rank,diff-root-editorial
 brethren,noun,bratja,bratrija,4,wrong-cluster,3-cluster/vote,wrong-cluster
-fratricide,noun,bratobijstvo,bratoubistvo,6,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+fratricide,noun,bratobijstvo,bratubijstvo,6,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 brother’s,adj,bratov,bratovy,9,right-cluster-wrong-form,7-endings,adj-hard-y
 brotherhood,noun,bratstvo,bratrstvo,4,wrong-cluster,8-merge-rank,diff-root-editorial
 "hill, hillock",noun,bŕdo,hȯlmo,18,wrong-cluster,3-cluster/vote,wrong-cluster
-coastal,adj,brěgovy,bregovoji,6,right-cluster-wrong-form,7-endings,ending-residual
-wild service tree,noun,brěk,rabina glogovina,12,wrong-cluster,3-cluster/vote,wrong-cluster
+coastal,adj,brěgovy,berahavy,6,right-cluster-wrong-form,1-normalize/representative,residual:length
+wild service tree,noun,brěk,rabina hlohavina,12,wrong-cluster,3-cluster/vote,wrong-cluster
 "swell, bloat",verb,breknųti,nabuhati,16,root-absent,0-root-absent,evidence-gap
 jingle,verb,brenknųti,zvoněti,9,wrong-cluster,3-cluster/vote,wrong-cluster
 elm tree,noun,brěst,vęz,3,wrong-cluster,8-merge-rank,diff-root-editorial
 ivy,noun,brešljan,bjušč,4,wrong-cluster,3-cluster/vote,wrong-cluster
 March,noun,brězėnj,mart,6,wrong-cluster,3-cluster/vote,wrong-cluster
-coastal,adj,brěžny,bregovoji,7,wrong-cluster,3-cluster/vote,wrong-cluster
+coastal,adj,brěžny,berahavy,7,wrong-cluster,3-cluster/vote,wrong-cluster
 ugly,adv,bridko,brydko,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 sharp,adj,bridky,ostry,4,root-absent,0-root-absent,evidence-gap
 ugly,adj,bridky,gŕdy,9,wrong-cluster,3-cluster/vote,wrong-cluster
+shave,verb,briti,brijati,4,right-cluster-wrong-form,8-merge-rank,same-root-surface
 paunchy,adj,brjuhaty,puzatyji,15,wrong-cluster,3-cluster/vote,wrong-cluster
 belly,noun,brjuho,životo,11,wrong-cluster,3-cluster/vote,wrong-cluster
 "abdominal, belly",adj,brjušny,brušny,6,right-cluster-wrong-form,1-normalize/representative,residual:length
@@ -390,9 +384,9 @@ number,noun,broj,čislo,11,wrong-cluster,8-merge-rank,diff-root-editorial
 armadillo,noun,brȯnjenosėc,bronenosec,6,right-cluster-wrong-form,1-normalize/representative,residual:length
 brooch,noun,broška,broša,4,wrong-cluster,8-merge-rank,diff-root-editorial
 eyebrow,noun,brȯv,bry,4,wrong-cluster,3-cluster/vote,wrong-cluster
-beekeeper (in the forest),noun,brtnik,bartnik,8,right-cluster-wrong-form,1-normalize/representative,residual:length
+beekeeper (in the forest),noun,brtnik,bortnik,8,right-cluster-wrong-form,1-normalize/representative,residual:length
 pavement (road surface),noun,bruk,mostovaja,15,wrong-cluster,8-merge-rank,diff-root-editorial
-rutabaga,noun,brukva,brukiev,11,right-cluster-wrong-form,7-endings,ending-residual
+Brussels,noun,Bruselj,brusel,3,right-cluster-wrong-form,7-endings,ending-residual
 "log, beam",noun,bŕvno,brevno,12,right-cluster-wrong-form,6-proto-rule,yers
 "splash, gush",verb,bryzgati,brizgati,16,right-cluster-wrong-form,8-merge-rank,same-root-surface
 "splash, gush",verb,bryzgnųti,briznuti,16,wrong-cluster,8-merge-rank,diff-root-editorial
@@ -403,23 +397,23 @@ shed,noun,buda,šupa,13,wrong-cluster,3-cluster/vote,wrong-cluster
 Budapest,noun,Budapest,budapešt,2,right-cluster-wrong-form,7-endings,ending-residual
 there will be,verb,bųde/bųdųt,bude,8,root-absent,0-root-absent,evidence-gap
 hut,noun,budka,hata,14,wrong-cluster,8-merge-rank,diff-root-editorial
-build,verb,budovati,gråditi,5,wrong-cluster,8-merge-rank,diff-root-editorial
-buffer,noun,bufer,buffer,8,right-cluster-wrong-form,7-endings,ending-residual
+build,verb,budovati,gråditi,5,wrong-cluster,3-cluster/vote,wrong-cluster
+building,noun,budynȯk,budynak,9,right-cluster-wrong-form,7-endings,ending-residual
 "bang, burst, thump",verb,buhati,bouhati,17,right-cluster-wrong-form,8-merge-rank,diff-root-editorial
-"accountant, bookkeeper",noun,buhhalter,buhgalter,12,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+"accountant (f.), bookkeeper (f.)",noun,buhhalterka,buhhaltarka,13,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 burst,verb,buhnųti,bouhnouti,12,right-cluster-wrong-form,1-normalize/representative,residual:length
 letter (alphabet),noun,bukva,buky,5,wrong-cluster,8-merge-rank,diff-root-editorial
-Bulgaria,noun,Bulgarija,bolgarija,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-bulgarization,noun,bulgarizacija,bolgarizacija,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-Bulgarian woman,noun,Bulgarka,bolgarka,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-Bulgarian,adj,bulgarsky,bolgarsky,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
-"broth, bouillon",noun,buljon,bulion,7,right-cluster-wrong-form,7-endings,ending-residual
+Bulgaria,noun,Bulgarija,bȯlgarija,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+bulgarization,noun,bulgarizacija,bȯlgarizacija,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+Bulgarian woman,noun,Bulgarka,bȯlgarka,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+Bulgarian,adj,bulgarsky,bȯlgarsky,3,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+"broth, bouillon",noun,buljon,bulon,7,right-cluster-wrong-form,7-endings,ending-residual
 bunker,noun,bunker,bunkr,3,right-cluster-wrong-form,4-repair,loan-epenthesis
 rebel,noun,buntovnik,povstanec,10,wrong-cluster,8-merge-rank,diff-root-editorial
 demolish,verb,buriti,rušiti,7,wrong-cluster,3-cluster/vote,wrong-cluster
 "high grass, weed",noun,burjan,burijan,6,right-cluster-wrong-form,6-proto-rule,yers
 bottle,noun,butylka,butelka,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-steer,noun,byček,byčȯk,9,right-cluster-wrong-form,4-repair,loan-ok-suffix
+steer,noun,byček,byčok,9,right-cluster-wrong-form,7-endings,ending-residual
 bovine,adj,byčji,byči,6,right-cluster-wrong-form,6-proto-rule,endings
 "plant, herb",noun,bylina,trava,7,wrong-cluster,3-cluster/vote,wrong-cluster
 former,adj,byly,bivši,5,wrong-cluster,8-merge-rank,diff-root-editorial
@@ -427,7 +421,7 @@ former,adj,byly,bivši,5,wrong-cluster,8-merge-rank,diff-root-editorial
 "speed, velocity",noun,bystrosť,brzina,12,wrong-cluster,3-cluster/vote,wrong-cluster
 "quick, fast",adj,bystry,ryhly,11,wrong-cluster,3-cluster/vote,wrong-cluster
 "exist, be there, be available",verb,byti,existovati,9,root-absent,0-root-absent,evidence-gap
-existence,noun,bytosť,isnuvanna,15,root-absent,0-root-absent,evidence-gap
+existence,noun,bytosť,isnavanne,15,root-absent,0-root-absent,evidence-gap
 "entity, organism",noun,bytosť,istota,12,wrong-cluster,8-merge-rank,diff-root-editorial
 "former, erstwhile",adj,byvši,byvy,8,wrong-cluster,3-cluster/vote,wrong-cluster
 fart,verb,bzděti,pŕděti,8,root-absent,0-root-absent,evidence-gap
@@ -437,17 +431,16 @@ queen (chess),noun,carica,ferz,5,wrong-cluster,3-cluster/vote,wrong-cluster
 Istanbul,noun,Carigrad,stambul,3,wrong-cluster,8-merge-rank,diff-root-editorial
 brick,noun,cegla,cigla,6,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 brick,noun,ceglina,cigla,6,wrong-cluster,3-cluster/vote,wrong-cluster
-celery,noun,celer,seler,6,wrong-cluster,8-merge-rank,diff-root-editorial
+celery,noun,celer,slera,6,wrong-cluster,8-merge-rank,diff-root-editorial
 aim,verb,cěliti,ciljati,9,right-cluster-wrong-form,1-normalize/representative,residual:length
-"purpose, goal, target, aim, destination",noun,cělj,cilj,3,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-"cell (prison, convent)",noun,ćelja,ćelija,7,right-cluster-wrong-form,7-endings,ending-residual
-"completely, entirely, wholly, altogether",adv,cělkom,calkiem,20,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-"entirely, wholly, completely, totally",adv,cělkovito,celkom,20,wrong-cluster,3-cluster/vote,wrong-cluster
+"purpose, goal, target, aim, destination",noun,cělj,cel,3,right-cluster-wrong-form,7-endings,ending-residual
+"cell (prison, convent)",noun,ćelja,cela,7,right-cluster-wrong-form,1-normalize/representative,residual:length
+"entirely, wholly, completely, totally",adv,cělkovito,calkam,20,wrong-cluster,3-cluster/vote,wrong-cluster
 "entire, whole, complete, total, comprehensive, overall",adj,cělkovity,obeći,19,wrong-cluster,3-cluster/vote,wrong-cluster
-in total,adv,cělo,ogolem,16,root-absent,0-root-absent,evidence-gap
+in total,adv,cělo,ahulam,16,root-absent,0-root-absent,evidence-gap
 all-day,adj,cělodenny,celodnevny,9,wrong-cluster,8-merge-rank,diff-root-editorial
 entirety,noun,cělosť,celosnosť,14,wrong-cluster,3-cluster/vote,wrong-cluster
-kissing,noun,cělovańje,calovanje,11,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+kissing,noun,cělovańje,celuvane,11,right-cluster-wrong-form,1-normalize/representative,residual:length
 kisser,noun,cělovatelj,t,14,wrong-cluster,3-cluster/vote,wrong-cluster
 value,noun,cěnnosť,vrednosť,7,wrong-cluster,8-merge-rank,diff-root-editorial
 "ceremony, rite, ritual",noun,ceremonija,obręd,5,wrong-cluster,8-merge-rank,diff-root-editorial
@@ -456,46 +449,53 @@ empire,noun,cěsaŕstvo,imperija,6,wrong-cluster,8-merge-rank,diff-root-editoria
 "tube, pipe, conduit",noun,cěvka,trųba,8,wrong-cluster,8-merge-rank,diff-root-editorial
 bulb,noun,cibulica,lukovica,6,wrong-cluster,3-cluster/vote,wrong-cluster
 onion,noun,cibulja,luk,3,wrong-cluster,3-cluster/vote,wrong-cluster
-"oniony, onion-like, onion-shaped, bulbous",adj,cibuljevity,čebulasty,12,wrong-cluster,3-cluster/vote,wrong-cluster
-onion,adj,cibuljevy,cebulovy,5,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-tit,noun,cicka,cycek,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+"oniony, onion-like, onion-shaped, bulbous",adj,cibuljevity,cebulasty,12,wrong-cluster,3-cluster/vote,wrong-cluster
+onion,adj,cibuljevy,cibulovy,5,right-cluster-wrong-form,1-normalize/representative,residual:length
+tit,noun,cicka,cycka,9,right-cluster-wrong-form,1-normalize/representative,residual:y/i
 tits,noun,cicky,cycki,10,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 tin,noun,cin,olovo,5,wrong-cluster,8-merge-rank,diff-root-editorial
-compasses,noun,cirkulj,cyrkiel,7,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-zither,noun,citra,citre,1,right-cluster-wrong-form,7-endings,ending-residual
-civilian,noun,civil,civilen,8,wrong-cluster,8-merge-rank,diff-root-editorial
-inch,noun,colj,cola,5,right-cluster-wrong-form,7-endings,ending-residual
+compasses,noun,cirkulj,cyrkul,7,right-cluster-wrong-form,1-normalize/representative,residual:y/i
+civilian,noun,civil,civilny,8,wrong-cluster,8-merge-rank,diff-root-editorial
+"smack, munch",verb,cmokati,čmokati,7,right-cluster-wrong-form,1-normalize/representative,residual:flavored-letter
+inch,noun,colj,cala,5,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 church,noun,crkȯv,cŕky,3,wrong-cluster,3-cluster/vote,wrong-cluster
-Church Slavonic,adj,crkȯvnoslovjansky,cerkvenoslovansky,1,right-cluster-wrong-form,1-normalize/representative,residual:substitution
+Church Slavonic,adj,crkȯvnoslovjansky,cȯrkovnoslavansky,1,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 ecclesiastical,adj,crkȯvny,cerkveny,2,right-cluster-wrong-form,1-normalize/representative,residual:length
-church,noun,crkva,cŕky,3,wrong-cluster,3-cluster/vote,wrong-cluster
+church,noun,crkva,cŕky,3,wrong-cluster,8-merge-rank,diff-root-editorial
 foreigner,noun,ćuđezemec,inostranec,15,wrong-cluster,3-cluster/vote,wrong-cluster
-foreign,adj,ćuđezemny,zagraničny,13,root-absent,0-root-absent,evidence-gap
+foreign,adj,ćuđezemny,zahraničny,13,root-absent,0-root-absent,evidence-gap
 abroad,noun,ćuđina,zagranica,12,wrong-cluster,3-cluster/vote,wrong-cluster
 foreigner,noun,ćuđinec,cizinec,12,wrong-cluster,3-cluster/vote,wrong-cluster
 foreigner,noun,ćuđinka,cizinka,11,wrong-cluster,3-cluster/vote,wrong-cluster
 "zucchini, courgette",noun,cukina,kabačok,8,wrong-cluster,3-cluster/vote,wrong-cluster
-sugar,noun,cukr,cukier,5,right-cluster-wrong-form,7-endings,ending-residual
-"confectioner, pastry cook",noun,cukraŕ,konditer,8,wrong-cluster,8-merge-rank,diff-root-editorial
+sugar,noun,cukr,cukor,5,right-cluster-wrong-form,7-endings,ending-residual
+"confectioner, pastry cook",noun,cukraŕ,kondyter,8,wrong-cluster,8-merge-rank,diff-root-editorial
 "confectionery, pastry shop",noun,cukrarnja,konditerskaja,10,wrong-cluster,3-cluster/vote,wrong-cluster
-sweet,noun,cukrka,cukierek,10,right-cluster-wrong-form,1-normalize/representative,residual:y/i
-florist,noun,cvěćaŕ,florist,7,wrong-cluster,3-cluster/vote,wrong-cluster
+sweet,noun,cukrka,cukerka,10,right-cluster-wrong-form,1-normalize/representative,residual:length
+florist,noun,cvěćaŕ,flaryst,7,wrong-cluster,8-merge-rank,diff-root-editorial
+beetroot,noun,cvekla,cveklo,9,right-cluster-wrong-form,7-endings,ending-residual
 tease,verb,cvěliti,drazniti,14,root-absent,0-root-absent,evidence-gap
 "bloom, blossom, flower",verb,cvěsti,kvisti,5,wrong-cluster,3-cluster/vote,wrong-cluster
 flower,noun,cvět,květ,6,wrong-cluster,8-merge-rank,diff-root-editorial
-"colour, color",noun,cvět,kolor,5,wrong-cluster,3-cluster/vote,wrong-cluster
-"bloom, blossom, flower",verb,cvětati,kvisti,6,wrong-cluster,3-cluster/vote,wrong-cluster
+"colour, color",noun,cvět,klar,5,wrong-cluster,3-cluster/vote,wrong-cluster
+"bloom, blossom, flower",verb,cvětati,kvisti,6,wrong-cluster,8-merge-rank,diff-root-editorial
 April,noun,cvětėnj,april,6,root-absent,0-root-absent,evidence-gap
+"bloom, blossoming, flowering",noun,cvěteńje,cvetanje,11,right-cluster-wrong-form,1-normalize/representative,residual:substitution
 "bloom, blossom, flower",verb,cvětnųti,kvisti,8,root-absent,0-root-absent,evidence-gap
 "blooming, blossoming, flowering",adj,cvětųći,kvitnųcy,11,wrong-cluster,3-cluster/vote,wrong-cluster
 "whine, wail, whimper",verb,cviliti,kviliti,18,wrong-cluster,8-merge-rank,diff-root-editorial
 cricket (insect),noun,cvŕček,svŕč,6,wrong-cluster,3-cluster/vote,wrong-cluster
-chirrup,noun,cvŕkot,cvrkut,9,right-cluster-wrong-form,7-endings,ending-residual
-tearoom,noun,čajiljnja,čajana,6,root-absent,0-root-absent,evidence-gap
-heron,noun,čaplja,čapja,2,wrong-cluster,8-merge-rank,same-root-surface
+tearoom,noun,čajiljnja,čajna,6,root-absent,0-root-absent,evidence-gap
+heron,noun,čaplja,čapja,2,wrong-cluster,6-proto-rule,soft-consonants
 sorcerer,noun,čaroděj,čarovnik,13,wrong-cluster,8-merge-rank,diff-root-editorial
 sorceress,noun,čarodějnica,čarodejka,16,wrong-cluster,3-cluster/vote,wrong-cluster
+perform magic,verb,čarovati,čaravac,7,wrong-cluster,8-merge-rank,diff-root-editorial
 spell,noun,čary,čar,10,right-cluster-wrong-form,8-merge-rank,same-root-surface
 hour,noun,časina,godina,5,root-absent,0-root-absent,evidence-gap
 "sometimes, occasionally, now and then, at times",adv,časom,časem,20,right-cluster-wrong-form,7-endings,ending-residual
-chronometer,noun,časoměr,hronometr,7,wrong-cluster,3-cluster/vote,wrong-cluster
+chronometer,noun,časoměr,hronometr,7,wrong-cluster,8-merge-rank,diff-root-editorial
+"breviary, prayer book",noun,časoslov,molitvenik,8,wrong-cluster,8-merge-rank,diff-root-editorial
+conjugation,noun,časovańje,konjugacija,6,wrong-cluster,3-cluster/vote,wrong-cluster
+clock,noun,časovnik,hodiny,9,wrong-cluster,8-merge-rank,diff-root-editorial
+watchmaker,noun,časovnikaŕ,hodinar,9,wrong-cluster,3-cluster/vote,wrong-cluster
+temporary,adj,časovy,vremeny,9,wrong-cluster,3-cluster/vote,wrong-cluster

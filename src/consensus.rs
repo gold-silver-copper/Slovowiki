@@ -115,6 +115,11 @@ pub struct ConsensusConfig {
     /// devoiced prefixes bes-/is- → bez-/iz- and the loan nz → ns, each
     /// corroborated by a cognate with the voiced/Latin spelling.
     pub voicing_repair: bool,
+    /// Pick the winning group's representative as the *medoid* — the member
+    /// minimizing total folded edit distance to the others (the most central
+    /// attested form) — instead of the fixed REP_PRIORITY, avoiding dialectal /
+    /// oblique outliers. The rep-eval probe measured +1.09pp exact.
+    pub medoid_representative: bool,
 }
 
 impl ConsensusConfig {
@@ -143,6 +148,7 @@ impl ConsensusConfig {
             loan_stem_repair: false,
             verb_class_repair: false,
             voicing_repair: false,
+            medoid_representative: false,
         }
     }
 
@@ -173,6 +179,7 @@ impl ConsensusConfig {
             loan_stem_repair: true,
             verb_class_repair: true,
             voicing_repair: true,
+            medoid_representative: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -202,6 +209,7 @@ impl ConsensusConfig {
             loan_stem_repair: true,
             verb_class_repair: true,
             voicing_repair: true,
+            medoid_representative: true,
         }
     }
 }
@@ -243,6 +251,11 @@ pub struct Oracle<'a> {
     /// the `select-eval` path can measure how much of the oracle-cluster ceiling a
     /// real answer-blind recognizability heuristic recovers.
     pub force_cluster_key: Option<&'a str>,
+    /// Pick the winning group's representative by a named *leakage-free* rule
+    /// (medoid, modal-skeleton, shortest…) instead of `REP_PRIORITY`. Lets the
+    /// `rep-eval` path measure how much of the oracle-representative ceiling an
+    /// answer-blind rule recovers. Ignores `official` (blind).
+    pub rep_rule: Option<&'a str>,
 }
 
 /// Generate ranked Interslavic candidates from modern-Slavic consensus.
@@ -482,6 +495,60 @@ pub fn generate_oracle(
 }
 
 /// Build the surface form from the winning group and apply etymological repairs.
+/// Leakage-free representative-selection rules (diagnostic `rep-eval` only): pick
+/// the winning group's representative surface *without reading the official
+/// lemma*, so we can measure how much of the oracle-representative ceiling an
+/// answer-blind rule recovers.
+fn pick_rep_by_rule<'a>(
+    rule: &str,
+    group: &[&'a SourceForm],
+    priority: &[&str],
+) -> Option<&'a SourceForm> {
+    match rule {
+        // Medoid: the member minimizing total folded edit distance to the others —
+        // the most "central" attested form, avoiding dialectal / oblique outliers.
+        "medoid" => group
+            .iter()
+            .min_by_key(|f| {
+                let a = ortho::to_standard(&f.norm.latin.to_lowercase());
+                group
+                    .iter()
+                    .map(|o| {
+                        ortho::levenshtein(&a, &ortho::to_standard(&o.norm.latin.to_lowercase()))
+                    })
+                    .sum::<usize>()
+            })
+            .copied(),
+        // The most common ascii-skeleton in the group, then REP_PRIORITY among the
+        // members that carry it (a "typical cognate, best surface" choice).
+        "modal-skeleton" => {
+            let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+            for f in group {
+                *counts.entry(f.norm.skeleton.as_str()).or_default() += 1;
+            }
+            let best = counts
+                .into_iter()
+                .max_by_key(|(_, n)| *n)
+                .map(|(s, _)| s.to_string())?;
+            priority
+                .iter()
+                .find_map(|code| {
+                    group
+                        .iter()
+                        .find(|f| f.norm.skeleton == best && &f.lang_code == code)
+                })
+                .or_else(|| group.iter().find(|f| f.norm.skeleton == best))
+                .copied()
+        }
+        // The shortest form (nominatives tend to be shorter than oblique cases).
+        "shortest" => group
+            .iter()
+            .min_by_key(|f| f.norm.latin.chars().count())
+            .copied(),
+        _ => None,
+    }
+}
+
 fn reconstruct(
     group: &[&SourceForm],
     per_lang: &BTreeMap<&str, &SourceForm>,
@@ -502,7 +569,16 @@ fn reconstruct(
     // (diagnostic) representative oracle, instead pick the group member whose
     // folded form is closest to the official lemma — the upper bound of a perfect
     // representative choice while the repairs downstream stay real.
+    let by_priority = || {
+        priority
+            .iter()
+            .find_map(|code| group.iter().find(|f| &f.lang_code == code))
+            .or_else(|| group.first())
+            .copied()
+    };
     let rep = if let Some(o) = oracle.filter(|o| o.representative) {
+        // Oracle (reads the answer): the member folded-closest to the official
+        // lemma — the upper bound of a perfect representative choice.
         let target = ortho::to_standard(&o.official.to_lowercase());
         group
             .iter()
@@ -510,12 +586,13 @@ fn reconstruct(
                 ortho::levenshtein(&ortho::to_standard(&f.norm.latin.to_lowercase()), &target)
             })
             .copied()
+    } else if let Some(rule) = oracle.and_then(|o| o.rep_rule) {
+        pick_rep_by_rule(rule, group, priority).or_else(by_priority)
+    } else if cfg.medoid_representative {
+        // Production: the medoid (most central attested form) — +1.09pp exact.
+        pick_rep_by_rule("medoid", group, priority).or_else(by_priority)
     } else {
-        priority
-            .iter()
-            .find_map(|code| group.iter().find(|f| &f.lang_code == code))
-            .or_else(|| group.first())
-            .copied()
+        by_priority()
     };
     let Some(rep) = rep else {
         return (String::new(), Vec::new());
@@ -1534,6 +1611,20 @@ mod tests {
             is_intl_meaning: intl,
             reflexive: false,
         }
+    }
+
+    #[test]
+    fn medoid_representative_picks_the_central_form() {
+        // The medoid is the member minimizing total folded edit distance to the
+        // others, so a dialectal/oblique outlier does not become the representative.
+        let ru = form("ru", Branch::East, "voda");
+        let pl = form("pl", Branch::West, "voda");
+        let sl = form("sl", Branch::South, "vodica"); // outlier (diminutive)
+        let group = vec![&ru, &pl, &sl];
+        let rep = pick_rep_by_rule("medoid", &group, REP_PRIORITY).unwrap();
+        assert_eq!(rep.norm.latin, "voda", "medoid should avoid the outlier");
+        // An unknown rule yields None (falls back to REP_PRIORITY in reconstruct).
+        assert!(pick_rep_by_rule("nonesuch", &group, REP_PRIORITY).is_none());
     }
 
     #[test]
