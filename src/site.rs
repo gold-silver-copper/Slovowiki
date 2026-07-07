@@ -14,9 +14,9 @@ use crate::official::{self, OfficialEntry};
 use crate::overrides::Overrides;
 use anyhow::Result;
 use interslavic::{
-    Animacy as IsvAnimacy, Case as IsvCase, Gender as IsvGender, Number as IsvNumber,
-    Person as IsvPerson, Tense as IsvTense, ISV,
+    Animacy as IsvAnimacy, Case as IsvCase, Gender as IsvGender, Number as IsvNumber, ISV,
 };
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -509,6 +509,128 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         xref.len()
     );
 
+    // Official lemmas no candidate generates: reserve their ids before rendering
+    // so all wiki indexes (categories, backlinks, nearby nav, all-pages) can see
+    // the complete static site graph.
+    let mut official_only = 0usize;
+    let mut official_only_records: Vec<(usize, OfficialEntry)> = Vec::new();
+    for e in &official_entries {
+        let isv = e.isv.trim();
+        if isv.is_empty() || isv.contains('#') {
+            continue;
+        }
+        let fold = crate::orthography::to_standard(&isv.to_lowercase());
+        if !covered.insert(fold) {
+            continue; // generated, or an official homograph already emitted
+        }
+        id += 1;
+        official_only += 1;
+        official_only_records.push((id, e.clone()));
+    }
+    for (oid, e) in &official_only_records {
+        isv_to_id
+            .entry(crate::orthography::to_standard(
+                &e.isv.trim().to_lowercase(),
+            ))
+            .or_insert(*oid);
+    }
+
+    let mut metas: Vec<SiteEntryMeta> = Vec::new();
+    for p in prepared.iter().filter(|p| !p.suppressed) {
+        let ancestor = if p.g.set.borrowed {
+            p.g.set.etymon.clone()
+        } else {
+            p.g.set.proto.clone()
+        };
+        let mut langs: Vec<String> = p.g.set.members.iter().map(|m| m.lang.clone()).collect();
+        langs.sort();
+        langs.dedup();
+        let wiki_categories =
+            wiktionary_category_paths_for_members(&p.g.set.members, enrich.as_ref());
+        metas.push(entry_meta(
+            p.id,
+            &p.display,
+            match &p.matched {
+                Some((_, _, en)) => en,
+                None => &p.g.set.gloss,
+            },
+            p.g.set.pos.code(),
+            p.status,
+            p.g.confidence,
+            p.g.score,
+            p.g.n_langs,
+            p.g.n_branches,
+            p.g.set.borrowed,
+            false,
+            p.matched.as_ref().map(|(_, isv, _)| isv.clone()),
+            ancestor,
+            langs,
+            wiki_categories,
+        ));
+    }
+    for (oid, e) in &official_only_records {
+        let input = build_input(e);
+        let mut langs: Vec<String> = input
+            .forms
+            .iter()
+            .filter(|f| f.modern)
+            .map(|f| f.lang_code.clone())
+            .collect();
+        langs.sort();
+        langs.dedup();
+        let mut branches = std::collections::BTreeSet::new();
+        for f in input.forms.iter().filter(|f| f.modern) {
+            branches.insert(f.branch.label().to_string());
+        }
+        let wiki_categories = wiktionary_category_paths_for_input(&input, enrich.as_ref());
+        metas.push(entry_meta(
+            *oid,
+            e.isv.trim(),
+            &e.english,
+            e.pos.code(),
+            MatchStatus::OfficialMatch,
+            Confidence::High,
+            1.0,
+            langs.len(),
+            branches.len(),
+            e.genesis.trim() == "I",
+            true,
+            Some(e.isv.trim().to_string()),
+            String::new(),
+            langs,
+            wiki_categories,
+        ));
+    }
+    compact_entry_categories(&mut metas);
+    let meta_by_id: std::collections::HashMap<usize, SiteEntryMeta> =
+        metas.iter().map(|m| (m.id, m.clone())).collect();
+    let homographs = homograph_groups(&metas);
+    let build_meta = BuildMeta::current(metas.len(), lemma_total);
+    let curation = load_curation_notes();
+    let edges = build_edges(
+        &prepared,
+        &families,
+        &thesaurus,
+        &isv_to_id,
+        enrich.as_ref(),
+        Some(&xref),
+        &meta_by_id,
+    );
+    let backlinks = backlinks_by_target(&edges);
+
+    write_wiki_indexes(
+        out_dir,
+        &metas,
+        &edges,
+        &backlinks,
+        &homographs,
+        &build_meta,
+        &curation,
+    )?;
+    // Some special pages intentionally probe inflection failures. Keep the final
+    // export note about blank cells limited to the actual entry pages rendered below.
+    INFLECTION_PANICS.store(0, std::sync::atomic::Ordering::Relaxed);
+
     // Second pass: render pages (with family links) + the search index.
     for (i, p) in prepared.iter().enumerate() {
         if p.suppressed {
@@ -522,6 +644,16 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Some((_, isv, _)) => synonyms_block(isv, &thesaurus, &isv_to_id),
             None => String::new(),
         };
+        let meta = meta_by_id.get(&p.id).expect("generated entry meta");
+        let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
+        let entry_card = entry_infobox(meta);
+        let wiki_bottom = entry_wiki_blocks(
+            meta,
+            backlinks.get(&p.id).map(Vec::as_slice).unwrap_or(&[]),
+            &edges,
+            &curation,
+            &build_meta,
+        );
         let html = corpus_entry_page(
             p.id,
             &p.g,
@@ -533,6 +665,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             enrich.as_ref(),
             Some(&xref),
             &synonyms,
+            &wiki_top,
+            &entry_card,
+            &wiki_bottom,
         );
         std::fs::write(entry_dir.join(format!("{}.html", p.id)), html)?;
 
@@ -553,7 +688,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2},{}]",
+            "[{},{},{},{},{},{},{:.2},{},{},{},{},{},{},{}]",
             p.id,
             json_str(&p.display),
             json_str(&truncate(&p.g.set.gloss, 70)),
@@ -562,6 +697,12 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             json_str(conf_letter(p.g.confidence)),
             p.g.score,
             keys_json(&keys),
+            p.g.n_langs,
+            p.g.n_branches,
+            if p.g.set.borrowed { 1 } else { 0 },
+            json_str(quality_label(meta)),
+            json_str(&meta.first),
+            json_str(&meta.ancestor),
         );
         rows.push(HomeRow {
             // sort the home list by coverage (n_langs) so the best-attested show first
@@ -581,21 +722,32 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // Multi-word lemmas (`pęt na desęte`) and reflexives (`… sę`) are included
     // (the single-token generator never produces them, so they would otherwise
     // have no page at all) — display-only parity, generation is untouched.
-    let mut official_only = 0usize;
-    for e in &official_entries {
+    for (oid, e) in &official_only_records {
         let isv = e.isv.trim();
-        if isv.is_empty() || isv.contains('#') {
-            continue;
-        }
         let fold = crate::orthography::to_standard(&isv.to_lowercase());
-        if !covered.insert(fold.clone()) {
-            continue; // generated, or an official homograph already emitted
-        }
-        id += 1;
-        official_only += 1;
         let syn = synonyms_block(isv, &thesaurus, &isv_to_id);
-        let html = official_only_page(isv, e, enrich.as_ref(), Some(&xref), id, &syn);
-        std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
+        let meta = meta_by_id.get(oid).expect("official-only entry meta");
+        let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
+        let entry_card = entry_infobox(meta);
+        let wiki_bottom = entry_wiki_blocks(
+            meta,
+            backlinks.get(oid).map(Vec::as_slice).unwrap_or(&[]),
+            &edges,
+            &curation,
+            &build_meta,
+        );
+        let html = official_only_page(
+            isv,
+            e,
+            enrich.as_ref(),
+            Some(&xref),
+            *oid,
+            &syn,
+            &wiki_top,
+            &entry_card,
+            &wiki_bottom,
+        );
+        std::fs::write(entry_dir.join(format!("{oid}.html")), html)?;
         let mut keys: Vec<(String, usize)> = Vec::new();
         for k in [fold.clone(), crate::orthography::ascii_skeleton(isv)] {
             if k.chars().count() >= 2
@@ -611,16 +763,32 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         first_search = false;
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2},{}]",
-            id,
+            "[{},{},{},{},{},{},{:.2},{},{},{},{},{},{},{}]",
+            oid,
             json_str(isv),
             json_str(&truncate(&e.english, 70)),
-            json_str(&e.pos.code()),
+            json_str(e.pos.code()),
             json_str("O"),
             json_str("V"),
             1.0,
             keys_json(&keys),
+            meta.n_langs,
+            meta.n_branches,
+            if meta.borrowed { 1 } else { 0 },
+            json_str(quality_label(meta)),
+            json_str(&meta.first),
+            json_str(&meta.ancestor),
         );
+        rows.push(HomeRow {
+            freq: 0.5,
+            id: *oid,
+            form: isv.to_string(),
+            gloss: e.english.clone(),
+            pos: e.pos.code().to_string(),
+            status: MatchStatus::OfficialMatch,
+            conf: Confidence::High,
+            score: 1.0,
+        });
     }
     search.push_str("\n]\n");
 
@@ -773,6 +941,9 @@ fn corpus_entry_page(
     enrich: Option<&crate::enrich::EnrichIndex>,
     xref: Option<&crate::enrich::Xref>,
     synonyms: &str,
+    wiki_top: &str,
+    entry_card: &str,
+    wiki_bottom: &str,
 ) -> String {
     let top = g.candidates.first().unwrap();
     let pos_code = g.set.pos.code();
@@ -833,7 +1004,7 @@ fn corpus_entry_page(
         Some((r, _, _)) => {
             format!("Oficialna forma; generator ju daje kako <a href='#cand-{r}'>kandidat {r}</a>.")
         }
-        None => "Forma je generovana iz cognatov; ne v oficialnom slovniku.".to_string(),
+        None => "Forma je generovana iz srodnyh slov; ne v oficialnom slovniku.".to_string(),
     };
     let banner = format!(
         "<div class='banner {}'><b>Podpŕto {} językami v {} slovjanskyh větvah.</b> {}</div>",
@@ -847,18 +1018,6 @@ fn corpus_entry_page(
         official_note,
     );
 
-    let etymology = if g.set.borrowed {
-        format!(
-            "<p>Internacionalizm (zaimka). Etimon: <span class='mention'>{}</span>. Niže sų slovjanske refleksy toj že korene.</p>",
-            esc(&etymon_display(&g.set.etymon))
-        )
-    } else {
-        format!(
-            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{p}'>*{p}</a>.</p>",
-            p = esc(g.set.proto.trim_start_matches('*')),
-        )
-    };
-
     let inflection = inflection_table(&headword, pos_code);
     let cognates = cognate_block(g, enrich);
     let enrich_members: Vec<(String, String)> = g
@@ -867,9 +1026,7 @@ fn corpus_entry_page(
         .iter()
         .map(|m| (m.lang.clone(), m.word.clone()))
         .collect();
-    let native_etym = enrich
-        .map(|e| enrich_etymology_section(&enrich_members, e))
-        .unwrap_or_default();
+    let etymology = unified_etymology_section(g, enrich);
     let native_conn = enrich
         .map(|e| enrich_connections_section(&enrich_members, e, xref, id))
         .unwrap_or_default();
@@ -878,20 +1035,25 @@ fn corpus_entry_page(
     let foot = if official.is_some() {
         "Oficialne slovo; rekonstrukcija i dokazy mašinno generovane (Wiktionary, CC BY-SA)."
     } else {
-        "Mašinno generovana rekonstrukcija iz cognatov (Wiktionary, CC BY-SA). Ne oficialny standard."
+        "Mašinno generovana rekonstrukcija iz srodnyh slov (Wiktionary, CC BY-SA). Ne oficialny standard."
     };
     let body = format!(
-        "<article class='entry'>\
-           <h1 class='page-title firstHeading'>{headword}</h1>\
-           {banner}{headline}\
-           <section><h2 id='formy'>Formy i kandidaty</h2>{alternatives}</section>\
-           <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
-           {synonyms}\
-           <section><h2 id='cognaty'>Cognaty — {nlangs} językov</h2>{cognates}</section>\
-           <section><h2 id='etimologija'>Etimologija</h2>{etymology}</section>\
-           {native_etym}{native_conn}{family}\
-           <section><h2 id='sled'>Sled pravil</h2>{trace}</section>\
-           <p class='foot'>{foot}</p>\
+        "<article class='entry entry-with-rail'>\
+           {wiki_top}\
+           <div class='entry-grid'>\
+             <div class='entry-main'>\
+               <h1 class='page-title firstHeading'>{headword}</h1>\
+               {banner}{headline}\
+               <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
+               {synonyms}\
+               <section><h2 id='cognaty'>Srodne slova — {nlangs} językov</h2>{cognates}</section>\
+               {etymology}{native_conn}{family}\
+               <section><h2 id='sled'>Sled pravil</h2>{trace}</section>\
+               {wiki_bottom}\
+               <p class='foot'>{foot}</p>\
+             </div>\
+             <aside class='entry-rail'>{entry_card}<section class='rail-box'><h2 id='formy'>Formy i kandidaty</h2>{alternatives}</section></aside>\
+           </div>\
          </article>",
         headword = esc(&headword),
         nlangs = g.n_langs,
@@ -908,6 +1070,9 @@ fn official_only_page(
     xref: Option<&crate::enrich::Xref>,
     id: usize,
     synonyms: &str,
+    wiki_top: &str,
+    entry_card: &str,
+    wiki_bottom: &str,
 ) -> String {
     let input = build_input(e);
     let evidence = branch_evidence(&input);
@@ -918,9 +1083,7 @@ fn official_only_page(
         .filter(|f| f.modern && f.primary)
         .map(|f| (f.lang_code.clone(), f.norm.original.clone()))
         .collect();
-    let native_etym = enrich
-        .map(|ix| enrich_etymology_section(&enrich_members, ix))
-        .unwrap_or_default();
+    let etymology = unified_official_etymology_section(&enrich_members, enrich);
     let native_conn = enrich
         .map(|ix| enrich_connections_section(&enrich_members, ix, xref, id))
         .unwrap_or_default();
@@ -932,25 +1095,32 @@ fn official_only_page(
                 cog,
                 "<tr><td class='lc'>{}</td><td>{}</td></tr>",
                 esc(&ev.lang_name),
-                esc(&ev.form)
+                esc(&source_display(&ev.lang_code, &ev.form))
             );
         }
         cog.push_str("</tbody></table>");
     } else {
-        cog.push_str("<p class='muted'>Bez slovjanskogo cognatnogo dokaza v slovniku.</p>");
+        cog.push_str("<p class='muted'>Bez slovjanskogo srodnogo dokaza v slovniku.</p>");
     }
     let inflection = inflection_table(isv, e.pos.code());
     let body = format!(
-        "<article class='entry'>\
-           <h1 class='page-title firstHeading'>{isv}</h1>\
-           <div class='banner info'><b>Oficialne slovo.</b> Generator ješče ne izvodi jego iz cognatnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>\
-           <div class='headword-block'><div class='headmeta'><span class='badge pos'>{pos}</span> <span class='pill src-official'>oficialny slovnik</span></div>\
-             <p class='def'><b>Smysl:</b> {en}</p></div>\
-           {synonyms}\
-           <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
-           <section><h2 id='cognaty'>Slovjanski dokaz</h2>{cog}</section>\
-           {native_etym}{native_conn}\
-           <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>\
+        "<article class='entry entry-with-rail'>\
+           {wiki_top}\
+           <div class='entry-grid'>\
+             <div class='entry-main'>\
+               <h1 class='page-title firstHeading'>{isv}</h1>\
+               <div class='banner info'><b>Oficialne slovo.</b> Generator ješče ne izvodi jego iz srodnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>\
+               <div class='headword-block'><div class='headmeta'><span class='badge pos'>{pos}</span> <span class='pill src-official'>oficialny slovnik</span></div>\
+                 <p class='def'><b>Smysl:</b> {en}</p></div>\
+               {synonyms}\
+               <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
+               <section><h2 id='cognaty'>Slovjanski dokaz</h2>{cog}</section>\
+               {etymology}{native_conn}\
+               {wiki_bottom}\
+               <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>\
+             </div>\
+             <aside class='entry-rail'>{entry_card}</aside>\
+           </div>\
          </article>",
         isv = esc(isv),
         pos = esc(&pos_heading(e.pos.code())),
@@ -964,10 +1134,28 @@ fn official_only_page(
 fn search_page() -> String {
     let body = "<article class='entry search-page'>\
       <h1 class='firstHeading'>Iskanje</h1>\
-      <p class='muted'>Napiši v polje gore i pritisni <b>Enter</b>. Najdeno: <b id='rescount'>0</b> rezultatov.</p>\
+      <p class='muted'>Napiši v polje gore i pritisni <b>Enter</b>, ili filtruj statični indeks. Najdeno: <b id='rescount'>0</b> rezultatov.</p>\
+      <form class='filter-grid' onsubmit='return false'>\
+        <label>Čęst rěči <select id='f-pos'><option value=''>vse</option><option value='noun'>imennik</option><option value='verb'>glagol</option><option value='adj'>pridavnik</option><option value='adv'>narěčje</option><option value='proper_noun'>vlastno imę</option><option value='num'>čislovnik</option></select></label>\
+        <label>Stav <select id='f-status'><option value=''>vse</option><option value='O'>oficialne</option><option value='N'>samo generovane</option></select></label>\
+        <label>Uvěrjenost <select id='f-conf'><option value=''>vse</option><option value='V'>vysoka</option><option value='S'>srědnja</option><option value='N'>nizka</option></select></label>\
+        <label>Tip <select id='f-borrowed'><option value=''>vse</option><option value='0'>naslědovane</option><option value='1'>zaimky</option></select></label>\
+        <label>Min. językov <input id='f-langs' type='number' min='0' value='0'></label>\
+      </form>\
       <div id='page-results' class='results full'></div>\
     </article>";
     page("Iskanje — medžuslovjansky", body, 0)
+}
+
+/// Display text from a source language. Russian Wiktionary text is rendered in
+/// deterministic Interslavic-style Latin transliteration on every site export;
+/// source URLs still use the original Cyrillic spelling.
+fn source_display(lang: &str, text: &str) -> String {
+    if lang == "ru" {
+        crate::russian_translit::to_interslavic(text)
+    } else {
+        text.to_string()
+    }
 }
 
 /// Human-readable borrowing source: `la computare` → `latinsky computare`.
@@ -1010,7 +1198,7 @@ fn synonyms_block(
         let key = crate::orthography::to_standard(&s.to_lowercase());
         let (cls, href) = match isv_to_id.get(&key) {
             Some(id) => ("chip xref", format!("{id}.html")),
-            None => ("chip", format!("../search.html?q={}", esc(s))),
+            None => ("chip redlink", format!("../search.html?q={}", esc(s))),
         };
         let _ = write!(chips, "<a class='{cls}' href='{href}'>{}</a>", esc(s));
     }
@@ -1052,16 +1240,24 @@ fn cognate_block(
             };
             let gloss = hit
                 .and_then(|e| e.senses.first())
-                .map(|x| truncate(x, 44))
-                .unwrap_or_else(|| truncate(&m.gloss, 32));
+                .map(|x| truncate(&source_display(&m.lang, x), 44))
+                .unwrap_or_else(|| truncate(&source_display(&m.lang, &m.gloss), 32));
+            let visible_word = source_display(&m.lang, &m.word);
+            let norm = crate::normalize::to_phonemic_latin(&m.lang, &m.word);
+            let norm_note = if norm != visible_word {
+                format!("<br><span class='muted'>→ {}</span>", esc(&norm))
+            } else {
+                String::new()
+            };
             let _ = write!(
                 s,
-                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a>{}</td><td class='muted'>{}</td></tr>",
+                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a>{}{}</td><td class='muted'>{}</td></tr>",
                 esc(&crate::lang::lang_name(&m.lang)),
                 esc(&m.word.replace(' ', "_")),
                 esc(&m.lang),
-                esc(&m.word),
+                esc(&visible_word),
                 native,
+                norm_note,
                 esc(&gloss),
             );
         }
@@ -1071,10 +1267,90 @@ fn cognate_block(
     s
 }
 
+fn unified_etymology_section(
+    g: &crate::corpus::GeneratedWord,
+    enrich: Option<&crate::enrich::EnrichIndex>,
+) -> String {
+    let summary = if g.set.borrowed {
+        format!(
+            "<p>Internacionalizm (zaimka). Etimon: <span class='mention'>{}</span>. Slovjanske refleksy i izvorne etimologije sų niže.</p>",
+            esc(&etymon_display(&g.set.etymon))
+        )
+    } else {
+        format!(
+            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{p}'>*{p}</a>. Niže sų izvorne etimologije iz anglijskogo i narodnyh Wiktionary.</p>",
+            p = esc(g.set.proto.trim_start_matches('*')),
+        )
+    };
+    let english = english_etymology_cards(&g.set.members);
+    let native_members: Vec<(String, String)> = g
+        .set
+        .members
+        .iter()
+        .map(|m| (m.lang.clone(), m.word.clone()))
+        .collect();
+    let native = enrich
+        .map(|ix| native_etymology_cards(&native_members, ix))
+        .unwrap_or_default();
+    let cards = format!("{english}{native}");
+    if cards.trim().is_empty() {
+        format!("<section><h2 id='etimologija'>Etimologija</h2>{summary}</section>")
+    } else {
+        format!(
+            "<section><h2 id='etimologija'>Etimologija</h2>{summary}<div class='etym-sources'>{cards}</div><p class='muted'>Izvorne etimologije sų vzęte iz Wiktionary (CC BY-SA); anglijsky tekst ostaje anglijsky, rusky tekst jest transliterovany.</p></section>"
+        )
+    }
+}
+
+fn unified_official_etymology_section(
+    members: &[(String, String)],
+    enrich: Option<&crate::enrich::EnrichIndex>,
+) -> String {
+    let native = enrich
+        .map(|ix| native_etymology_cards(members, ix))
+        .unwrap_or_default();
+    if native.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<section><h2 id='etimologija'>Etimologija</h2><div class='etym-sources'>{native}</div><p class='muted'>Izvorne etimologije iz narodnyh Wiktionary (CC BY-SA); rusky tekst jest transliterovany.</p></section>"
+        )
+    }
+}
+
+fn english_etymology_cards(members: &[crate::dump::LemmaEntry]) -> String {
+    let mut rows = String::new();
+    let mut seen = BTreeSet::new();
+    for m in members.iter().filter(|m| !m.etymology.is_empty()) {
+        let key = m.etymology.join("\n");
+        if !seen.insert(key) {
+            continue;
+        }
+        let paras: String = m
+            .etymology
+            .iter()
+            .map(|p| format!("<p>{}</p>", esc(p)))
+            .collect();
+        let visible_word = source_display(&m.lang, &m.word);
+        let _ = write!(
+            rows,
+            "<div class='etym-src'><div class='src-head'><span class='lc'>anglijska Wiktionary · {}</span> <a class='ext' href='https://en.wiktionary.org/wiki/{}#{}'>{}↗</a></div>{}</div>",
+            esc(&crate::lang::lang_name(&m.lang)),
+            esc(&m.word.replace(' ', "_")),
+            esc(&m.lang),
+            esc(&visible_word),
+            paras
+        );
+        if seen.len() >= 4 {
+            break;
+        }
+    }
+    rows
+}
+
 /// Multi-source native etymology (RU / PL / CS Wiktionary) — one etymology per
-/// edition, side by side, so each entry carries three independent histories.
-/// `members` is a list of `(lang_code, word)` cognates.
-fn enrich_etymology_section(
+/// edition, side by side, so each entry carries independent source histories.
+fn native_etymology_cards(
     members: &[(String, String)],
     enrich: &crate::enrich::EnrichIndex,
 ) -> String {
@@ -1091,25 +1367,19 @@ fn enrich_etymology_section(
         let paras: String = e
             .etymology
             .iter()
-            .map(|p| format!("<p>{}</p>", esc(p)))
+            .map(|p| format!("<p>{}</p>", esc(&source_display(lang, p))))
             .collect();
+        let visible_word = source_display(lang, word);
         let _ = write!(
             rows,
             "<div class='etym-src'><div class='src-head'><span class='lc'>{}</span> <a class='ext' href='{}'>{}↗</a></div>{}</div>",
             esc(&crate::lang::lang_name(lang)),
             esc(&crate::enrich::source_url(lang, word)),
-            esc(word),
+            esc(&visible_word),
             paras
         );
     }
-    if rows.is_empty() {
-        return String::new();
-    }
-    format!(
-        "<section><h2 id='etym-nar'>Etimologija po narodnyh slovnikah (RU / PL / CS)</h2>\
-         <div class='etym-sources'>{rows}</div>\
-         <p class='muted'>Iz narodnyh Wiktionary (ru/pl/cs), CC BY-SA — različne pogledy na istoriju slova.</p></section>"
-    )
+    rows
 }
 
 /// Extra meanings and semantic links (related / synonyms / antonyms) drawn from
@@ -1142,7 +1412,7 @@ fn enrich_connections_section(
             let items: String = e
                 .senses
                 .iter()
-                .map(|x| format!("<li>{}</li>", esc(x)))
+                .map(|x| format!("<li>{}</li>", esc(&source_display(lang, x))))
                 .collect();
             let _ = write!(
                 inner,
@@ -1158,33 +1428,35 @@ fn enrich_connections_section(
                 .map(|w| {
                     // Link internally when the term is itself a dictionary headword
                     // (and not this very page); otherwise out to native Wiktionary.
+                    let visible = source_display(lang, w);
                     match xref.and_then(|x| x.get(lang, w)).filter(|&t| t != self_id) {
                         Some(target) => format!(
                             "<a class='chip xref' title='v slovniku' href='{target}.html'>{}</a>",
-                            esc(w)
+                            esc(&visible)
                         ),
                         None => format!(
                             "<a class='chip' href='{}'>{}</a>",
                             esc(&crate::enrich::source_url(lang, w)),
-                            esc(w)
+                            esc(&visible)
                         ),
                     }
                 })
                 .collect();
             format!("<div class='conn'><h5>{title}</h5><div class='chips'>{cs}</div></div>")
         };
-        inner.push_str(&chips("Sŕodne slova", &e.related));
+        inner.push_str(&chips("Srodne slova", &e.related));
         inner.push_str(&chips("Sinonimy", &e.synonyms));
         inner.push_str(&chips("Antonimy", &e.antonyms));
         if inner.is_empty() {
             continue;
         }
+        let visible_word = source_display(lang, word);
         let _ = write!(
             blocks,
             "<div class='src-block'><div class='src-head'><span class='lc'>{}</span> <a class='ext' href='{}'>{}↗</a></div>{}</div>",
             esc(&crate::lang::lang_name(lang)),
             esc(&crate::enrich::source_url(lang, word)),
-            esc(word),
+            esc(&visible_word),
             inner
         );
     }
@@ -1208,7 +1480,7 @@ fn corpus_home(
     borrowed: usize,
     rows: &[HomeRow],
 ) -> String {
-    let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Smysl</th><th>Sila dogadki</th><th>Cognaty</th></tr></thead><tbody>");
+    let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Smysl</th><th>Sila dogadki</th><th>Srodne slova</th></tr></thead><tbody>");
     for r in rows.iter().take(400) {
         let langs = (r.freq as usize).max(1);
         let _ = write!(
@@ -1216,7 +1488,7 @@ fn corpus_home(
             "<tr><td><a href='entry/{}.html'><b>{}</b></a></td><td>{}</td><td>{}</td><td>{}</td><td class='muted'>{}</td></tr>",
             r.id,
             esc(&r.form),
-            esc(&r.pos),
+            esc(&pos_code_label(&r.pos)),
             esc(&truncate(&r.gloss, 50)),
             strength_cell(r.conf, r.score),
             langs
@@ -1236,12 +1508,14 @@ fn corpus_home(
              {list}
            </article>
            <aside class='home-aside'>
+             <div class='side-box'><div class='side-h'>Izbrano / slučajno</div><div id='spotlight'><p class='muted'>Nakladajě sę…</p></div><button id='randbtn' type='button'>Drugo slovo</button></div>
+             <div class='side-box'><div class='side-h'>Wiki-navigacija</div><ul class='compact-list'><li><a href='special.html'>Posebne strany</a></li><li><a href='all-pages.html'>Vse strany</a></li><li><a href='categories.html'>Kategorije</a></li><li><a href='indices.html'>Abecedne indeksy</a></li><li><a href='portals.html'>Językove portaly</a></li><li><a href='borrowings.html'>Zaimky</a></li><li><a href='needs-review.html'>Trěbuje prověrky</a></li><li><a href='site-stats.html'>Statistiky sajta</a></li><li><a href='graph.html'>Semantičny graf</a></li></ul></div>
              <div class='side-box'><div class='side-h'>Slovnik</div>
                <table class='wikitable compact-table'>
                  <tr><th>Slov</th><td>{total}</td></tr>
-                 <tr><th>Lemm</th><td>{lemmas}</td></tr>
+                 <tr><th>Lemmaty</th><td>{lemmas}</td></tr>
                  <tr><th>= oficialnomu</th><td>{official}</td></tr>
-                 <tr><th>Oficialne-only</th><td>{official_only}</td></tr>
+                 <tr><th>Samo oficialne</th><td>{official_only}</td></tr>
                  <tr><th>Zaimky</th><td>{borrowed}</td></tr>
                </table>
              </div>
@@ -1254,7 +1528,7 @@ fn corpus_home(
              </div>
              <div class='side-box'><div class='side-h'>Kako radi</div><ul class='compact-list'>
                <li>Medžuvětvovy konsensus (6 podgrup) izbira korenj.</li>
-               <li>Praslovjansko pravilo daje flavornų formų.</li>
+               <li>Praslovjansko pravilo daje variantnu formu.</li>
                <li><a href='about.html'>O metodě →</a></li>
              </ul></div>
            </aside>
@@ -1274,19 +1548,47 @@ fn corpus_home(
 
 fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
     let body = format!(
-        "<article class='entry'>
+        "<article class='entry about'>
            <h1 class='firstHeading'>O metodě</h1>
-           <p class='muted'>Toj slovnik ne je izvedeny iz oficialnogo medžuslovjanskogo slovnika — on je generovany iz <b>vsěh {lemmas} naslědovanyh slovjanskyh lemm</b> v Wiktionary.</p>
-           <h2>Kako</h2>
+           <p class='lede'>Toj slovnik je <b>statičny, dokazovy wiki-eksperiment</b>: ne kopija oficialnogo slovnika, ale generovany atlas slovjanskyh srodnyh slov, praslovjanskyh korenjev i medžuslovjanskyh kandidatov.</p>
+
+           <table class='wikitable compact-table'>
+             <tr><th>Srodne strany zapisov</th><td>{sets}</td><th>Slovjanske lemmaty v korpusu</th><td>{lemmas}</td></tr>
+             <tr><th>Generovane formy s oficialnym sovpadenjem</th><td>{official}</td><th>Model sajta</th><td>prosty HTML + JSON, bez servera</td></tr>
+           </table>
+
+           <h2 id='kratko'>Kratko</h2>
+           <p>Vsaka strana pyta odgovor na wiki-podobno vprašanje: <i>ako mnogo slovjanskyh językov kaže na tu ideju, kaka medžuslovjanska forma je najvjerojatnějša, i čemu?</i> Zato strany zapisov pokazujų ne samo slovo, ale i srodne slova, semantične vęzi, etimologiju, sled pravil, kategorije i izvory.</p>
+
+           <h2 id='pipeline'>Kako nastaje zapis</h2>
+           <pre class='pipeline-diagram'>Wiktionary lemmaty → srodne grupy → praslovjanske pravila → kandidaty → uvěrjenost → wiki-strana</pre>
            <ol>
-             <li>Iz Wiktionary sȯbiramy vsakų slovjanskų lemmų (imennik, infinitiv glagola, positiv prilagatelnogo) s jeje praslovjanskym korenem.</li>
-             <li>Lemmy s tym že korenem tvorę <b>cognatnų grupų</b> — {sets} grup.</li>
-             <li>Praslovjansko pravilo izvodi medžuslovjanskų formų; medžuvětvovy konsensus daje alternativų.</li>
-             <li><b>Uvěrjenost raste s čislom językov i větvej</b> kotore potvŕđajų korenj: slovo v jednom języku = niska uvěrjenost, slovo v vsěh třěh větvah = visoka.</li>
+             <li><b>Izvlečenje lemmatov.</b> Iz Wiktionary sȯbiramy slovjanske lemmy — imenniky, infinitivy glagolov, pozitivne pridavniki i internacionalizmy — zajedno s etimologičnym korenjem.</li>
+             <li><b>Srodne grupy.</b> Lemmaty s tym že praslovjansky predkom ili s podobnym internacionalnym skeletom tvorę jednu grupu.</li>
+             <li><b>Rekonstrukcija.</b> Praslovjansky pravilny stroj daje variantno-medžuslovjansku formu; medžuvětvovy konsensus iz modernyh językov daje alternativy.</li>
+             <li><b>Ocěna dokaza.</b> Uvěrjenost raste s čislom językov i s pokrytjem trěh větvi: vȯzhod, zapad, jug.</li>
+             <li><b>Wiki-sloj.</b> Sajt dodaje kategorije, portaly, backlinks, homografne strany, semantičny graf i statične indeksy.</li>
            </ol>
-           <h2>Validacija</h2>
-           <p>{official} generovanyh slov takože postoji v oficialnom medžuslovjanskom slovniku — nězavisna kontrola točnosti.</p>
-           <p class='muted'>Dokazy: Wiktionary (CC BY-SA). Praslovjanske rekonstrukcije i naslědniky iz Wiktionary etimologij. Kod: <a href='{repo}'>MIT</a>.</p>
+
+           <h2 id='citati-entry'>Kako čitati stranu zapisa</h2>
+           <ul>
+             <li><b>Oznaka</b> govori, koliko językov i větvi podpira formu, i či ona sovpada s oficialnym slovnikom.</li>
+             <li><b>Formy i kandidaty</b> pokazujų alternativne pravopisy i rangy, ne samo pobjednika.</li>
+             <li><b>Srodne slova</b> sų surovy dokaz po slovjanskyh větvah; to je najvažnějša čęsť strany.</li>
+             <li><b>Etimologija</b> veze zapis k praslovjanskoj rekonstrukciji ili internacionalnomu etimonu.</li>
+             <li><b>Sled pravil</b> je sled prověrky: koje pravilo proměnilo formu i kako.</li>
+             <li><b>Kategorije</b> i <b>portaly</b> pomagajų prěgledati slovnik kako wiki, ne samo kako polje iskanja.</li>
+           </ul>
+
+           <h2 id='wiki'>Wiki-navigacija</h2>
+           <p>Najbolje startne točky: <a href='special.html'>posebne strany</a>, <a href='all-pages.html'>Vse strany</a>, <a href='categories.html'>Kategorije</a>, <a href='portals.html'>językove portaly</a>, <a href='borrowings.html'>portal zaimok</a>, <a href='needs-review.html'>spis za prověrku</a>, <a href='site-stats.html'>statistiky sajta</a>, <a href='graph.html'>semantičny graf</a> i <a href='metrics.html'>statistiky točnosti</a>.</p>
+
+           <h2 id='validacija'>Validacija i granice</h2>
+           <p>{official} generovanyh slov sovpada s oficialnym medžuslovjanskim slovnikom. To je kontrola, ale ne jedin cilj: mnogo validnyh medžuslovjanskyh slov može byti synonymami, regionalnymi izborami ili novymi kandidami, ktoryh oficialny slovnik ne ima.</p>
+           <p>Slabe strany sų jasno označene: mala językova pokrytosť, nizka uvěrjenost, homografi, neoficialny stav i mašinno prěgibanje. Strana zato daje <a href='{repo}/issues'>linky problemov</a> i kuratorske noty.</p>
+
+           <h2 id='licencija'>Izvory i licencija</h2>
+           <p>Dokazy i etimologije: Wiktionary i narodny Wiktionary (CC BY-SA). Oficialny slovnik: interslavic-dictionary.com. Prěgibanje: <code>interslavic-rs</code>. Kod projekta: <a href='{repo}'>MIT na GitHub</a>.</p>
          </article>",
         lemmas = compact(lemma_total),
         sets = compact(n),
@@ -1377,14 +1679,14 @@ fn home_page(
     exact_rate: f32,
     top_rows: &[HomeRow],
 ) -> String {
-    let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Anglijski smysl</th><th>Sila dogadki</th><th>Status</th></tr></thead><tbody>");
+    let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Anglijski smysl</th><th>Sila dogadki</th><th>Stav</th></tr></thead><tbody>");
     for r in top_rows.iter().take(300) {
         let _ = write!(
             list,
             "<tr><td><a href='entry/{}.html'><b>{}</b></a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             r.id,
             esc(&r.form),
-            esc(&r.pos),
+            esc(&pos_code_label(&r.pos)),
             esc(&truncate(&r.gloss, 55)),
             strength_cell(r.conf, r.score),
             status_pill(r.status)
@@ -1414,13 +1716,13 @@ fn home_page(
                  <tr><th>Zapisov</th><td>{total}</td></tr>
                  <tr><th>Odgovara oficialnomu</th><td>{n_match} ({norm:.1}%)</td></tr>
                  <tr><th>Razlikuje sę</th><td>{n_diff}</td></tr>
-                 <tr><th>Točno (exact)</th><td>{exact:.1}%</td></tr>
+                 <tr><th>Točno (povno)</th><td>{exact:.1}%</td></tr>
                  <tr><th>Bez oficialnoj</th><td>{n_none}</td></tr>
                </table>
              </div>
              <div class='portal-box'><h3>Kako radi</h3><ul class='compact-list'>
                <li>Medžuvětvovy konsensus (6 podgrup) izbira korenj.</li>
-               <li>Praslovjansko pravilo daje flavornų formų.</li>
+               <li>Praslovjansko pravilo daje variantnu formu.</li>
                <li>Sila dogadki = kalibrovana uvěrjenost.</li>
                <li><a href='about.html'>O metodě →</a></li>
              </ul></div>
@@ -1493,44 +1795,62 @@ let IDX=null;
 async function ensure(){ if(IDX)return IDX; const r=await fetch(SITE_BASE+'search.json'); IDX=await r.json(); return IDX; }
 var q=document.getElementById('q'), out=document.getElementById('results'), pageRes=document.getElementById('page-results');
 var STR={V:['vysoka','conf-high'],S:['srědnja','conf-med'],N:['nizka','conf-low']};
+var POS={noun:'imennik',proper_noun:'vlastno imę',verb:'glagol',adj:'pridavnik',adv:'narěčje',num:'čislovnik',pron:'zaimennik'};
+function posLabel(p){return POS[p]||p||'';}
 function strBadge(e){ var s=STR[e[5]]||STR.N; return "<span class='reliability "+s[1]+"'>"+s[0]+"</span>"; }
-function fold(x){ return x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d'); }
+function closeDropdown(){ if(out){ out.style.display='none'; out.innerHTML=''; } }
+function fold(x){ return (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d'); }
+function filters(){ return {
+  pos:(document.getElementById('f-pos')||{}).value||'', status:(document.getElementById('f-status')||{}).value||'',
+  conf:(document.getElementById('f-conf')||{}).value||'', borrowed:(document.getElementById('f-borrowed')||{}).value||'',
+  langs:parseInt((document.getElementById('f-langs')||{}).value||'0',10)||0
+}; }
+function pass(e,f){ if(f.pos&&e[3]!==f.pos)return false; if(f.status&&e[4]!==f.status)return false; if(f.conf&&e[5]!==f.conf)return false; if(f.borrowed!==''&&String(e[10]||0)!==f.borrowed)return false; if(f.langs&&Number(e[8]||0)<f.langs)return false; return true; }
 function scoreAll(raw){
-  var s=raw.trim().toLowerCase(); if(!s) return [];
-  var s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
-  for(var i=0;i<IDX.length;i++){ var e=IDX[i], f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
-    var gs=g.split(/[,;]\s*/), ff=fold(f), sc=0, anchor=0;
-    if(f===s||f===s2)sc=100; else if(ff===sf)sc=90;
-    else{ for(var k=0;k<ks.length;k++){ var kr=ks[k]; if(kr[0]===s2||kr[0]===sf){ sc=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
-    if(!sc){ if(f.indexOf(s2)===0||ff.indexOf(sf)===0)sc=60;
-      else if(gs.some(function(x){return x.trim()===s||x.trim()===s2;}))sc=55;
-      else if(ks.some(function(kr){return kr[0].indexOf(sf)===0;}))sc=50;
-      else if(f.indexOf(s2)>=0)sc=40; else if(g.indexOf(s2)>=0)sc=20; }
-    if(sc>0)hits.push([sc,e,anchor]); if(hits.length>3000)break; }
-  hits.sort(function(a,b){return b[0]-a[0];}); return hits;
+  var s=(raw||'').trim().toLowerCase(), ftr=filters(); var showAll=pageRes&&!s, s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
+  for(var i=0;i<IDX.length;i++){ var e=IDX[i]; if(!pass(e,ftr))continue; var f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
+    var gs=g.split(/[,;]\s*/), ff=fold(f), sc=showAll?1:0, anchor=0;
+    if(!showAll){
+      if(f===s||f===s2)sc=100; else if(ff===sf)sc=90;
+      else{ for(var k=0;k<ks.length;k++){ var kr=ks[k]; if(kr[0]===s2||kr[0]===sf){ sc=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
+      if(!sc){ if(f.indexOf(s2)===0||ff.indexOf(sf)===0)sc=60;
+        else if(gs.some(function(x){return x.trim()===s||x.trim()===s2;}))sc=55;
+        else if(ks.some(function(kr){return kr[0].indexOf(sf)===0;}))sc=50;
+        else if(f.indexOf(s2)>=0)sc=40; else if(g.indexOf(s2)>=0)sc=20; }
+    }
+    if(sc>0)hits.push([sc,e,anchor]); if(hits.length>5000)break; }
+  hits.sort(function(a,b){return b[0]-a[0] || a[1][1].localeCompare(b[1][1]);}); return hits;
 }
-function hitHTML(e,a){ return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+e[1]+"</b> <span class='hp'>"+e[3]+"</span> <span class='hg'>"+e[2]+"</span> <span class='hs'>"+strBadge(e)+"</span></a>"; }
-async function run(){
+function hitHTML(e,a){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+(e[11]||'')+"</span>"; if(e[13])meta+=" <span class='ha'>"+e[13]+"</span>"; meta+=" <span class='hl'>"+(e[8]||0)+" jęz. / "+(e[9]||0)+" vět.</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+e[1]+"</b> <span class='hp'>"+posLabel(e[3])+"</span> <span class='hg'>"+e[2]+"</span> "+meta+"</a>"; }
+async function run(showDropdown){
   await ensure(); var v=q?q.value:''; var hits=scoreAll(v);
-  if(out){ if(v.trim()){ var h=hits.slice(0,8).map(function(x){return hitHTML(x[1],x[2]);}).join('');
+  // The search page has full results below the filters, so never reopen the
+  // compact header dropdown there. Filter changes also pass showDropdown=false.
+  if(out){ if(showDropdown && !pageRes && v.trim()){ var h=hits.slice(0,8).map(function(x){return hitHTML(x[1],x[2]);}).join('');
       if(!h)h="<div class='muted nohit'>Ničto ne najdeno.</div>";
       else if(hits.length>8)h+="<a class='hit more' href='"+SITE_BASE+"search.html?q="+encodeURIComponent(v.trim())+"'>Vse "+hits.length+" rezultatov -></a>";
-      out.innerHTML=h; out.style.display='block'; } else out.style.display='none'; }
+      out.innerHTML=h; out.style.display='block'; } else closeDropdown(); }
   if(pageRes){ var c=document.getElementById('rescount'); if(c)c.textContent=hits.length;
     pageRes.innerHTML=hits.slice(0,400).map(function(x){return hitHTML(x[1],x[2]);}).join('')||"<div class='muted'>Ničto ne najdeno.</div>"; }
 }
-function goSearch(e){ e.preventDefault(); var v=q.value.trim(); if(v) location.href=SITE_BASE+'search.html?q='+encodeURIComponent(v); return false; }
-if(q){ var t=null; q.addEventListener('input',function(){ clearTimeout(t); t=setTimeout(run,110); });
-  q.addEventListener('focus',function(){ if(q.value.trim())run(); }); }
-document.addEventListener('click',function(ev){ if(out&&!ev.target.closest('.hsearch'))out.style.display='none'; });
-async function randomWord(){ await ensure(); if(!IDX.length)return; var e=IDX[Math.floor(Math.random()*IDX.length)];
+function goSearch(e){
+  e.preventDefault(); var v=q?q.value.trim():''; closeDropdown(); if(q)q.blur();
+  if(pageRes){ if(history.replaceState){ history.replaceState(null,'',SITE_BASE+'search.html'+(v?'?q='+encodeURIComponent(v):'')); } run(false); return false; }
+  if(v) location.href=SITE_BASE+'search.html?q='+encodeURIComponent(v);
+  return false;
+}
+if(q){ var t=null; q.addEventListener('input',function(){ clearTimeout(t); t=setTimeout(function(){ run(true); },110); });
+  q.addEventListener('focus',function(){ if(q.value.trim())run(true); });
+  q.addEventListener('keydown',function(ev){ if(ev.key==='Escape'){ closeDropdown(); q.blur(); } }); }
+['f-pos','f-status','f-conf','f-borrowed','f-langs'].forEach(function(id){ var el=document.getElementById(id); if(el)el.addEventListener('input',function(){run(false);}); if(el)el.addEventListener('change',function(){run(false);}); });
+document.addEventListener('click',function(ev){ if(out&&!ev.target.closest('.hsearch'))closeDropdown(); });
+async function randomWord(){ await ensure(); if(!IDX.length)return; var pool=IDX.filter(function(e){return e[5]==='V'||e[4]==='O'}); if(!pool.length)pool=IDX; var e=pool[Math.floor(Math.random()*pool.length)];
   var el=document.getElementById('spotlight'); if(!el)return; var box=document.getElementById('spotbox'); if(box)box.style.display='';
-  el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+e[1]+"</a><div class='muted'>"+e[3]+" · "+e[2]+"</div>"; }
+  el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+e[1]+"</a><div class='muted'>"+posLabel(e[3])+" · "+e[2]+"</div><div class='spot-strength'>"+strBadge(e)+" "+(e[11]||'')+"</div>"; }
 var rb=document.getElementById('randbtn'); if(rb) rb.addEventListener('click',randomWord);
 if(document.getElementById('spotlight')) randomWord();
-(function(){ var p=new URLSearchParams(location.search).get('q'); if(p&&q){ q.value=p; run(); } })();
+(function(){ var p=new URLSearchParams(location.search).get('q'); if(p&&q)q.value=p; if(pageRes||p)run(false); })();
 "#;
-
 /// Builds the "Na toj strane" contents tree in the sidebar from the section
 /// headings, and hides the box when a page has none (home / search).
 const TOC_JS: &str = r#"
@@ -1650,11 +1970,11 @@ fn alternatives_block(candidates: &[Candidate]) -> String {
     }
     // Always show the ranked forms (the top one is the headword); this is now a
     // primary section, so even a single-candidate entry lists its form + score.
-    let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th>Ocěna</th><th>Uvěrjenost</th><th>Větvi</th></tr></thead><tbody>");
+    let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th>Ocěna</th><th>Větvi</th></tr></thead><tbody>");
     for (i, c) in candidates.iter().enumerate() {
         let _ = write!(
             s,
-            "<tr id='cand-{}' class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td>{}</td><td>{}</td></tr>",
+            "<tr id='cand-{}' class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td>{}</td></tr>",
             i + 1,
             if i == 0 { "top-candidate" } else { "" },
             i + 1,
@@ -1662,7 +1982,6 @@ fn alternatives_block(candidates: &[Candidate]) -> String {
             source_class(c.source),
             esc(c.source.label()),
             c.score,
-            c.confidence.label(),
             c.branch_coverage
         );
     }
@@ -1720,8 +2039,8 @@ fn evidence_block(evidence: &[Evidence]) -> String {
                 "<tr><td class='lc'>{}</td><td><a href='{}'>{}</a></td><td class='muted'>{}</td></tr>",
                 esc(&ev.lang_name),
                 esc(&ev.source_url),
-                esc(&ev.form),
-                esc(&ev.normalized_form)
+                esc(&source_display(&ev.lang_code, &ev.form)),
+                esc(&source_display(&ev.lang_code, &ev.normalized_form))
             );
         }
         s.push_str("</tbody></table></div>");
@@ -1738,27 +2057,32 @@ fn evidence_block(evidence: &[Evidence]) -> String {
 // ---------------------------------------------------------------------------
 
 fn inflection_table(word: &str, pos_code: &str) -> String {
-    // Decline the bare stem for reflexive verbs (the ` sę` particle is invariant).
-    let word = word.strip_suffix(" sę").unwrap_or(word);
+    // Decline/conjugate the bare stem for reflexive verbs; append invariant `sę`
+    // to every generated verb form below.
+    let reflexive = word.ends_with(" sę");
+    let bare = word.strip_suffix(" sę").unwrap_or(word);
     match pos_code {
-        "noun" | "proper_noun" => noun_table(word),
-        "adj" => adj_table(word),
-        "verb" => verb_table(word),
+        "noun" | "proper_noun" => noun_table(bare),
+        "adj" => adj_table(bare),
+        "verb" => verb_table(bare, reflexive),
         _ => "<p class='muted'>Za tų čęst rěči nema tablicy prěgibanja.</p>".to_string(),
     }
 }
 
-fn noun_table(word: &str) -> String {
-    let rows = [
+fn case_rows() -> [(&'static str, IsvCase); 6] {
+    [
         ("Nominativ", IsvCase::Nom),
         ("Akuzativ", IsvCase::Acc),
         ("Genitiv", IsvCase::Gen),
         ("Dativ", IsvCase::Dat),
         ("Lokativ", IsvCase::Loc),
         ("Instrumental", IsvCase::Ins),
-    ];
+    ]
+}
+
+fn noun_table(word: &str) -> String {
     let mut s = String::from("<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>Jednina</th><th>Množina</th></tr></thead><tbody>");
-    for (label, case) in rows {
+    for (label, case) in case_rows() {
         let _ = write!(
             s,
             "<tr><th>{}</th><td>{}</td><td>{}</td></tr>",
@@ -1772,14 +2096,10 @@ fn noun_table(word: &str) -> String {
 }
 
 fn adj_table(word: &str) -> String {
-    let rows = [
-        ("Nominativ", IsvCase::Nom),
-        ("Genitiv", IsvCase::Gen),
-        ("Dativ", IsvCase::Dat),
-        ("Instrumental", IsvCase::Ins),
-    ];
-    let mut s = String::from("<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>");
-    for (label, case) in rows {
+    let mut s = String::from(
+        "<h3>Jednina</h3><table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>",
+    );
+    for (label, case) in case_rows() {
         let _ = write!(
             s,
             "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
@@ -1815,35 +2135,152 @@ fn adj_table(word: &str) -> String {
         );
     }
     s.push_str("</tbody></table>");
-    s
-}
-
-fn verb_table(word: &str) -> String {
-    let rows = [
-        ("1. jedn.", IsvPerson::First, IsvNumber::Singular),
-        ("2. jedn.", IsvPerson::Second, IsvNumber::Singular),
-        ("3. jedn.", IsvPerson::Third, IsvNumber::Singular),
-        ("1. množ.", IsvPerson::First, IsvNumber::Plural),
-        ("2. množ.", IsvPerson::Second, IsvNumber::Plural),
-        ("3. množ.", IsvPerson::Third, IsvNumber::Plural),
-    ];
-    let mut s = String::from("<table class='wikitable inflection-table'><thead><tr><th>Osoba</th><th>Teperešnje vrěme</th></tr></thead><tbody>");
-    for (label, person, number) in rows {
+    s.push_str("<h3>Množina</h3><table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>");
+    for (label, case) in case_rows() {
         let _ = write!(
             s,
-            "<tr><th>{}</th><td>{}</td></tr>",
+            "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             label,
-            esc(&catch(|| ISV::verb(
+            esc(&catch(|| ISV::adj(
                 word,
-                person,
-                number,
+                case,
+                IsvNumber::Plural,
                 IsvGender::Masculine,
-                IsvTense::Present
-            )))
+                IsvAnimacy::Animate
+            ))),
+            esc(&catch(|| ISV::adj(
+                word,
+                case,
+                IsvNumber::Plural,
+                IsvGender::Masculine,
+                IsvAnimacy::Inanimate
+            ))),
+            esc(&catch(|| ISV::adj(
+                word,
+                case,
+                IsvNumber::Plural,
+                IsvGender::Feminine,
+                IsvAnimacy::Inanimate
+            ))),
+            esc(&catch(|| ISV::adj(
+                word,
+                case,
+                IsvNumber::Plural,
+                IsvGender::Neuter,
+                IsvAnimacy::Inanimate
+            ))),
         );
     }
     s.push_str("</tbody></table>");
     s
+}
+
+fn verb_table(word: &str, reflexive: bool) -> String {
+    let paradigm = match std::panic::catch_unwind(|| ISV::verb_forms(word)) {
+        Ok(p) => p,
+        Err(_) => {
+            return "<p class='muted'>Prěgibanje glagola ne može byti generovano.</p>".to_string()
+        }
+    };
+    let finite_labels = [
+        "1. jedn.",
+        "2. jedn.",
+        "3. jedn.",
+        "1. množ.",
+        "2. množ.",
+        "3. množ.",
+    ];
+    let compound_labels = [
+        "1. jedn.",
+        "2. jedn.",
+        "3. jedn. m.",
+        "3. jedn. ž.",
+        "3. jedn. sr.",
+        "1. množ.",
+        "2. množ.",
+        "3. množ.",
+    ];
+    let imperative_labels = ["2. jedn.", "1. množ.", "2. množ."];
+    let mut s = String::new();
+    s.push_str("<h3>Proste i složene vrěmena</h3><table class='wikitable inflection-table verb-wide'><thead><tr><th>Osoba</th><th>Teperešnje</th><th>Nedokončene prošlo</th><th>Budųće</th></tr></thead><tbody>");
+    for (i, label) in finite_labels.iter().enumerate() {
+        let _ = write!(
+            s,
+            "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td></tr>",
+            label,
+            esc(&verb_form(&paradigm.present, i, reflexive)),
+            esc(&verb_form(&paradigm.imperfect, i, reflexive)),
+            esc(&verb_form(&paradigm.future, i, reflexive)),
+        );
+    }
+    s.push_str("</tbody></table>");
+
+    s.push_str("<h3>Perfekt, pluskvamperfekt i kondicional</h3><table class='wikitable inflection-table verb-wide'><thead><tr><th>Osoba</th><th>Perfekt</th><th>Pluskvamperfekt</th><th>Kondicional</th></tr></thead><tbody>");
+    for (i, label) in compound_labels.iter().enumerate() {
+        let _ = write!(
+            s,
+            "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td></tr>",
+            label,
+            esc(&verb_form(&paradigm.perfect, i, reflexive)),
+            esc(&verb_form(&paradigm.pluperfect, i, reflexive)),
+            esc(&verb_form(&paradigm.conditional, i, reflexive)),
+        );
+    }
+    s.push_str("</tbody></table>");
+
+    s.push_str("<h3>Imperativ</h3><table class='wikitable inflection-table'><thead><tr><th>Osoba</th><th>Forma</th></tr></thead><tbody>");
+    for (i, label) in imperative_labels.iter().enumerate() {
+        let _ = write!(
+            s,
+            "<tr><th>{}</th><td>{}</td></tr>",
+            label,
+            esc(&verb_form(&paradigm.imperative, i, reflexive)),
+        );
+    }
+    s.push_str("</tbody></table>");
+
+    let prap = paradigm.prap.unwrap_or_else(|| "—".to_string());
+    let prpp = paradigm.prpp.unwrap_or_else(|| "—".to_string());
+    let pfpp = paradigm.pfpp.unwrap_or_else(|| "—".to_string());
+    let nonfinite = [
+        ("Infinitiv", paradigm.infinitive),
+        ("Aktivny participij teperešnji", prap),
+        ("Pasivny participij teperešnji", prpp),
+        ("Aktivny participij prošly", paradigm.pfap),
+        ("Pasivny participij prošly", pfpp),
+        ("Gerundij", paradigm.gerund),
+    ];
+    s.push_str("<h3>Neosobne formy</h3><table class='wikitable inflection-table'><tbody>");
+    for (label, form) in nonfinite {
+        let _ = write!(
+            s,
+            "<tr><th>{}</th><td>{}</td></tr>",
+            label,
+            esc(&append_reflexive(&form, reflexive)),
+        );
+    }
+    s.push_str("</tbody></table>");
+    s
+}
+
+fn verb_form(forms: &[String], idx: usize, reflexive: bool) -> String {
+    forms
+        .get(idx)
+        .map(|s| append_reflexive(s, reflexive))
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn append_reflexive(form: &str, reflexive: bool) -> String {
+    if !reflexive || form == "—" || form.trim().is_empty() {
+        form.to_string()
+    } else if form.contains(" / ") {
+        form.split(" / ")
+            .map(|part| format!("{} sę", part.trim()))
+            .collect::<Vec<_>>()
+            .join(" / ")
+    } else {
+        format!("{form} sę")
+    }
 }
 
 fn catch<F: FnOnce() -> String + std::panic::UnwindSafe>(f: F) -> String {
@@ -1855,8 +2292,15 @@ fn catch<F: FnOnce() -> String + std::panic::UnwindSafe>(f: F) -> String {
 // ---------------------------------------------------------------------------
 
 fn pos_heading(raw: &str) -> String {
-    let p = crate::model::Pos::parse(raw);
-    format!("{} ({})", p.heading_isv(), raw.trim())
+    crate::model::Pos::parse(raw).heading_isv().to_string()
+}
+
+fn pos_code_label(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        "—".to_string()
+    } else {
+        pos_heading(raw)
+    }
 }
 
 fn status_pill(s: MatchStatus) -> &'static str {
@@ -1889,7 +2333,7 @@ fn calibration_note(c: Confidence) -> String {
         Confidence::Medium => "≈35% takyh kandidatov odgovara oficialnomu slovniku",
         Confidence::Low => "≈10% takyh kandidatov odgovara oficialnomu slovniku",
     };
-    format!("<p class='muted calib'>Kalibrovana pouzdanost: {rate} (izměrjeno na benchmarku).</p>")
+    format!("<p class='muted calib'>Kalibrovana pouzdanost: {rate} (izměrjeno na testovom množstvu).</p>")
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -1912,8 +2356,472 @@ fn compact(v: usize) -> String {
     out.chars().rev().collect()
 }
 
+#[derive(Clone)]
+struct SiteEntryMeta {
+    id: usize,
+    title: String,
+    gloss: String,
+    pos: String,
+    status: MatchStatus,
+    conf: Confidence,
+    score: f32,
+    n_langs: usize,
+    n_branches: usize,
+    borrowed: bool,
+    official_only: bool,
+    official_lemma: Option<String>,
+    ancestor: String,
+    languages: Vec<String>,
+    first: String,
+    categories: Vec<Vec<String>>,
+}
+
+#[derive(Clone)]
+struct LinkEdge {
+    source_id: usize,
+    source_title: String,
+    target_id: usize,
+    target_title: String,
+    kind: String,
+}
+
+struct BuildMeta {
+    git: String,
+    generated: String,
+    total_entries: usize,
+    lemma_total: usize,
+}
+
 /// `depth` 0 = site root (home), 1 = one subdirectory deep (entry/*.html).
 const REPO_URL: &str = "https://github.com/gold-silver-copper/interslavic-wiktionary-lab";
+const SITE_URL: &str = "https://gold-silver-copper.github.io/interslavic-wiktionary-lab/";
+
+impl BuildMeta {
+    fn current(total_entries: usize, lemma_total: usize) -> Self {
+        let git = std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "neznany".to_string());
+        let generated = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| format!("{} UNIX", d.as_secs()))
+            .unwrap_or_else(|_| "neznany".to_string());
+        Self {
+            git,
+            generated,
+            total_entries,
+            lemma_total,
+        }
+    }
+}
+
+fn entry_meta(
+    id: usize,
+    title: &str,
+    gloss: &str,
+    pos: &str,
+    status: MatchStatus,
+    conf: Confidence,
+    score: f32,
+    n_langs: usize,
+    n_branches: usize,
+    borrowed: bool,
+    official_only: bool,
+    official_lemma: Option<String>,
+    ancestor: String,
+    languages: Vec<String>,
+    wiki_categories: Vec<Vec<String>>,
+) -> SiteEntryMeta {
+    let first = first_bucket(title);
+    let mut meta = SiteEntryMeta {
+        id,
+        title: title.to_string(),
+        gloss: gloss.to_string(),
+        pos: pos.to_string(),
+        status,
+        conf,
+        score,
+        n_langs,
+        n_branches,
+        borrowed,
+        official_only,
+        official_lemma,
+        ancestor,
+        languages,
+        first,
+        categories: Vec::new(),
+    };
+    meta.categories = entry_categories(&meta, wiki_categories);
+    meta
+}
+
+fn first_bucket(title: &str) -> String {
+    let folded = crate::orthography::ascii_skeleton(title);
+    folded
+        .chars()
+        .find(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| "#".to_string())
+}
+
+fn slug(v: &str) -> String {
+    let folded =
+        crate::orthography::ascii_skeleton(&crate::orthography::to_standard(&v.to_lowercase()));
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in folded.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            dash = false;
+        } else if !dash && !out.is_empty() {
+            out.push('-');
+            dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "x".to_string()
+    } else {
+        out
+    }
+}
+
+fn category_key(path: &[String]) -> String {
+    path.iter().map(|s| slug(s)).collect::<Vec<_>>().join("__")
+}
+
+fn category_title(path: &[String]) -> String {
+    path.join(" » ")
+}
+
+fn quality_label(m: &SiteEntryMeta) -> &'static str {
+    if m.official_only {
+        "samo oficialno"
+    } else if m.official_lemma.is_some() {
+        "oficialne sovpadenje"
+    } else if matches!(m.conf, Confidence::High) && m.n_branches >= 3 {
+        "vysoko dokazano"
+    } else if matches!(m.conf, Confidence::Low) || m.n_branches < 2 {
+        "trěbuje prověrky"
+    } else {
+        "generovano"
+    }
+}
+
+fn entry_categories(m: &SiteEntryMeta, wiki_categories: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    let mut cats = Vec::new();
+    add_category_path(
+        &mut cats,
+        vec!["Čęsti rěči".to_string(), pos_heading(&m.pos)],
+    );
+    add_category_path(
+        &mut cats,
+        vec!["Uvěrjenost".to_string(), m.conf.label().to_string()],
+    );
+    add_category_path(
+        &mut cats,
+        vec![
+            "Stav".to_string(),
+            if m.official_only {
+                "oficialne slova bez generacije".to_string()
+            } else if m.official_lemma.is_some() {
+                "oficialne sovpadenja".to_string()
+            } else {
+                "generovane kandidaty".to_string()
+            },
+        ],
+    );
+    add_category_path(
+        &mut cats,
+        vec![
+            "Etimologija".to_string(),
+            if m.borrowed {
+                "internacionalizmy i zaimky"
+            } else {
+                "naslědovane praslovjanske slova"
+            }
+            .to_string(),
+        ],
+    );
+    add_category_path(
+        &mut cats,
+        vec![
+            "Pokrytje větvi".to_string(),
+            format!("{} větvi", m.n_branches),
+        ],
+    );
+    add_category_path(
+        &mut cats,
+        vec!["Kvaliteta".to_string(), quality_label(m).to_string()],
+    );
+    // Etymological ancestors are already browsable through `root/*.html` and
+    // entry reference links. Do not also make every one-off etymon a category:
+    // it creates thousands of repetitive singleton pages.
+    for path in wiki_categories {
+        add_category_path(&mut cats, path);
+    }
+    cats
+}
+
+fn add_category_path(cats: &mut Vec<Vec<String>>, path: Vec<String>) {
+    let path: Vec<String> = path
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if path.is_empty() {
+        return;
+    }
+    if !cats.iter().any(|p| p == &path) {
+        cats.push(path);
+    }
+}
+
+fn wiktionary_category_paths_for_members(
+    members: &[crate::dump::LemmaEntry],
+    enrich: Option<&crate::enrich::EnrichIndex>,
+) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    for m in members {
+        push_wiki_paths(&mut out, &m.lang, &m.categories, &m.topics, &m.tags);
+        if let Some(e) = enrich.and_then(|ix| ix.get(&m.lang, &m.word)) {
+            push_wiki_paths(&mut out, &e.lang, &e.categories, &e.topics, &e.tags);
+        }
+        if out.len() >= 24 {
+            break;
+        }
+    }
+    out
+}
+
+fn wiktionary_category_paths_for_input(
+    input: &MeaningInput,
+    enrich: Option<&crate::enrich::EnrichIndex>,
+) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    for f in input.forms.iter().filter(|f| f.modern && f.primary) {
+        if let Some(e) = enrich.and_then(|ix| ix.get(&f.lang_code, &f.norm.original)) {
+            push_wiki_paths(&mut out, &e.lang, &e.categories, &e.topics, &e.tags);
+        }
+        if out.len() >= 16 {
+            break;
+        }
+    }
+    out
+}
+
+fn push_wiki_paths(
+    out: &mut Vec<Vec<String>>,
+    lang: &str,
+    categories: &[String],
+    topics: &[String],
+    _tags: &[String],
+) {
+    for topic in topics.iter().take(8) {
+        if let Some(path) = topic_category_path(lang, topic) {
+            add_category_path(out, path);
+        }
+    }
+    for cat in categories.iter().take(10) {
+        if is_maintenance_wiki_category(cat) {
+            continue;
+        }
+        if let Some(path) = topic_category_path(lang, cat) {
+            add_category_path(out, path);
+        }
+    }
+    // Raw Wiktionary tags/categories are preserved in caches but intentionally
+    // not promoted to public category pages. Most are maintenance, morphology,
+    // pronunciation, or template artifacts and swamp the useful topic tree.
+}
+
+fn topic_category_path(lang: &str, label: &str) -> Option<Vec<String>> {
+    let l = label
+        .to_lowercase()
+        .replace(['_', '-', ':'], " ")
+        .replace("behaviour", "behavior");
+    let topic = if l.contains("weapon") || l.contains("arms") {
+        vec!["Tehnologija", "Nastroje", "Oružje"]
+    } else if l.contains("tool") || l.contains("implement") {
+        vec!["Tehnologija", "Nastroje"]
+    } else if l.contains("comput") || l.contains("internet") || l.contains("software") {
+        vec!["Tehnologija", "Kompjutery"]
+    } else if l.contains("technology") || l.contains("engineering") {
+        vec!["Tehnologija"]
+    } else if l.contains("hunting") || l.contains("hunt ") {
+        vec!["Člověk", "Člověčje povědanje", "Člověčja aktivnost", "Lov"]
+    } else if l.contains("human activity") || l.contains("activities") {
+        vec!["Člověk", "Člověčje povědanje", "Člověčja aktivnost"]
+    } else if l.contains("behavior") || l.contains("behaviour") {
+        vec!["Člověk", "Člověčje povědanje"]
+    } else if l.contains("anatom") || l.contains("body") {
+        vec!["Člověk", "Tělo"]
+    } else if l.contains("emotion") || l.contains("feeling") {
+        vec!["Člověk", "Emocije"]
+    } else if l.contains("family") || l.contains("kinship") {
+        vec!["Člověk", "Rodina"]
+    } else if l.contains("animal") || l.contains("mammal") {
+        vec!["Priroda", "Životinje"]
+    } else if l.contains("bird") {
+        vec!["Priroda", "Životinje", "Ptice"]
+    } else if l.contains("fish") {
+        vec!["Priroda", "Životinje", "Ryby"]
+    } else if l.contains("insect") {
+        vec!["Priroda", "Životinje", "Insekty"]
+    } else if l.contains("plant") || l.contains("tree") || l.contains("botan") {
+        vec!["Priroda", "Rastliny"]
+    } else if l.contains("food") || l.contains("cuisine") || l.contains("drink") {
+        vec!["Život", "Jedivo i pitje"]
+    } else if l.contains("clothing") || l.contains("garment") {
+        vec!["Život", "Oděža"]
+    } else if l.contains("agricultur") || l.contains("farming") {
+        vec!["Život", "Zemjedělstvo"]
+    } else if l.contains("transport") || l.contains("vehicle") {
+        vec!["Tehnologija", "Transport"]
+    } else if l.contains("medicine") || l.contains("disease") || l.contains("medical") {
+        vec!["Nauka", "Medicina"]
+    } else if l.contains("mathematic") || l.contains("number") {
+        vec!["Nauka", "Matematika"]
+    } else if l.contains("law") || l.contains("legal") || l.contains("crime") {
+        vec!["Družstvo", "Pravo"]
+    } else if l.contains("military") || l.contains("war") || l.contains("army") {
+        vec!["Družstvo", "Vojska"]
+    } else if l.contains("politic") || l.contains("government") {
+        vec!["Družstvo", "Politika"]
+    } else if l.contains("religion") || l.contains("mytholog") {
+        vec!["Kultura", "Religija"]
+    } else if l.contains("music") {
+        vec!["Kultura", "Muzyka"]
+    } else if l.contains("literature") || l.contains("poetry") {
+        vec!["Kultura", "Literatura"]
+    } else if l.contains("sport") || l.contains("game") {
+        vec!["Kultura", "Sport i igry"]
+    } else if l.contains("time") || l.contains("calendar") {
+        vec!["Abstraktne", "Čas"]
+    } else {
+        return None;
+    };
+    Some(wiki_topic_root(lang, topic))
+}
+
+fn wiki_topic_root(lang: &str, topic: Vec<&str>) -> Vec<String> {
+    let mut path = vec![
+        "Fundamentalne".to_string(),
+        "Vsi języky".to_string(),
+        crate::lang::lang_name(lang).to_string(),
+        "Vse temy".to_string(),
+    ];
+    path.extend(topic.into_iter().map(|s| s.to_string()));
+    path
+}
+
+fn raw_wiki_category_path(lang: &str, label: &str) -> Vec<String> {
+    vec![
+        "Fundamentalne".to_string(),
+        "Vsi języky".to_string(),
+        crate::lang::lang_name(lang).to_string(),
+        "Kategorije Wiktionary".to_string(),
+        translate_wiki_label(label),
+    ]
+}
+
+fn is_maintenance_wiki_category(label: &str) -> bool {
+    let l = label.to_lowercase();
+    [
+        "monitoring:",
+        "pages with",
+        "entries with",
+        "terms with ipa",
+        "terms with redundant",
+        "terms needing",
+        "requests for",
+        "citation",
+        "cleanup",
+        "maintenance",
+        "templates",
+        "rhymes",
+        "pronunciation",
+    ]
+    .iter()
+    .any(|needle| l.contains(needle))
+}
+
+fn translate_wiki_label(label: &str) -> String {
+    let mut s = label
+        .trim()
+        .trim_start_matches("Category:")
+        .replace('_', " ")
+        .replace("English terms related to ", "")
+        .replace("Russian terms related to ", "")
+        .replace("Polish terms related to ", "")
+        .replace("Czech terms related to ", "")
+        .replace("terms related to ", "")
+        .replace("All topics", "Vse temy")
+        .replace("All languages", "Vsi języky")
+        .replace("Technology", "Tehnologija")
+        .replace("Tools", "Nastroje")
+        .replace("Weapons", "Oružje")
+        .replace("Human behaviour", "Člověčje povědanje")
+        .replace("Human behavior", "Člověčje povědanje")
+        .replace("Human activity", "Člověčja aktivnost")
+        .replace("Hunting", "Lov");
+    s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate(&s, 70)
+}
+
+fn compact_entry_categories(metas: &mut [SiteEntryMeta]) {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for m in metas.iter() {
+        for path in &m.categories {
+            *counts.entry(category_key(path)).or_insert(0) += 1;
+        }
+    }
+    for m in metas.iter_mut() {
+        m.categories.retain(|path| {
+            let Some(root) = path.first().map(String::as_str) else {
+                return false;
+            };
+            if root == "Fundamentalne" {
+                counts.get(&category_key(path)).copied().unwrap_or(0) >= 3
+            } else {
+                true
+            }
+        });
+    }
+}
+
+fn issue_url(m: &SiteEntryMeta) -> String {
+    let title = format!("Problem so zapisom: {}", m.title);
+    let body = format!(
+        "Zapis: {}\nStrana: entry/{}.html\nČęst rěči: {}\nSmysl: {}\n\nOpiši popravku ili dokaz tut:",
+        m.title, m.id, pos_code_label(&m.pos), m.gloss
+    );
+    format!(
+        "{REPO_URL}/issues/new?title={}&body={}",
+        query_escape(&title),
+        query_escape(&body)
+    )
+}
+
+fn query_escape(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
 
 fn page(title: &str, body: &str, depth: usize) -> String {
     let up = if depth == 0 { "" } else { "../" };
@@ -1929,15 +2837,24 @@ fn page(title: &str, body: &str, depth: usize) -> String {
              <button class='hsearch-go' type='submit' title='Iskaj'>→</button>\
              <div id='results' class='dropdown'></div>\
            </form>\
-           <nav class='nav'><a href='{up}index.html'>Slovnik</a><a href='{up}search.html'>Iskanje</a><a href='{up}about.html'>O metodě</a><a href='{up}metrics.html'>Statistiky</a><a href='{REPO_URL}'>Kod</a></nav>\
+           <nav class='nav'><a href='{up}index.html'>Slovnik</a><a href='{up}special.html'>Posebne</a><a href='{up}all-pages.html'>Vse strany</a><a href='{up}categories.html'>Kategorije</a><a href='{up}site-stats.html'>Statistiky</a><a href='{up}search.html'>Iskanje</a><a href='{up}about.html'>O metodě</a><a href='{REPO_URL}'>Kod</a></nav>\
          </header>\
          <div class='layout'>\
            <aside class='sidebar'>\
              <div class='side-box toc-box'><div class='side-h'>Na toj straně</div><nav id='toc-nav' class='toc'></nav></div>\
              <div class='side-box'><div class='side-h'>Nastroje</div>\
-               <a class='side-link' href='{up}index.html'>📖 Vse slova</a>\
-               <button id='randbtn' class='side-link' type='button'>🎲 Slučajno slovo</button>\
+               <a class='side-link' href='{up}special.html'>★ Posebne strany</a>\
+               <a class='side-link' href='{up}all-pages.html'>📖 Vse strany</a>\
+               <a class='side-link' href='{up}categories.html'>🏷️ Kategorije</a>\
+               <a class='side-link' href='{up}indices.html'>🔤 Indeksy</a>\
+               <a class='side-link' href='{up}portals.html'>🌐 Językove portaly</a>\
+               <a class='side-link' href='{up}graph.html'>🕸️ Semantičny graf</a>\
+               <a class='side-link' href='{up}site-stats.html'>📈 Statistiky sajta</a>\
+               <a class='side-link' href='{up}borrowings.html'>↗ Zaimky</a>\
+               <a class='side-link' href='{up}needs-review.html'>⚑ Trěbuje prověrky</a>\
+               <button id='randbtn' class='side-link' type='button'>🎲 Slučajno/izbrano slovo</button>\
                <a class='side-link' href='{up}search.html'>🔎 Rozšireno iskanje</a>\
+               <a class='side-link' href='{up}contribute.html'>✎ Doprinos</a>\
                <a class='side-link' href='{up}about.html'>ⓘ O metodě</a>\
                <a class='side-link' href='{up}metrics.html'>📊 Statistiky točnosti</a>\
              </div>\
@@ -1952,6 +2869,1351 @@ fn page(title: &str, body: &str, depth: usize) -> String {
         title = esc(title)
     )
 }
+
+fn homograph_groups(
+    metas: &[SiteEntryMeta],
+) -> std::collections::BTreeMap<String, Vec<SiteEntryMeta>> {
+    let mut groups: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in metas {
+        groups
+            .entry(crate::orthography::to_standard(&m.title.to_lowercase()))
+            .or_default()
+            .push(m.clone());
+    }
+    groups.retain(|_, v| v.len() > 1);
+    groups
+}
+
+fn load_curation_notes() -> std::collections::HashMap<String, String> {
+    let path = Path::new("data/curation-notes.json");
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return std::collections::HashMap::new();
+    };
+    serde_json::from_str::<std::collections::HashMap<String, String>>(&raw).unwrap_or_default()
+}
+
+fn add_edge(
+    edges: &mut Vec<LinkEdge>,
+    meta_by_id: &std::collections::HashMap<usize, SiteEntryMeta>,
+    source_id: usize,
+    target_id: usize,
+    kind: &str,
+) {
+    if source_id == target_id {
+        return;
+    }
+    let (Some(src), Some(dst)) = (meta_by_id.get(&source_id), meta_by_id.get(&target_id)) else {
+        return;
+    };
+    if edges
+        .iter()
+        .any(|e| e.source_id == source_id && e.target_id == target_id && e.kind == kind)
+    {
+        return;
+    }
+    edges.push(LinkEdge {
+        source_id,
+        source_title: src.title.clone(),
+        target_id,
+        target_title: dst.title.clone(),
+        kind: kind.to_string(),
+    });
+}
+
+fn build_edges<T: FamilyEntry>(
+    prepared: &[T],
+    families: &std::collections::BTreeMap<String, Vec<usize>>,
+    thes: &crate::thesaurus::Thesaurus,
+    isv_to_id: &std::collections::HashMap<String, usize>,
+    enrich: Option<&crate::enrich::EnrichIndex>,
+    xref: Option<&crate::enrich::Xref>,
+    meta_by_id: &std::collections::HashMap<usize, SiteEntryMeta>,
+) -> Vec<LinkEdge> {
+    let mut edges = Vec::new();
+    for members in families.values() {
+        if members.len() < 2 || members.len() > 15 {
+            continue;
+        }
+        for &a in members {
+            for &b in members {
+                if a != b {
+                    add_edge(
+                        &mut edges,
+                        meta_by_id,
+                        prepared[a].id(),
+                        prepared[b].id(),
+                        "rodina",
+                    );
+                }
+            }
+        }
+    }
+    for m in meta_by_id.values() {
+        let Some(isv) = &m.official_lemma else {
+            continue;
+        };
+        for s in thes.get(isv) {
+            let key = crate::orthography::to_standard(&s.to_lowercase());
+            if let Some(&target) = isv_to_id.get(&key) {
+                add_edge(&mut edges, meta_by_id, m.id, target, "sinonim");
+            }
+        }
+    }
+    if let (Some(enrich), Some(xref)) = (enrich, xref) {
+        for p in prepared {
+            if !meta_by_id.contains_key(&p.id()) {
+                continue;
+            }
+            for member in &p.set().members {
+                let Some(e) = enrich.get(&member.lang, &member.word) else {
+                    continue;
+                };
+                for (kind, words) in [
+                    ("srodno", &e.related),
+                    ("sinonim", &e.synonyms),
+                    ("antonim", &e.antonyms),
+                ] {
+                    for w in words.iter().take(40) {
+                        if let Some(target) = xref.get(&member.lang, w) {
+                            add_edge(&mut edges, meta_by_id, p.id(), target, kind);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    edges
+}
+
+fn backlinks_by_target(edges: &[LinkEdge]) -> std::collections::BTreeMap<usize, Vec<LinkEdge>> {
+    let mut map: std::collections::BTreeMap<usize, Vec<LinkEdge>> =
+        std::collections::BTreeMap::new();
+    for e in edges {
+        map.entry(e.target_id).or_default().push(e.clone());
+    }
+    map
+}
+
+fn render_word_table(rows: &[SiteEntryMeta], up: &str) -> String {
+    let shown = rows.len().min(1200);
+    let mut s = String::from("<table class='wikitable word-index'><thead><tr><th>Slovo</th><th>Čęst</th><th>Smysl</th><th>Kvaliteta</th><th>Dokaz</th></tr></thead><tbody>");
+    for m in rows.iter().take(1200) {
+        let _ = write!(
+            s,
+            "<tr><td><a href='{up}entry/{}.html'><b>{}</b></a></td><td>{}</td><td>{}</td><td><span class='badge'>{}</span></td><td>{} jęz. / {} vět.</td></tr>",
+            m.id,
+            esc(&m.title),
+            esc(&pos_code_label(&m.pos)),
+            esc(&truncate(&m.gloss, 72)),
+            esc(quality_label(m)),
+            m.n_langs,
+            m.n_branches,
+        );
+    }
+    s.push_str("</tbody></table>");
+    if rows.len() > shown {
+        let _ = write!(
+            s,
+            "<p class='muted'>Pokazano prvih {} od {} zapisov; koristi iskanje za polny spis.</p>",
+            compact(shown),
+            compact(rows.len())
+        );
+    }
+    s
+}
+
+fn count_by<F>(rows: &[SiteEntryMeta], mut f: F) -> std::collections::BTreeMap<String, usize>
+where
+    F: FnMut(&SiteEntryMeta) -> String,
+{
+    let mut map = std::collections::BTreeMap::new();
+    for m in rows {
+        *map.entry(f(m)).or_insert(0) += 1;
+    }
+    map
+}
+
+fn counts_table(title: &str, counts: &std::collections::BTreeMap<String, usize>) -> String {
+    let mut pairs: Vec<(&String, &usize)> = counts.iter().collect();
+    pairs.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    let mut body = String::new();
+    for (k, v) in pairs.into_iter().take(24) {
+        let _ = write!(body, "<tr><th>{}</th><td>{}</td></tr>", esc(k), compact(*v));
+    }
+    format!("<div class='stat-box'><h3>{}</h3><table class='wikitable compact-table'><tbody>{body}</tbody></table></div>", esc(title))
+}
+
+fn index_summary(rows: &[SiteEntryMeta]) -> String {
+    let official = rows.iter().filter(|m| m.official_lemma.is_some()).count();
+    let generated = rows.len().saturating_sub(official);
+    let high = rows
+        .iter()
+        .filter(|m| matches!(m.conf, Confidence::High))
+        .count();
+    let borrowed = rows.iter().filter(|m| m.borrowed).count();
+    format!(
+        "<table class='wikitable compact-table index-summary'><tbody>\
+         <tr><th>Zapisov</th><td>{}</td><th>Oficialne</th><td>{}</td></tr>\
+         <tr><th>Samo generovane</th><td>{}</td><th>Vysoka uvěrjenost</th><td>{}</td></tr>\
+         <tr><th>Zaimky / internacionalizmy</th><td>{}</td><th>Srědnje językov</th><td>{:.1}</td></tr>\
+         </tbody></table>",
+        compact(rows.len()),
+        compact(official),
+        compact(generated),
+        compact(high),
+        compact(borrowed),
+        if rows.is_empty() { 0.0 } else { rows.iter().map(|m| m.n_langs).sum::<usize>() as f32 / rows.len() as f32 }
+    )
+}
+
+fn simple_index_page(title: &str, intro: &str, rows: &[SiteEntryMeta], depth: usize) -> String {
+    let up = if depth == 0 { "" } else { "../" };
+    let pos = count_by(rows, |m| pos_code_label(&m.pos));
+    let conf = count_by(rows, |m| m.conf.label().to_string());
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>{}</h1><p>{}</p>{}<div class='stat-grid wiki-stats'>{}{}</div>{}</article>",
+        esc(title),
+        esc(intro),
+        index_summary(rows),
+        counts_table("Čęsti rěči", &pos),
+        counts_table("Uvěrjenost", &conf),
+        render_word_table(rows, up)
+    );
+    page(title, &body, depth)
+}
+
+fn site_stats_page(
+    metas: &[SiteEntryMeta],
+    edges: &[LinkEdge],
+    homographs: &std::collections::BTreeMap<String, Vec<SiteEntryMeta>>,
+    build: &BuildMeta,
+) -> String {
+    let by_pos = count_by(metas, |m| pos_code_label(&m.pos));
+    let by_conf = count_by(metas, |m| m.conf.label().to_string());
+    let by_quality = count_by(metas, |m| quality_label(m).to_string());
+    let by_branch = count_by(metas, |m| format!("{} větvi", m.n_branches));
+    let mut by_lang: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for m in metas {
+        for lang in &m.languages {
+            *by_lang
+                .entry(crate::lang::lang_name(lang).to_string())
+                .or_insert(0) += 1;
+        }
+    }
+    let official = metas.iter().filter(|m| m.official_lemma.is_some()).count();
+    let borrowed = metas.iter().filter(|m| m.borrowed).count();
+    let avg_lang = if metas.is_empty() {
+        0.0
+    } else {
+        metas.iter().map(|m| m.n_langs).sum::<usize>() as f32 / metas.len() as f32
+    };
+    let body = format!(
+        "<article class='entry stats-page'><h1 class='firstHeading'>Statistiky sajta</h1>\
+         <p class='lede'>Ta strana je statičny ekvivalent wiki-strany <i>Posebno:Statistiky</i>: ne měri samo točnosť, ale pokazuje kako veliky i kakav je slovnikovy korpus.</p>\
+         <table class='wikitable compact-table'>\
+           <tr><th>Stran zapisov</th><td>{}</td><th>Oficialno povezane</th><td>{}</td></tr>\
+           <tr><th>Zaimky / internacionalizmy</th><td>{}</td><th>Homografne grupy</th><td>{}</td></tr>\
+           <tr><th>Semantične vęzi</th><td>{}</td><th>Srědnje językov na zapis</th><td>{:.1}</td></tr>\
+           <tr><th>Generacija</th><td>{}</td><th>Git</th><td><code>{}</code></td></tr>\
+         </table>\
+         <div class='stat-grid wiki-stats'>{}{}{}{}{} </div>\
+         <p>Za točnost generatora ględaj <a href='metrics.html'>Statistiky točnosti</a>; za metodologiju <a href='about.html'>O metodě</a>.</p>\
+         </article>",
+        compact(metas.len()),
+        compact(official),
+        compact(borrowed),
+        compact(homographs.len()),
+        compact(edges.len()),
+        avg_lang,
+        esc(&build.generated),
+        esc(&build.git),
+        counts_table("Čęsti rěči", &by_pos),
+        counts_table("Uvěrjenost", &by_conf),
+        counts_table("Kvaliteta", &by_quality),
+        counts_table("Pokrytje větvi", &by_branch),
+        counts_table("Językove portaly", &by_lang),
+    );
+    page("Statistiky sajta", &body, 0)
+}
+
+fn ancestor_slug(m: &SiteEntryMeta) -> Option<String> {
+    if m.ancestor.trim().is_empty() || m.borrowed {
+        None
+    } else {
+        Some(slug(m.ancestor.trim_start_matches('*')))
+    }
+}
+
+fn borrowing_source(m: &SiteEntryMeta) -> String {
+    let src = m.ancestor.split_whitespace().next().unwrap_or("");
+    match src {
+        "la" | "ML." | "LL." | "la-med" | "la-lat" => "latinsky".to_string(),
+        "grc" | "el" => "grečsky".to_string(),
+        "de" | "gmh" => "němečsky".to_string(),
+        "fr" | "frm" | "fro" => "francuzsky".to_string(),
+        "en" => "anglijsky".to_string(),
+        "it" => "italijsky".to_string(),
+        "tr" | "ota" => "turecky".to_string(),
+        "ar" => "arabsky".to_string(),
+        "" => "neznany".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn needs_review(m: &SiteEntryMeta) -> bool {
+    m.official_lemma.is_none()
+        || matches!(m.conf, Confidence::Low)
+        || m.n_branches < 2
+        || m.n_langs < 3
+        || m.score < 0.45
+}
+
+fn language_portal_page(lang: &str, rows: &[SiteEntryMeta], all: &[SiteEntryMeta]) -> String {
+    let unique: Vec<SiteEntryMeta> = rows
+        .iter()
+        .filter(|m| m.languages.len() == 1)
+        .cloned()
+        .collect();
+    let pan_slavic: Vec<SiteEntryMeta> =
+        rows.iter().filter(|m| m.n_branches >= 3).cloned().collect();
+    let mut strongest = rows.to_vec();
+    strongest.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let name = crate::lang::lang_name(lang);
+    let intro = format!(
+        "Portal za {}: strany zapisov, v ktoryh toj język daje srodny dokaz. Unikatne slova pokazujų korenje vidno samo v tom języku v našem korpusu; vseslovjanske slova imajų dokaz iz vsih trěh větvi.",
+        name
+    );
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>Portal: {}</h1><p>{}</p>{}\
+         <h2 id='silne'>Najsilnějše dokazani zapisy</h2>{}\
+         <h2 id='vseslovjanske'>Slova s dokazom iz vsih trěh větvi</h2>{}\
+         <h2 id='unikatne'>Unikatne v tom portalu</h2>{}\
+         <h2 id='vse'>Vse zapisy v portalu</h2>{}</article>",
+        esc(&name),
+        esc(&intro),
+        index_summary(rows),
+        render_word_table(&strongest, "../"),
+        render_word_table(&pan_slavic, "../"),
+        render_word_table(&unique, "../"),
+        render_word_table(rows, "../"),
+    );
+    let _ = all;
+    page(&format!("Portal: {name}"), &body, 1)
+}
+
+fn root_page(root: &str, rows: &[SiteEntryMeta]) -> String {
+    let by_pos = count_by(rows, |m| pos_code_label(&m.pos));
+    let by_lang = {
+        let mut map = std::collections::BTreeMap::new();
+        for m in rows {
+            for l in &m.languages {
+                *map.entry(crate::lang::lang_name(l).to_string())
+                    .or_insert(0) += 1;
+            }
+        }
+        map
+    };
+    let official: Vec<SiteEntryMeta> = rows
+        .iter()
+        .filter(|m| m.official_lemma.is_some())
+        .cloned()
+        .collect();
+    let mut derived = rows.to_vec();
+    derived.sort_by_key(|m| (m.pos.clone(), crate::orthography::ascii_skeleton(&m.title)));
+    let title = format!("Rekonstrukcija: *{root}");
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>{}</h1>\
+         <p class='lede'>Statična korenj-strana za praslovjansky korenj. Ona sobira vse medžuslovjanske strany zapisov, ktore v korpusu pokazujų na toj predok ili blizku derivaciju.</p>\
+         {}<div class='stat-grid wiki-stats'>{}{}</div>\
+         <h2 id='official'>Oficialne sovpadenja pod tym korenjem</h2>{}\
+         <h2 id='tree'>Derivacijsko drevo / rodina</h2>{}\
+         <h2 id='desc'>Językove potomky v sajtu</h2>{}</article>",
+        esc(&title),
+        index_summary(rows),
+        counts_table("Čęsti rěči", &by_pos),
+        counts_table("Języky", &by_lang),
+        render_word_table(&official, "../"),
+        render_word_table(&derived, "../"),
+        counts_table("Potomky po językah", &by_lang),
+    );
+    page(&title, &body, 1)
+}
+
+fn borrowing_portal_page(rows: &[SiteEntryMeta]) -> String {
+    let mut by_src = count_by(rows, borrowing_source);
+    let mut strongest = rows.to_vec();
+    strongest.sort_by(|a, b| {
+        b.n_langs
+            .cmp(&a.n_langs)
+            .then_with(|| b.score.total_cmp(&a.score))
+    });
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>Portal: Zaimky i internacionalizmy</h1>\
+         <p class='lede'>Slova grupovane po neslovjanskom etimonu ili internacionalnom fonemičnom skeletu.</p>\
+         {}<div class='stat-grid wiki-stats'>{}</div><h2 id='najsilne'>Najširše dokazane zaimky</h2>{}<h2 id='vse'>Vse zaimky</h2>{}</article>",
+        index_summary(rows),
+        counts_table("Izvorni języky", &by_src),
+        render_word_table(&strongest, ""),
+        render_word_table(rows, ""),
+    );
+    by_src.clear();
+    page("Portal: Zaimky i internacionalizmy", &body, 0)
+}
+
+fn needs_review_page(rows: &[SiteEntryMeta]) -> String {
+    let review: Vec<SiteEntryMeta> = rows.iter().filter(|m| needs_review(m)).cloned().collect();
+    let low: Vec<SiteEntryMeta> = review
+        .iter()
+        .filter(|m| matches!(m.conf, Confidence::Low))
+        .cloned()
+        .collect();
+    let one_branch: Vec<SiteEntryMeta> = review
+        .iter()
+        .filter(|m| m.n_branches < 2)
+        .cloned()
+        .collect();
+    let generated: Vec<SiteEntryMeta> = review
+        .iter()
+        .filter(|m| m.official_lemma.is_none())
+        .cloned()
+        .collect();
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>Posebno:TrěbujePrověrky</h1>\
+         <p class='lede'>Kuratorska robota: strany zapisov s nizkoj uvěrjenostju, malym pokrytjem ili bez oficialnogo sovpadenja.</p>\
+         {}<h2 id='nizka'>Nizka uvěrjenost</h2>{}<h2 id='jedna-vetv'>Samo jedna větv</h2>{}<h2 id='neoficialne'>Samo generovane</h2>{}</article>",
+        index_summary(&review),
+        render_word_table(&low, ""),
+        render_word_table(&one_branch, ""),
+        render_word_table(&generated, ""),
+    );
+    page("Posebno:TrěbujePrověrky", &body, 0)
+}
+
+fn write_borrowing_subpages(out_dir: &Path, rows: &[SiteEntryMeta]) -> Result<()> {
+    let mut by_src: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in rows {
+        by_src
+            .entry(borrowing_source(m))
+            .or_default()
+            .push(m.clone());
+    }
+    for (src, items) in &mut by_src {
+        items.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+        std::fs::write(
+            out_dir
+                .join("borrowings")
+                .join(format!("{}.html", slug(src))),
+            simple_index_page(
+                &format!("Zaimky: {src}"),
+                "Zaimky grupovane po izvornom języku/etimonu.",
+                items,
+                1,
+            ),
+        )?;
+    }
+    Ok(())
+}
+
+fn write_needs_review_subpages(out_dir: &Path, rows: &[SiteEntryMeta]) -> Result<()> {
+    let groups: [(&str, &str, Vec<SiteEntryMeta>); 4] = [
+        (
+            "nizka-uverjenost",
+            "Nizka uvěrjenost",
+            rows.iter()
+                .filter(|m| matches!(m.conf, Confidence::Low))
+                .cloned()
+                .collect(),
+        ),
+        (
+            "jedna-vetv",
+            "Samo jedna větv",
+            rows.iter().filter(|m| m.n_branches < 2).cloned().collect(),
+        ),
+        (
+            "samo-generovane",
+            "Samo generovane",
+            rows.iter()
+                .filter(|m| m.official_lemma.is_none())
+                .cloned()
+                .collect(),
+        ),
+        (
+            "nizka-ocena",
+            "Nizka ocěna",
+            rows.iter().filter(|m| m.score < 0.45).cloned().collect(),
+        ),
+    ];
+    for (file, title, mut items) in groups {
+        items.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+        std::fs::write(
+            out_dir.join("needs-review").join(format!("{file}.html")),
+            simple_index_page(
+                &format!("Trěbuje prověrky: {title}"),
+                "Podspis kuratorskogo spiska.",
+                &items,
+                1,
+            ),
+        )?;
+    }
+    Ok(())
+}
+
+fn suffix_bucket(title: &str, pos: &str) -> String {
+    let folded = crate::orthography::to_standard(&title.to_lowercase());
+    if pos == "verb" {
+        if folded.ends_with("ti") {
+            "glagoly na -ti".to_string()
+        } else {
+            "druge glagoly".to_string()
+        }
+    } else if pos == "adj" {
+        folded
+            .chars()
+            .last()
+            .map(|c| format!("pridavniki na -{c}"))
+            .unwrap_or_else(|| "pridavniki".to_string())
+    } else {
+        let suffix: String = folded
+            .chars()
+            .rev()
+            .take(2)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        if suffix.is_empty() {
+            "druga zakončenja".to_string()
+        } else {
+            format!("zakončenje -{suffix}")
+        }
+    }
+}
+
+fn suffix_index_page(rows: &[SiteEntryMeta]) -> String {
+    let mut groups: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in rows {
+        groups
+            .entry(suffix_bucket(&m.title, &m.pos))
+            .or_default()
+            .push(m.clone());
+    }
+    let mut body = String::new();
+    for (name, items) in groups.iter().filter(|(_, v)| v.len() >= 20).take(80) {
+        let _ = write!(
+            body,
+            "<li><b>{}</b> <span class='muted'>({})</span></li>",
+            esc(name),
+            compact(items.len())
+        );
+    }
+    page("Indeks po zakončenjah", &format!("<article class='entry'><h1 class='firstHeading'>Indeks po zakončenjah</h1><p class='lede'>Gruby indeks po zakončenjah: koristen za prěgled glagolov, pridavnikov i imennikov po obliku.</p><ul class='compact-list'>{body}</ul></article>"), 0)
+}
+
+fn inflection_issue(m: &SiteEntryMeta) -> bool {
+    matches!(m.pos.as_str(), "noun" | "proper_noun" | "adj" | "verb")
+        && inflection_table(&m.title, &m.pos).contains('—')
+}
+
+fn inflection_issues_page(rows: &[SiteEntryMeta]) -> String {
+    let mut issues: Vec<SiteEntryMeta> = rows
+        .iter()
+        .filter(|m| inflection_issue(m))
+        .cloned()
+        .collect();
+    issues.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+    page("Posebno:ProblemyPrěgibanja", &format!("<article class='entry'><h1 class='firstHeading'>Posebno:ProblemyPrěgibanja</h1><p class='lede'>Stran zapisovy, gdě prěgibanje je nepolno ili vrnulo —. To je praktičny spis za popravki v interslavic-rs.</p>{}</article>", render_word_table(&issues, "")), 0)
+}
+
+fn featured_page(rows: &[SiteEntryMeta], build: &BuildMeta) -> String {
+    let mut featured: Vec<SiteEntryMeta> = rows
+        .iter()
+        .filter(|m| matches!(m.conf, Confidence::High) || m.official_lemma.is_some())
+        .cloned()
+        .collect();
+    featured.sort_by(|a, b| {
+        b.n_branches
+            .cmp(&a.n_branches)
+            .then_with(|| b.n_langs.cmp(&a.n_langs))
+            .then_with(|| b.score.total_cmp(&a.score))
+    });
+    let seed = build.generated.bytes().map(|b| b as usize).sum::<usize>();
+    let daily = featured.get(seed % featured.len().max(1));
+    let daily_html = daily
+        .map(|m| {
+            format!(
+                "<div class='notice'><b>Izbrano:</b> <a href='entry/{}.html'>{}</a> — {}</div>",
+                m.id,
+                esc(&m.title),
+                esc(&m.gloss)
+            )
+        })
+        .unwrap_or_default();
+    page("Posebno:Izbrano", &format!("<article class='entry'><h1 class='firstHeading'>Posebno:Izbrano</h1><p class='lede'>Determinističny izbor dobro dokazanyh stran zapisov za tu generaciju sajta.</p>{daily_html}{} </article>", render_word_table(&featured, "")), 0)
+}
+
+fn random_page() -> String {
+    let body = r#"<article class='entry'><h1 class='firstHeading'>Posebno:Slučajno</h1><p>Ta statična strana koristi lokalny <code>search.json</code> i izbere slučajnu stran zapisovu bez servera.</p><p id='random-target' class='notice'>Nakladajě sę…</p><script>document.addEventListener('DOMContentLoaded',function(){ensure().then(function(idx){if(!idx.length)return;var e=idx[Math.floor(Math.random()*idx.length)];var a='entry/'+e[0]+'.html';document.getElementById('random-target').innerHTML='<a href="'+a+'">'+e[1]+'</a> — '+e[2]+'<br><a href="'+a+'">Idi</a>';});});</script></article>"#;
+    page("Posebno:Slučajno", body, 0)
+}
+
+fn special_pages_hub() -> String {
+    let body = "<article class='entry'><h1 class='firstHeading'>Posebne strany</h1>\
+      <p class='lede'>Statične wiki-podobne služebne strany za prěgledanje slovnika.</p>\
+      <ul class='compact-list'>\
+        <li><a href='all-pages.html'>Posebno:VseStrany</a></li>\
+        <li><a href='categories.html'>Posebno:Kategorije</a></li>\
+        <li><a href='site-stats.html'>Posebno:Statistiky</a></li>\
+        <li><a href='needs-review.html'>Posebno:TrěbujePrověrky</a></li>\
+        <li><a href='inflection-issues.html'>Posebno:ProblemyPrěgibanja</a></li>\
+        <li><a href='random.html'>Posebno:Slučajno</a></li>\
+        <li><a href='featured.html'>Posebno:Izbrano</a></li>\
+        <li><a href='borrowings.html'>Portal:Zaimky</a></li>\
+        <li><a href='suffix-index.html'>Indeks po zakončenjah</a></li>\
+        <li><a href='datasets.html'>Datoteke za snimanje</a></li>\
+        <li><a href='portals.html'>Językove portaly</a></li>\
+        <li><a href='indices.html'>Abecedne indeksy</a></li>\
+        <li><a href='graph.html'>Semantičny graf</a></li>\
+      </ul></article>";
+    page("Posebne strany", body, 0)
+}
+
+fn talk_page(m: &SiteEntryMeta, note: Option<&String>, incoming: &[LinkEdge]) -> String {
+    let note_html = note
+        .map(|n| format!("<div class='notice'>{}</div>", esc(n)))
+        .unwrap_or_else(|| "<p class='muted'>Ješče nema kuratorskyh not.</p>".to_string());
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>Diskusija: {}</h1>\
+         <p><a href='../entry/{}.html'>← stran zapisova</a></p>\
+         <h2 id='noty'>Kuratorske noty</h2>{}\
+         <h2 id='review'>Spis prověrky</h2><ul><li>Prověr srodne slova i semantiku.</li><li>Prověr či oficialny synonym bolje odgovarja.</li><li>Prověr prěgibanje i pravopisne variantne znaky.</li></ul>\
+         <h2 id='issue'>GitHub</h2><p><a href='{}'>Otvori problem za tu stran zapisovu</a>.</p>\
+         <h2 id='links'>Obratne linky</h2><p>{} stran kaže sem.</p></article>",
+        esc(&m.title),
+        m.id,
+        note_html,
+        esc(&issue_url(m)),
+        incoming.len(),
+    );
+    page(&format!("Diskusija: {}", m.title), &body, 1)
+}
+
+#[derive(Default)]
+struct CategoryNode {
+    path: Vec<String>,
+    pages: Vec<SiteEntryMeta>,
+    children: BTreeSet<String>,
+}
+
+fn build_category_tree(metas: &[SiteEntryMeta]) -> BTreeMap<String, CategoryNode> {
+    let mut tree: BTreeMap<String, CategoryNode> = BTreeMap::new();
+    for m in metas {
+        for path in &m.categories {
+            for i in 1..=path.len() {
+                let prefix = path[..i].to_vec();
+                let key = category_key(&prefix);
+                tree.entry(key.clone()).or_insert_with(|| CategoryNode {
+                    path: prefix.clone(),
+                    pages: Vec::new(),
+                    children: BTreeSet::new(),
+                });
+                if i > 1 {
+                    let parent_key = category_key(&path[..i - 1]);
+                    tree.entry(parent_key.clone())
+                        .or_default()
+                        .children
+                        .insert(key.clone());
+                }
+            }
+            let leaf = category_key(path);
+            if let Some(node) = tree.get_mut(&leaf) {
+                node.pages.push(m.clone());
+            }
+        }
+    }
+    for node in tree.values_mut() {
+        node.pages
+            .sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+    }
+    tree
+}
+
+fn write_category_pages(out_dir: &Path, metas: &[SiteEntryMeta]) -> Result<()> {
+    let tree = build_category_tree(metas);
+    let mut root_links = String::new();
+    for (key, node) in tree.iter().filter(|(_, n)| n.path.len() == 1) {
+        let count = category_descendant_page_count(&tree, key);
+        let _ = write!(
+            root_links,
+            "<li><a href='category/{}.html'>{}</a> <span class='muted'>({})</span></li>",
+            esc(key),
+            esc(&category_title(&node.path)),
+            compact(count)
+        );
+    }
+    for (key, node) in &tree {
+        std::fs::write(
+            out_dir.join("category").join(format!("{key}.html")),
+            category_page(&tree, key, node),
+        )?;
+    }
+    std::fs::write(
+        out_dir.join("categories.html"),
+        page(
+            "Kategorije",
+            &format!("<article class='entry'><h1 class='firstHeading'>Kategorije</h1><p class='lede'>Hierarhične kategorije po wiki-sistemu: najprvo podkategorije, potom strany. Avtomatične kategorije sų smęšane s temami i oznakami Wiktionary, kȯgda te metadany sų v lokalnyh cache-datotekah.</p><h2 id='podkategorije'>Podkategorije</h2><ul class='compact-list category-list'>{root_links}</ul></article>"),
+            0,
+        ),
+    )?;
+    Ok(())
+}
+
+fn category_descendant_page_count(tree: &BTreeMap<String, CategoryNode>, key: &str) -> usize {
+    let mut ids = BTreeSet::new();
+    collect_category_page_ids(tree, key, &mut ids);
+    ids.len()
+}
+
+fn collect_category_page_ids(
+    tree: &BTreeMap<String, CategoryNode>,
+    key: &str,
+    ids: &mut BTreeSet<usize>,
+) {
+    let Some(node) = tree.get(key) else { return };
+    for m in &node.pages {
+        ids.insert(m.id);
+    }
+    for child in &node.children {
+        collect_category_page_ids(tree, child, ids);
+    }
+}
+
+fn category_page(tree: &BTreeMap<String, CategoryNode>, _key: &str, node: &CategoryNode) -> String {
+    let mut subcats = String::new();
+    for child in &node.children {
+        if let Some(c) = tree.get(child) {
+            let count = category_descendant_page_count(tree, child);
+            let label = c.path.last().map(String::as_str).unwrap_or(child);
+            let _ = write!(
+                subcats,
+                "<li><a href='{}.html'>{}</a> <span class='muted'>({})</span></li>",
+                esc(child),
+                esc(label),
+                compact(count)
+            );
+        }
+    }
+    let subcat_block = if subcats.is_empty() {
+        String::new()
+    } else {
+        format!("<h2 id='podkategorije'>Podkategorije</h2><ul class='compact-list category-list'>{subcats}</ul>")
+    };
+    let pages = if node.pages.is_empty() {
+        if node.children.is_empty() {
+            String::new()
+        } else {
+            "<p class='muted'>Izberi podkategoriju vyše.</p>".to_string()
+        }
+    } else {
+        render_word_table(&node.pages, "../")
+    };
+    let parent = if node.path.len() > 1 {
+        let pk = category_key(&node.path[..node.path.len() - 1]);
+        format!("<p><a href='{pk}.html'>← vyšša kategorija</a></p>")
+    } else {
+        "<p><a href='../categories.html'>← vse kategorije</a></p>".to_string()
+    };
+    let title = format!("Kategorija: {}", category_title(&node.path));
+    page(
+        &title,
+        &format!("<article class='entry'><h1 class='firstHeading'>{}</h1>{parent}{subcat_block}<h2 id='strany'>Strany v kategoriji</h2>{pages}</article>", esc(&title)),
+        1,
+    )
+}
+
+fn write_wiki_indexes(
+    out_dir: &Path,
+    metas: &[SiteEntryMeta],
+    edges: &[LinkEdge],
+    backlinks: &std::collections::BTreeMap<usize, Vec<LinkEdge>>,
+    homographs: &std::collections::BTreeMap<String, Vec<SiteEntryMeta>>,
+    build: &BuildMeta,
+    curation: &std::collections::HashMap<String, String>,
+) -> Result<()> {
+    for dir in [
+        "category",
+        "index",
+        "portal",
+        "what-links-here",
+        "homograph",
+        "root",
+        "talk",
+        "special",
+        "borrowings",
+        "needs-review",
+    ] {
+        let p = out_dir.join(dir);
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p)?;
+    }
+    let mut sorted = metas.to_vec();
+    sorted.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+    std::fs::write(
+        out_dir.join("all-pages.html"),
+        simple_index_page(
+            "Vse strany",
+            "Abecedny spis vsih slovnikovyh stran zapisov. To je podobno do Posebno:VseStrany: prosty, statičny indeks bez JavaScript-trebovanja.",
+            &sorted,
+            0,
+        ),
+    )?;
+
+    write_category_pages(out_dir, metas)?;
+
+    let mut by_first: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in metas {
+        by_first.entry(m.first.clone()).or_default().push(m.clone());
+    }
+    let mut letter_links = String::new();
+    for (letter, rows) in &mut by_first {
+        rows.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+        let file = format!("{}.html", slug(letter));
+        std::fs::write(
+            out_dir.join("index").join(&file),
+            simple_index_page(
+                &format!("Indeks: {letter}"),
+                "Abecedny indeks po prvoj bukvě.",
+                rows,
+                1,
+            ),
+        )?;
+        let _ = write!(letter_links, "<a href='index/{file}'>{}</a> ", esc(letter));
+    }
+    std::fs::write(
+        out_dir.join("indices.html"),
+        page("Indeksy", &format!("<article class='entry'><h1 class='firstHeading'>Abecedne indeksy</h1><p class='muted'>Klasičny slovnikovy indeks po prvoj bukvě.</p><p class='plainlinks alphabet-index'>{letter_links}</p></article>"), 0),
+    )?;
+
+    let mut by_lang: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in metas {
+        for lang in &m.languages {
+            by_lang.entry(lang.clone()).or_default().push(m.clone());
+        }
+    }
+    let mut portal_links = String::new();
+    for (lang, rows) in &mut by_lang {
+        rows.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+        let file = format!("{}.html", slug(lang));
+        std::fs::write(
+            out_dir.join("portal").join(&file),
+            language_portal_page(lang, rows, metas),
+        )?;
+        let _ = write!(
+            portal_links,
+            "<li><a href='portal/{file}'>{}</a> <span class='muted'>({})</span></li>",
+            esc(&crate::lang::lang_name(lang)),
+            rows.len()
+        );
+    }
+    std::fs::write(
+        out_dir.join("portals.html"),
+        page("Portaly", &format!("<article class='entry'><h1 class='firstHeading'>Językove portaly</h1><p class='lede'>Vsaky portal pokazuje strany zapisov, v ktoryh dany slovjansky język daje srodny dokaz. To pomaga viděti, ktore formy sų vȯzhodne, zapadne, južne ili vseslovjanske.</p><ul class='compact-list'>{portal_links}</ul></article>"), 0),
+    )?;
+
+    for m in metas {
+        let incoming = backlinks.get(&m.id).map(Vec::as_slice).unwrap_or(&[]);
+        let body = backlink_page_body(m, incoming);
+        std::fs::write(
+            out_dir
+                .join("what-links-here")
+                .join(format!("{}.html", m.id)),
+            page(&format!("Čto veze k {}", m.title), &body, 1),
+        )?;
+        let note_key = crate::orthography::to_standard(&m.title.to_lowercase());
+        let note = curation
+            .get(&note_key)
+            .or_else(|| curation.get(&m.id.to_string()));
+        std::fs::write(
+            out_dir.join("talk").join(format!("{}.html", m.id)),
+            talk_page(m, note, incoming),
+        )?;
+    }
+
+    let mut root_map: std::collections::BTreeMap<String, Vec<SiteEntryMeta>> =
+        std::collections::BTreeMap::new();
+    for m in metas {
+        if let Some(sl) = ancestor_slug(m) {
+            root_map.entry(sl).or_default().push(m.clone());
+        }
+    }
+    for (sl, rows) in &mut root_map {
+        rows.sort_by_key(|m| crate::orthography::ascii_skeleton(&m.title));
+        let root_label = rows
+            .first()
+            .map(|m| m.ancestor.trim_start_matches('*').to_string())
+            .unwrap_or_else(|| sl.clone());
+        std::fs::write(
+            out_dir.join("root").join(format!("{sl}.html")),
+            root_page(&root_label, rows),
+        )?;
+    }
+
+    for (fold, rows) in homographs {
+        let body = format!(
+            "<article class='entry'><h1 class='firstHeading'>Raznoznačnost: {}</h1><p class='muted'>Nekoliko stran děli tu že napisanu formu.</p>{}</article>",
+            esc(fold),
+            render_word_table(rows, "../")
+        );
+        std::fs::write(
+            out_dir
+                .join("homograph")
+                .join(format!("{}.html", slug(fold))),
+            page(&format!("Raznoznačnost: {fold}"), &body, 1),
+        )?;
+    }
+
+    std::fs::write(
+        out_dir.join("site-stats.html"),
+        site_stats_page(metas, edges, homographs, build),
+    )?;
+
+    let borrowings: Vec<SiteEntryMeta> = metas.iter().filter(|m| m.borrowed).cloned().collect();
+    std::fs::write(
+        out_dir.join("borrowings.html"),
+        borrowing_portal_page(&borrowings),
+    )?;
+    write_borrowing_subpages(out_dir, &borrowings)?;
+    std::fs::write(out_dir.join("needs-review.html"), needs_review_page(metas))?;
+    write_needs_review_subpages(out_dir, metas)?;
+    std::fs::write(out_dir.join("suffix-index.html"), suffix_index_page(metas))?;
+    std::fs::write(
+        out_dir.join("inflection-issues.html"),
+        inflection_issues_page(metas),
+    )?;
+    std::fs::write(out_dir.join("featured.html"), featured_page(metas, build))?;
+    std::fs::write(out_dir.join("random.html"), random_page())?;
+    std::fs::write(out_dir.join("special.html"), special_pages_hub())?;
+
+    let graph_data = graph_json(edges);
+    std::fs::write(out_dir.join("graph.json"), graph_data)?;
+    std::fs::write(out_dir.join("graph.html"), graph_page(edges, metas))?;
+    std::fs::write(out_dir.join("contribute.html"), contribute_page())?;
+    std::fs::write(out_dir.join("build.json"), build_json(build))?;
+    std::fs::write(out_dir.join("entries.json"), entries_json(metas))?;
+    std::fs::write(out_dir.join("edges.json"), graph_json(edges))?;
+    std::fs::write(out_dir.join("categories.json"), categories_json(metas))?;
+    std::fs::write(out_dir.join("roots.json"), roots_json(&root_map))?;
+    std::fs::write(out_dir.join("datasets.html"), datasets_page())?;
+    std::fs::write(out_dir.join("sitemap.xml"), sitemap_xml(metas))?;
+    Ok(())
+}
+
+fn backlink_page_body(m: &SiteEntryMeta, incoming: &[LinkEdge]) -> String {
+    let mut rows = String::new();
+    for e in incoming {
+        let _ = write!(
+            rows,
+            "<li><a href='../entry/{}.html'>{}</a> <span class='badge'>{}</span></li>",
+            e.source_id,
+            esc(&e.source_title),
+            esc(&e.kind)
+        );
+    }
+    if rows.is_empty() {
+        rows.push_str("<li class='muted'>Nijedna statična strana nyně ne kaže sem.</li>");
+    }
+    format!(
+        "<article class='entry'><h1 class='firstHeading'>Čto kaže sem: {}</h1><p><a href='../entry/{}.html'>← nazad k zapisu</a></p><ul class='compact-list'>{rows}</ul></article>",
+        esc(&m.title),
+        m.id
+    )
+}
+
+fn entry_tabs(m: &SiteEntryMeta) -> String {
+    format!(
+        "<nav class='entry-tabs'><a class='active' href='{}.html'>Strana</a><a href='../talk/{}.html'>Diskusija</a><a href='../what-links-here/{}.html'>Čto kaže sem</a><a href='../graph.html#n{}'>Graf</a><a href='{}'>Popraviti / problem</a></nav>",
+        m.id,
+        m.id,
+        m.id,
+        m.id,
+        esc(&issue_url(m))
+    )
+}
+
+fn entry_infobox(m: &SiteEntryMeta) -> String {
+    let root = ancestor_slug(m)
+        .map(|sl| format!("<a href='../root/{sl}.html'>{}</a>", esc(&m.ancestor)))
+        .unwrap_or_else(|| {
+            esc(if m.ancestor.is_empty() {
+                "—"
+            } else {
+                &m.ancestor
+            })
+        });
+    format!(
+        "<aside class='entry-infobox'><table class='wikitable compact-table'><caption>{}</caption>\
+         <tr><th>Čęst rěči</th><td>{}</td></tr><tr><th>Stav</th><td>{}</td></tr>\
+         <tr><th>Kvaliteta</th><td>{}</td></tr><tr><th>Dokaz</th><td>{} jęz. / {} vět.</td></tr>\
+         <tr><th>Tip</th><td>{}</td></tr><tr><th>Predok</th><td>{}</td></tr><tr><th>ID</th><td>{}</td></tr></table></aside>",
+        esc(&m.title),
+        esc(&pos_code_label(&m.pos)),
+        if m.official_lemma.is_some() { "oficialno povezano" } else { "generovano" },
+        esc(quality_label(m)),
+        m.n_langs,
+        m.n_branches,
+        if m.borrowed { "zaimka" } else { "naslědovano" },
+        root,
+        m.id,
+    )
+}
+
+fn homograph_notice(
+    m: &SiteEntryMeta,
+    groups: &std::collections::BTreeMap<String, Vec<SiteEntryMeta>>,
+) -> String {
+    let key = crate::orthography::to_standard(&m.title.to_lowercase());
+    let Some(rows) = groups.get(&key) else {
+        return String::new();
+    };
+    if rows.len() < 2 {
+        return String::new();
+    }
+    format!(
+        "<div class='notice dab'>Ta napis ima <b>{}</b> značenja. <a href='../homograph/{}.html'>Glej raznoznačnosť</a>.</div>",
+        rows.len(),
+        slug(&key)
+    )
+}
+
+fn entry_wiki_blocks(
+    m: &SiteEntryMeta,
+    incoming: &[LinkEdge],
+    edges: &[LinkEdge],
+    curation: &std::collections::HashMap<String, String>,
+    build: &BuildMeta,
+) -> String {
+    let mut out = String::new();
+    let note_key = crate::orthography::to_standard(&m.title.to_lowercase());
+    if let Some(note) = curation
+        .get(&note_key)
+        .or_else(|| curation.get(&m.id.to_string()))
+    {
+        let _ = write!(
+            out,
+            "<section><h2 id='notes'>Kuratorske noty</h2><div class='notice'>{}</div></section>",
+            esc(note)
+        );
+    }
+    out.push_str(&local_graph_block(m, incoming, edges));
+    let _ = write!(
+        out,
+        "<details id='source-meta' class='bottom-meta'><summary>Izvory i metadany</summary>{}{}</details>",
+        references_block(m),
+        provenance_block(m, build)
+    );
+    out.push_str(&category_footer(m));
+    out
+}
+
+fn local_graph_block(m: &SiteEntryMeta, incoming: &[LinkEdge], edges: &[LinkEdge]) -> String {
+    let mut items = String::new();
+    for e in edges.iter().filter(|e| e.source_id == m.id).take(18) {
+        let _ = write!(
+            items,
+            "<li><span class='badge'>{}</span> <a href='{}.html'>{}</a></li>",
+            esc(&e.kind),
+            e.target_id,
+            esc(&e.target_title)
+        );
+    }
+    for e in incoming.iter().take(18) {
+        let _ = write!(
+            items,
+            "<li><span class='badge'>← {}</span> <a href='{}.html'>{}</a></li>",
+            esc(&e.kind),
+            e.source_id,
+            esc(&e.source_title)
+        );
+    }
+    if items.is_empty() {
+        return String::new();
+    }
+    format!("<section><h2 id='graf'>Semantičny graf</h2><ul class='compact-list graph-list'>{items}</ul></section>")
+}
+
+fn references_block(m: &SiteEntryMeta) -> String {
+    let mut rows = String::new();
+    if let Some(isv) = &m.official_lemma {
+        let _ = write!(
+            rows,
+            "<tr><th>Oficialny slovnik</th><td><span class='mention'>{}</span></td><td>lemmat / validacija</td></tr>",
+            esc(isv)
+        );
+    }
+    if !m.ancestor.trim().is_empty() {
+        if m.borrowed {
+            let _ = write!(
+                rows,
+                "<tr><th>Etimon</th><td><span class='mention'>{}</span></td><td>zaimka / internacionalizm</td></tr>",
+                esc(&m.ancestor)
+            );
+        } else {
+            let p = m.ancestor.trim_start_matches('*');
+            let root = ancestor_slug(m)
+                .map(|sl| format!("; <a href='../root/{sl}.html'>korenj-strana</a>"))
+                .unwrap_or_default();
+            let _ = write!(rows, "<tr><th>Praslovjansky predok</th><td><a href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>*{}</a>{}</td><td>rekonstrukcija Wiktionary</td></tr>", esc(p), esc(p), root);
+        }
+    }
+    rows.push_str("<tr><th>Srodne slova</th><td>anglijska Wiktionary + narodne Wiktionary</td><td>CC BY-SA; konkretne linky sų v tablicah vyše</td></tr>");
+    rows.push_str(
+        "<tr><th>Prěgibanje</th><td>interslavic-rs</td><td>mašinno generovane formy</td></tr>",
+    );
+    rows.push_str("<tr><th>Generator</th><td><a href='https://github.com/gold-silver-copper/interslavic-wiktionary-lab'>izvorny kod</a></td><td>pravila, indeks iskanja, statičny eksport</td></tr>");
+    format!("<section><h2 id='references'>Izvory</h2><table class='wikitable source-table'><tbody>{rows}</tbody></table></section>")
+}
+
+fn provenance_block(m: &SiteEntryMeta, build: &BuildMeta) -> String {
+    format!(
+        "<section><h2 id='provenance'>Istorija i metadany</h2><table class='wikitable compact-table'>\
+         <tr><th>Generacija</th><td>{}</td></tr><tr><th>Git</th><td><code>{}</code></td></tr>\
+         <tr><th>Tip</th><td>{}</td></tr><tr><th>Kvaliteta</th><td>{}</td></tr>\
+         <tr><th>Ocěna</th><td>{:.2}</td></tr><tr><th>Dokaz</th><td>{} językov / {} větvi</td></tr>\
+         <tr><th>Popraviti</th><td><a href='{}'>Otvori problem na GitHub za tu stranu</a></td></tr></table></section>",
+        esc(&build.generated),
+        esc(&build.git),
+        if m.official_only { "samo oficialno" } else if m.borrowed { "zaimka / internacionalizm" } else { "srodna rekonstrukcija" },
+        esc(quality_label(m)),
+        m.score,
+        m.n_langs,
+        m.n_branches,
+        esc(&issue_url(m)),
+    )
+}
+
+fn category_footer(m: &SiteEntryMeta) -> String {
+    let link_for = |path: &Vec<String>| {
+        format!(
+            "<a href='../category/{}.html'>{}</a>",
+            esc(&category_key(path)),
+            esc(&category_title(path))
+        )
+    };
+    let visible = 12usize;
+    let mut links = m
+        .categories
+        .iter()
+        .take(visible)
+        .map(link_for)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if m.categories.len() > visible {
+        let rest = m
+            .categories
+            .iter()
+            .skip(visible)
+            .map(link_for)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let _ = write!(
+            links,
+            " <details class='cat-more'><summary>+{} kategorij</summary>{}</details>",
+            m.categories.len() - visible,
+            rest
+        );
+    }
+    format!("<div id='categories' class='catlinks'><b>Kategorije</b>: {links}</div>")
+}
+
+fn graph_json(edges: &[LinkEdge]) -> String {
+    let mut s = String::from("[\n");
+    for (i, e) in edges.iter().take(50000).enumerate() {
+        if i > 0 {
+            s.push_str(",\n");
+        }
+        let _ = write!(
+            s,
+            "[{},{},{},{}]",
+            e.source_id,
+            e.target_id,
+            json_str(&e.kind),
+            json_str(&e.target_title)
+        );
+    }
+    s.push_str("\n]\n");
+    s
+}
+
+fn graph_page(edges: &[LinkEdge], metas: &[SiteEntryMeta]) -> String {
+    let mut kind_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    let mut degree: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for e in edges {
+        *kind_counts.entry(e.kind.clone()).or_insert(0) += 1;
+        *degree.entry(e.source_id).or_insert(0) += 1;
+        *degree.entry(e.target_id).or_insert(0) += 1;
+    }
+    let meta_by_id: std::collections::HashMap<usize, &SiteEntryMeta> =
+        metas.iter().map(|m| (m.id, m)).collect();
+    let mut top: Vec<(usize, usize)> = degree.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut top_items = String::new();
+    for (id, n) in top.into_iter().take(40) {
+        if let Some(m) = meta_by_id.get(&id) {
+            let _ = write!(
+                top_items,
+                "<li><a href='entry/{id}.html'>{}</a> <span class='muted'>({} vęzej)</span></li>",
+                esc(&m.title),
+                n
+            );
+        }
+    }
+    let mut items = String::new();
+    for e in edges.iter().take(800) {
+        let _ = write!(items, "<li class='graph-edge' data-kind='{}' id='n{}'><a href='entry/{}.html'>{}</a> — <span class='badge'>{}</span> → <a href='entry/{}.html'>{}</a></li>", esc(&e.kind), e.source_id, e.source_id, esc(&e.source_title), esc(&e.kind), e.target_id, esc(&e.target_title));
+    }
+    let mut filter = String::from("<button type='button' data-kind=''>vse</button> ");
+    for k in kind_counts.keys() {
+        let _ = write!(
+            filter,
+            "<button type='button' data-kind='{}'>{}</button> ",
+            esc(k),
+            esc(k)
+        );
+    }
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Semantičny graf</h1><p class='muted'>Statičny spis prvih vęzej; polny kompaktny JSON je v <code>graph.json</code>. Filtry rabotajų bez servera.</p><div class='graph-filter'>{filter}</div><div class='stat-grid wiki-stats'>{}</div><h2 id='top'>Najbolje povezane strany</h2><ol>{top_items}</ol><h2 id='edges'>Vęzi</h2><ul class='compact-list'>{items}</ul><script>document.querySelectorAll('.graph-filter button').forEach(function(b){{b.onclick=function(){{var k=b.dataset.kind;document.querySelectorAll('.graph-edge').forEach(function(e){{e.style.display=(!k||e.dataset.kind===k)?'':'none';}});}};}});</script></article>", counts_table("Tipy vęzej", &kind_counts));
+    page("Semantičny graf", &body, 0)
+}
+
+fn contribute_page() -> String {
+    let body = "<article class='entry'><h1 class='firstHeading'>Kako doprinositi</h1>\
+      <p>Projekt je statično generovany: změni podatky, regeneruj sajt, zapusti testy, pošlji prošnju za spoj.</p>\
+      <ol><li><code>cargo test</code></li><li><code>cargo run --release -- export --out site</code></li><li>Za ručne noty dodaj <code>data/curation-notes.json</code> s ključem zaglavnogo slova ili id-ja.</li><li>Za grešku v zapisu klikni <i>Popraviti / problem</i> na vrhu strany.</li></ol>\
+      <p><a href='https://github.com/gold-silver-copper/interslavic-wiktionary-lab'>Izvorny kod na GitHub</a>.</p></article>";
+    page("Doprinos", body, 0)
+}
+
+fn entries_json(metas: &[SiteEntryMeta]) -> String {
+    let mut s = String::from("[\n");
+    for (i, m) in metas.iter().enumerate() {
+        if i > 0 {
+            s.push_str(",\n");
+        }
+        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"langs\":{},\"branches\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{}}}",
+            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), m.n_langs, m.n_branches, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor));
+    }
+    s.push_str("\n]\n");
+    s
+}
+
+fn categories_json(metas: &[SiteEntryMeta]) -> String {
+    let tree = build_category_tree(metas);
+    let mut s = String::from("[\n");
+    for (i, (key, node)) in tree.iter().enumerate() {
+        if i > 0 {
+            s.push_str(",\n");
+        }
+        let path = node
+            .path
+            .iter()
+            .map(|p| json_str(p))
+            .collect::<Vec<_>>()
+            .join(",");
+        let pages = node
+            .pages
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let children = node
+            .children
+            .iter()
+            .map(|c| json_str(c))
+            .collect::<Vec<_>>()
+            .join(",");
+        let _ = write!(
+            s,
+            "  {{\"key\":{},\"path\":[{}],\"children\":[{}],\"pages\":[{}]}}",
+            json_str(key),
+            path,
+            children,
+            pages
+        );
+    }
+    s.push_str("\n]\n");
+    s
+}
+
+fn roots_json(roots: &std::collections::BTreeMap<String, Vec<SiteEntryMeta>>) -> String {
+    let mut s = String::from("{\n");
+    for (i, (root, rows)) in roots.iter().enumerate() {
+        if i > 0 {
+            s.push_str(",\n");
+        }
+        let list = rows
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let _ = write!(s, "  {}: [{}]", json_str(root), list);
+    }
+    s.push_str("\n}\n");
+    s
+}
+
+fn datasets_page() -> String {
+    let body = "<article class='entry'><h1 class='firstHeading'>Datoteke za snimanje</h1><p class='lede'>Statične JSON datoteke za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Datoteka</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, predok.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search.json'>search.json</a></td><td>Klientsky indeks iskanja.</td></tr></table></article>";
+    page("Datoteke za snimanje", body, 0)
+}
+
+fn build_json(build: &BuildMeta) -> String {
+    format!(
+        "{{\n  \"generated\": {},\n  \"git\": {},\n  \"entries\": {},\n  \"lemmas\": {}\n}}\n",
+        json_str(&build.generated),
+        json_str(&build.git),
+        build.total_entries,
+        build.lemma_total
+    )
+}
+
+fn sitemap_xml(metas: &[SiteEntryMeta]) -> String {
+    let mut s = String::from("<?xml version='1.0' encoding='UTF-8'?>\n<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>\n");
+    for loc in [
+        "index.html",
+        "search.html",
+        "all-pages.html",
+        "categories.html",
+        "portals.html",
+        "indices.html",
+        "site-stats.html",
+        "needs-review.html",
+        "borrowings.html",
+        "special.html",
+        "datasets.html",
+        "suffix-index.html",
+        "inflection-issues.html",
+        "featured.html",
+        "random.html",
+        "graph.html",
+        "contribute.html",
+    ] {
+        let _ = write!(s, "  <url><loc>{}{}</loc></url>\n", SITE_URL, loc);
+    }
+    for m in metas {
+        let _ = write!(
+            s,
+            "  <url><loc>{}entry/{}.html</loc></url>\n",
+            SITE_URL, m.id
+        );
+    }
+    s.push_str("</urlset>\n");
+    s
+}
+
 /// A full explainer of every accuracy statistic tracked against the official
 /// dictionary. Static content; figures are the current production measurements.
 fn metrics_page() -> String {
@@ -1959,26 +4221,26 @@ fn metrics_page() -> String {
   <h1 class='firstHeading'>Statistiky točnosti</h1>
   <p class='lede'>Ta strana objasnjaje <b>vsaku statistiku</b>, ktoru měrimo, da bismo proverili točnosť generatora protiv oficialnogo medžuslovjanskogo slovnika. Čisla sų aktualne měrjenja produkcijnoj konfiguracije; vsaky artefakt sę regeneruje v <code>target/eval/</code>.</p>
 
-  <h2 id='setup'>Kako radi benchmark</h2>
-  <p>Za vsaky smysl (16&nbsp;300 jednoslovnyh zapisov) generator dostaje <b>moderne slovjanske cognaty</b> + časť rěči, rod i priznak internacionalizma (<code>genesis</code>) — ale <b>nikogda</b> oficialnu medžuslovjansku formu (<code>isv</code>). On rekonstruuje lemmu, a my ju sravnjajemo s oficialnoju. Tako benchmark je <b>bez utečki</b> (leakage-free) ględe formy. Komanda: <code>evaluate</code>.</p>
+  <h2 id='setup'>Kako radi testovo množstvo</h2>
+  <p>Za vsaky smysl (16&nbsp;300 jednoslovnyh zapisov) generator dostaje <b>moderne slovjanske srodne slova</b> + časť rěči, rod i priznak internacionalizma (<code>genesis</code>) — ale <b>nikogda</b> oficialnu medžuslovjansku formu (<code>isv</code>). On rekonstruuje lemmu, a my ju sravnjajemo s oficialnoju. Tako testovo množstvo je <b>bez utečki</b> ględe formy. Komanda: <code>evaluate</code>.</p>
 
   <h2 id='pravopis'>Dva pravopisa: točno protiv normalizovano</h2>
-  <p>Medžuslovjansky ima dva pravopisa. <b>Naučny (flavorny)</b> drži etimologične znaky (ě, ę, ų, å, ȯ, ć, đ, y, mękke ĺ&nbsp;ń&nbsp;ŕ). <b>Standardny</b> jih složaje: ě→e, ę→e, ų→u, å→a, ȯ→o, ć→č, đ→dž. Zato imamo dva urovni sovpadenja — strogo (flavorno) i normalizovano.</p>
+  <p>Medžuslovjansky ima dva pravopisa. <b>Naučny (variantny)</b> drži etimologične znaky (ě, ę, ų, å, ȯ, ć, đ, y, mękke ĺ&nbsp;ń&nbsp;ŕ). <b>Standardny</b> jih složaje: ě→e, ę→e, ų→u, å→a, ȯ→o, ć→č, đ→dž. Zato imamo dva urovni sovpadenja — strogo (variantno) i normalizovano.</p>
 
   <h2 id='osnovne'>Osnovne měrky sovpadenja (evaluate)</h2>
   <table class='wikitable'>
     <thead><tr><th>Statistika</th><th>Aktualno</th><th>Značenje</th></tr></thead>
     <tbody>
-    <tr><td><b>točno top-1</b> (exact)</td><td>41,01%</td><td>Prědvidženje je <b>identično</b> oficialnoj flavornoj lemmě, znak-v-znak.</td></tr>
-    <tr><td><b>normalizovano top-1</b></td><td>48,88%</td><td>Identično <b>po složenju</b> oběh v standardny alfavit (ě=e, ć=č…). Glavna měrka i CI-porog.</td></tr>
-    <tr><td>skelet top-1</td><td>—</td><td>Identično po agresivnom ASCII-složenju (bez diakritiky, složene sibilanty). Najslabějše sito.</td></tr>
-    <tr><td><b>normalizovano top-3 / top-5</b></td><td>59,57% / 62,19%</td><td>Nekotory od prvyh 3 / 5 rangovanyh kandidatov sovpada (normalizovano).</td></tr>
-    <tr><td><b>srědnja edit-distancija</b></td><td>0,226</td><td>Srědnja normalizovana Levenshtein-distancija (0 = identično, 1 = vpolno različno).</td></tr>
+    <tr><td><b>točno prvy izbor</b> (povno)</td><td>41,01%</td><td>Prědvidženje je <b>identično</b> oficialnoj variantnoj lemmě, znak-v-znak.</td></tr>
+    <tr><td><b>normalizovano — prvy izbor</b></td><td>48,88%</td><td>Identično <b>po složenju</b> oběh v standardny alfavit (ě=e, ć=č…). Glavna měrka i porog stalnoj integracije.</td></tr>
+    <tr><td>skelet prvy izbor</td><td>—</td><td>Identično po agresivnom ASCII-složenju (bez diakritiky, složene sibilanty). Najslabějše sito.</td></tr>
+    <tr><td><b>normalizovano prve 3 / prve 5</b></td><td>59,57% / 62,19%</td><td>Nekotory od prvyh 3 / 5 rangovanyh kandidatov sovpada (normalizovano).</td></tr>
+    <tr><td><b>srědnja pravopisna distancija</b></td><td>0,226</td><td>Srědnja normalizovana Levenshtein-distancija (0 = identično, 1 = vpolno različno).</td></tr>
     </tbody>
   </table>
 
-  <h2 id='ladder'>Ablacijna lěstvica</h2>
-  <p>Točnosť raste od <b>baseline</b> (27,52% točno — prvobytny prototip) do <b>produkcije</b> (41,01%). Vsaka stupnja dodaje <b>točno jedno</b> pravilo, tako že jego dělta je pripisiva. Pravila, ktore izměrjeno <b>uhudšajų</b> točnosť, sų odbrošene i zapisane kako „odbrošene eksperimenty“. Polny izvěsť: <code>candidate-generation-report.md</code>.</p>
+  <h2 id='ladder'>Lěstvica odstranjenja</h2>
+  <p>Točnosť raste od <b>osnovy</b> (27,52% točno — prvobytny prototip) do <b>produkcije</b> (41,01%). Vsaka stupnja dodaje <b>točno jedno</b> pravilo, tako že jego dělta je pripisiva. Pravila, ktore izměrjeno <b>uhudšajų</b> točnosť, sų odbrošene i zapisane kako „odbrošene eksperimenty“. Polny izvěsť: <code>candidate-generation-report.md</code>.</p>
 
   <h2 id='razbivka'>Razbivka po kategorijah</h2>
   <ul>
@@ -1993,7 +4255,7 @@ fn metrics_page() -> String {
   <tbody><tr><td>vysoka</td><td>6&nbsp;975</td><td>72%</td></tr><tr><td>srědnja</td><td>7&nbsp;110</td><td>38%</td></tr><tr><td>nizka</td><td>2&nbsp;215</td><td>12%</td></tr></tbody></table>
 
   <h2 id='corpus'>Sajtovy pųť (corpus-eval)</h2>
-  <p>Sajt koristi ne glavny pipeline, a svoj <b>put cognatnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,3% točno / 62,8% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
+  <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,3% točno / 62,8% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
 
   <h2 id='proto'>Praslovjansky stroj (proto-eval)</h2>
   <p>Praslovjansky pravilny stroj izměrjeny izolovano od povęzanja, ranga i konsensusa:</p>
@@ -2003,30 +4265,30 @@ fn metrics_page() -> String {
   </ul>
   <p>Komanda: <code>proto-eval</code>.</p>
 
-  <h2 id='audit'>Analiza promahov (audit)</h2>
+  <h2 id='audit'>Analiza promahov (prověrka)</h2>
   <ul>
-    <li><b>Tri klasy promahov</b>: <i>križny klaster</i> (~48% — oficialny korenj je v dokazě, ale izbran drugy), <i>pravy klaster–kriva forma</i> (~30%), <i>korenj otsutny</i> (~21% — oficialnogo korenja net v cognatah).</li>
-    <li><b>Histogram pripisanja stupnjam</b>: prěigrivaje sled pravil pobědnika i pripisuje promah stupnji, ktora izgubila odgovor — klaster/glas ~31%, sľanje/rang ~21%, korenj-otsutny ~21%, normalizacija/predstavnik ~18%, zakončenja ~7%, praslovjansky stroj ~1,6%. Vidi <code>stage-attribution.md</code>.</li>
-    <li><b>Kohezija</b>: kolko različnyh cognatnyh klasterov ima vsaky smysl (89,5% ima ≥3).</li>
+    <li><b>Tri klasy promahov</b>: <i>križna grupa</i> (~48% — oficialny korenj je v dokazě, ale izbran drugy), <i>prava grupa–kriva forma</i> (~30%), <i>korenj otsutny</i> (~21% — oficialnogo korenja net v srodnyh slovah).</li>
+    <li><b>Histogram pripisanja stupnjam</b>: prěigrivaje sled pravil pobědnika i pripisuje promah stupnji, ktora izgubila odgovor — grupa/glas ~31%, sľanje/rang ~21%, korenj-otsutny ~21%, normalizacija/predstavnik ~18%, zakončenja ~7%, praslovjansky stroj ~1,6%. Vidi <code>stage-attribution.md</code>.</li>
+    <li><b>Kohezija</b>: kolko različnyh srodnyh grup ima vsaky smysl (89,5% ima ≥3).</li>
   </ul>
   <p>Komanda: <code>audit</code>.</p>
 
-  <h2 id='oracle'>Diagnostične granice (oracle)</h2>
+  <h2 id='oracle'>Diagnostične granice (idealny test)</h2>
   <p>Da izměriti <b>gorny prědel</b> vsake stupnje, dělajemo ju „idealnų“ (čitajų oficialny odgovor) dok vse niže ostaje realno. To <b>nikogda</b> ne ide v produkciju — samo pokazuje, gdě je vȯzstanovima greška.</p>
   <table class='wikitable'><thead><tr><th>Idealna stupnja</th><th>Δ točno</th></tr></thead>
-  <tbody><tr><td>izbor klastera</td><td>+3,9pp — glavno redakcijno, nedostižno slěpo</td></tr><tr><td>izbor predstavnika</td><td>+3,7pp — dostižno (vidi rep-eval)</td></tr><tr><td>proto-povęzanje</td><td>+2,6pp</td></tr><tr><td>vse trě zajedno</td><td>+10,7pp</td></tr></tbody></table>
+  <tbody><tr><td>izbor grupy</td><td>+3,9pp — glavno redakcijno, nedostižno slěpo</td></tr><tr><td>izbor predstavnika</td><td>+3,7pp — dostižno (vidi rep-eval)</td></tr><tr><td>proto-povęzanje</td><td>+2,6pp</td></tr><tr><td>vse trě zajedno</td><td>+10,7pp</td></tr></tbody></table>
   <p>Komanda: <code>oracle</code>.</p>
 
-  <h2 id='probes'>Izbor klastera i predstavnika (select-eval / rep-eval)</h2>
+  <h2 id='probes'>Izbor grupy i predstavnika (select-eval / rep-eval)</h2>
   <p>Měrimo, kolko od gornih prědelov može vȯzstanoviti <b>pravilo bez utečki</b> (ne čitajuče odgovor):</p>
   <ul>
-    <li><b>select-eval</b> (izbor klastera): vse slěpe pravila (najviše językov / větvi, internacionalizm-prvo) <b>uhudšajų</b> — potvŕđaje, že križny klaster je redakcijna granica, ne bug.</li>
+    <li><b>select-eval</b> (izbor grupy): vse slěpe pravila (najviše językov / větvi, internacionalizm-prvo) <b>uhudšajų</b> — potvŕđaje, že križna grupa je redakcijna granica, ne programna greška.</li>
     <li><b>rep-eval</b> (izbor predstavnika): pravilo <b>medoid</b> (najcentralnějša forma, najmenša suma distancij do drugih) daje <b>+1,09pp</b> i je uže v produkciji; ostaje ~+2,6pp do granice.</li>
   </ul>
 
   <h2 id='synonym'>Sinonimno-svěstna točnosť (synonym-eval)</h2>
-  <p>Strogy benchmark pytaje „sovpada li s <b>jedinoju</b> oficialnoju lemmoju?“, ale medžuslovjansky ima mnogo validnyh slov na jedno značenje, a slovnik zapisuje samo jedno. Ta měrka pripisuje prědvidženju, ktore reproduktuje <b>kojukoli</b> oficialnu lemmu s tym že značenjem (iz sinonimnogo tezaurusa):</p>
-  <table class='wikitable'><thead><tr><th>Měrka</th><th>top-1</th></tr></thead>
+  <p>Strogo testovo množstvo pytaje „sovpada li s <b>jedinoju</b> oficialnoju lemmoju?“, ale medžuslovjansky ima mnogo validnyh slov na jedno značenje, a slovnik zapisuje samo jedno. Ta měrka pripisuje prědvidženju, ktore reproduktuje <b>kojukoli</b> oficialnu lemmu s tym že značenjem (iz sinonimnogo tezaurusa):</p>
+  <table class='wikitable'><thead><tr><th>Měrka</th><th>prvy izbor</th></tr></thead>
   <tbody><tr><td>točno</td><td>41,01%</td></tr><tr><td>normalizovano (strogo)</td><td>48,88%</td></tr><tr><td><b>sinonimno-vključno</b></td><td><b>55,01%</b></td></tr></tbody></table>
   <p>Razbivka strogih promahov: <b>12,0% validny sinonim</b> (druga oficialna lemma, isto značenje), 7,7% druga oficialna lemma (drugo značenje), 80,3% ne-oficialna forma (nova ili prava greška — nerazlučima bez tezaurusa maternjego govoritelja). Komanda: <code>synonym-eval</code>.</p>
 
@@ -2045,20 +4307,20 @@ fn about_page(n: usize, norm_rate: f32, exact_rate: f32, top3: f32) -> String {
            <h2>Dvostupnjovy model</h2>
            <p>Za vsaky smysl:</p>
            <ol>
-             <li><b>Konsensus izbira korenj.</b> Iz cognatov v {langs} slovjanskyh językah glasujemo po <i>větvah</i> (izток / zapad / jug), da najveći język ne dominuje. Šest poddialektnyh grup s populacijnym vagom rěša, kotory korenj je najbolje medžuslovjansky.</li>
-             <li><b>Praslovjansko pravilo daje formu.</b> Kǫda smysl je leakage-frějno povezany s praslovjanskoju rekonstrukcijeju (*word) črěz naslědnikov + glosų, determinističny stroj izvodi formų s pravilnymi flavornymi znakami (ě, ć/đ, å, ȯ, y), kotoryh moderne refleksy ne mogųt vȯzstanoviti.</li>
+             <li><b>Konsensus izbira korenj.</b> Iz srodnyh slov v {langs} slovjanskyh językah glasujemo po <i>větvah</i> (izток / zapad / jug), da najveći język ne dominuje. Šest poddialektnyh grup s populacijnym vagom rěša, kotory korenj je najbolje medžuslovjansky.</li>
+             <li><b>Praslovjansko pravilo daje formu.</b> Kǫda smysl je bez utečki povezany s praslovjanskoju rekonstrukcijeju (*word) črěz naslědnikov + glosų, determinističny stroj izvodi formų s pravilnymi variantnymi znakami (ě, ć/đ, å, ȯ, y), kotoryh moderne refleksy ne mogųt vȯzstanoviti.</li>
            </ol>
 
            <h2>Točnost (měrjeno)</h2>
            <div class='statgrid'>
-             <div class='stat ok'><div class='statnum'>{exact:.1}%</div><div class='statlbl'>točno (exact)</div></div>
-             <div class='stat'><div class='statnum'>{norm:.1}%</div><div class='statlbl'>normalizovano top-1</div></div>
-             <div class='stat'><div class='statnum'>{top3:.1}%</div><div class='statlbl'>top-3</div></div>
+             <div class='stat ok'><div class='statnum'>{exact:.1}%</div><div class='statlbl'>povno točno</div></div>
+             <div class='stat'><div class='statnum'>{norm:.1}%</div><div class='statlbl'>normalizovano — prvy izbor</div></div>
+             <div class='stat'><div class='statnum'>{top3:.1}%</div><div class='statlbl'>prve 3</div></div>
            </div>
-           <p class='muted'>Benchmark: {n} zapisov s ≥2 modernymi cognatami. Generator nikǫda ne vidi oficialnų formų — jedino cognate + čęsť rěči + glosų — tako da měrjenje je bez propuščanja (leakage-free). Vsako pravilo je zadŕžano jedino ako je izměrjeno pobolšanje (ablation ladder).</p>
+           <p class='muted'>Testovo množstvo: {n} zapisov s ≥2 modernymi srodnymi slovami. Generator nikǫda ne vidi oficialnų formų — jedino srodne slova + čęsť rěči + glosų — tako da měrjenje je bez propuščanja. Vsako pravilo je zadŕžano jedino ako je izměrjeno pobolšanje (lěstvica odstranjenja).</p>
 
            <h2>Poznaty prědel</h2>
-           <p>Okolo 38% ostatnyh razlik sų <i>redakcijne</i> izbory (medžuslovjansky komitet izbral menšinny korenj) kotore se ne mogųt vȯzstanoviti iz modernyh cognatov. Čestny algoritmičny prědel je okolo 45–48% exact.</p>
+           <p>Okolo 38% ostatnyh razlik sų <i>redakcijne</i> izbory (medžuslovjansky komitet izbral menšinny korenj) kotore se ne mogųt vȯzstanoviti iz modernyh srodnyh slov. Čestny algoritmičny prědel je okolo 45–48% točno.</p>
 
            <h2>Izvory i licencija</h2>
            <p>Oficialny slovnik: interslavic-dictionary.com. Praslovjanske rekonstrukcije: Wiktionary (CC BY-SA). Formy prěgibanja: interslavic-rs. Kod: <a href='{repo}'>MIT</a>.</p>
@@ -2174,7 +4436,7 @@ tr:target{background:#fff3bf;outline:2px solid #f0c000}
 .spot-strength{margin-top:.45rem;font-size:.9em;color:var(--muted)}
 .portal-box button{margin-top:.4rem;padding:.3rem .7rem;border:1px solid var(--link);background:var(--link);color:#fff;border-radius:2px;cursor:pointer;font-size:.9em}
 .portal-box button:hover{background:#447ff5}
-.hit .hs{font-size:.85em;white-space:nowrap}
+.hit .hs,.hit .ha,.hit .hl{font-size:.85em;white-space:nowrap}.hit .ha,.hit .hl{color:var(--muted)}
 .wiki-main-list .wikitable td:nth-child(4){white-space:nowrap}
 @media (max-width:720px){main,.site-footer{padding-left:.8rem;padding-right:.8rem;border-left:none;border-right:none}.wikitable{font-size:.9em}}
 
@@ -2196,6 +4458,12 @@ a.chip:hover{background:#eaf3ff;border-color:var(--link);text-decoration:none}
 a.chip.xref{border-color:var(--link);color:var(--link);background:#eaf3ff}
 a.chip.xref::before{content:'→\00a0';opacity:.65}
 a.chip.xref:hover{background:var(--link);color:#fff}
+a.redlink{color:#ba0000!important;border-color:#d33!important;background:#fff5f5!important}
+a.redlink::after{content:' ?';font-size:.8em}
+.entry-tabs{display:flex;gap:.2rem;border-bottom:1px solid var(--border);margin:.1rem 0 .75rem;flex-wrap:wrap}
+.entry-tabs a{display:inline-block;padding:.25rem .65rem;border:1px solid var(--border);border-bottom:none;background:var(--th);color:var(--link);border-radius:2px 2px 0 0}
+.entry-tabs a.active{background:#fff;color:var(--text);font-weight:bold;position:relative;top:1px;text-decoration:none}
+.catlinks{border:1px solid var(--line);background:var(--page);padding:.35rem .55rem;margin:1.2rem 0 .7rem;font-size:.92em}.catlinks a{color:var(--link);background:none;border:0;padding:0}.catlinks a:visited{color:var(--visited)}.word-index td:first-child{white-space:nowrap}.filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;border:1px solid var(--line);background:var(--page);padding:.7rem;margin:.8rem 0}.filter-grid label{font-size:.9em;color:var(--muted)}.filter-grid select,.filter-grid input{width:100%;box-sizing:border-box;margin-top:.15rem;padding:.3rem;border:1px solid var(--border);background:#fff}.hq{color:var(--muted);font-size:.82em;margin-left:.4em}.graph-list .badge{min-width:4.5em;text-align:center}.dab{border-left:6px solid #36c}.reference-list li{margin:.25rem 0}.alphabet-index a{display:inline-block;margin:.05rem .35rem .05rem 0}.stat-box h3{font-size:1.05rem;margin:.2rem 0;border-bottom:1px solid var(--line)}.index-summary th{width:24%}.category-list{columns:2;column-gap:2rem}.entry-infobox{float:right;width:260px;margin:.2rem 0 .9rem 1rem;font-size:.9em}.entry-infobox caption{font-family:Georgia,serif;font-weight:bold;padding:.25rem}.entry-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1.15rem;align-items:start}.entry-main{min-width:0}.entry-rail{position:sticky;top:.75rem;max-height:calc(100vh - 1.5rem);overflow:auto;align-self:start}.entry-rail .entry-infobox{float:none;width:auto;margin:0 0 .8rem;font-size:.9em}.rail-box{border:1px solid var(--line);background:var(--page);padding:.55rem .65rem;margin:0 0 .8rem;overflow-x:auto}.rail-box h2{font-size:1.18rem;margin:.05rem 0 .45rem}.rail-box .wikitable{font-size:.86em;margin:.2rem 0}.rail-box .wikitable th,.rail-box .wikitable td{padding:.22rem .32rem}.pipeline-diagram{border:1px solid var(--line);background:var(--page);padding:.55rem;white-space:pre-wrap}.graph-filter button{margin:.15rem .25rem .15rem 0;border:1px solid var(--line);background:var(--page);color:var(--link);padding:.2rem .45rem}.source-table th{width:10rem}@media(max-width:1150px){.entry-grid{display:block}.entry-rail{position:static;max-height:none;overflow:visible}.entry-rail .entry-infobox{margin:.6rem 0}.rail-box{margin:.8rem 0}}@media(max-width:900px){.entry-infobox{float:none;width:auto;margin:.6rem 0}}
 
 /* ===== V-next layout: sticky header search + sidebar + always-open sections ===== */
 .site-header{position:sticky;top:0;z-index:50;align-items:center;gap:.8rem 1rem;padding:.4rem 1rem}
@@ -2234,6 +4502,21 @@ main{max-width:940px;margin:0;padding:1rem 1.9rem 2.6rem;border:none}
 .search-page .hit .hp{color:var(--muted);margin:0 .5em;font-size:.9em}
 .search-page .hit .hg{color:var(--muted)}
 @media (max-width:900px){.layout{grid-template-columns:1fr}.sidebar{position:static;max-height:none;border-right:none;border-bottom:1px solid var(--line)}main{max-width:none;padding:1rem}.home-cols{grid-template-columns:1fr}.nav{width:100%;order:3}}
+
+/* Strict wiki link styling: links are plain blue text, never button/chip pills. */
+*{border-radius:0!important}
+a.ext,a.chip,a.chip.xref,a.redlink,.entry-tabs a,.hit,.dropdown .hit,.dropdown .hit.more,.search-page #page-results .hit,.stat-card{display:inline!important;background:none!important;border:0!important;box-shadow:none!important;padding:0!important;color:var(--link)!important;text-decoration:none!important}
+a.ext:hover,a.chip:hover,a.chip.xref:hover,a.redlink:hover,.entry-tabs a:hover,.hit:hover,.dropdown .hit:hover,.search-page #page-results .hit:hover,.stat-card:hover{background:none!important;color:var(--link)!important;text-decoration:underline!important}
+a.chip.xref::before,a.redlink::after{content:''!important}.chips{display:block}.chips a{margin-right:.7em}.entry-tabs{display:block;border-bottom:1px solid var(--border);padding-bottom:.2rem}.entry-tabs a{margin-right:1em}.entry-tabs a.active{font-weight:bold;position:static;color:var(--text)!important}.results .hit,.dropdown .hit,.search-page #page-results .hit{display:block!important;padding:.18rem 0!important;border-bottom:1px solid var(--line)!important;color:var(--text)!important}.results .hit b,.dropdown .hit b,.search-page #page-results .hit b{color:var(--link)}button,.portal-box button,.graph-filter button,.hsearch-go,.side-link{background:none!important;border:0!important;box-shadow:none!important;color:var(--link)!important;padding:0!important;font:inherit!important;cursor:pointer!important}.hsearch-go{padding:0 .35rem!important;border:1px solid var(--border)!important;border-left:0!important}.hsearch-go:hover,button:hover,.portal-box button:hover,.graph-filter button:hover,.side-link:hover{text-decoration:underline!important;background:none!important;color:var(--link)!important}.badge,.pill,.reliability{border-radius:0!important}.cat-more summary{color:var(--link);cursor:pointer}.cat-more summary:hover{text-decoration:underline}
+
+/* Wider readable canvas and sticky rails that stay below the fixed header. */
+.layout{max-width:1680px}
+main{max-width:none;width:100%;box-sizing:border-box;padding-left:2rem;padding-right:2rem}
+.site-footer{max-width:1680px;box-sizing:border-box}
+.sidebar{top:56px;max-height:calc(100vh - 56px)}
+.bottom-meta{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:1.2rem 0 .8rem;padding:.35rem 0}.bottom-meta>summary{color:var(--link);cursor:pointer}.bottom-meta>summary:hover{text-decoration:underline}.bottom-meta section{margin:.75rem 0}.bottom-meta h2{font-size:1.15rem}
+@media (min-width:1151px){.entry-grid{grid-template-columns:minmax(0,1fr) 340px;gap:1.4rem}.entry-rail{position:sticky;top:64px;max-height:calc(100vh - 76px);overflow-y:auto;overflow-x:hidden}}
+@media (max-width:900px){main{width:auto;padding-left:1rem;padding-right:1rem}}
 
 "#;
 

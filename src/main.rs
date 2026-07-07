@@ -32,10 +32,11 @@ mod overrides;
 mod pipeline;
 mod proto;
 mod proto_link;
+mod russian_translit;
 mod site;
 mod thesaurus;
 
-const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/english/raw-wiktextract-data.jsonl";
+const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl";
 const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
 const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 const DEFAULT_OVERRIDES: &str = "data/overrides.toml";

@@ -537,6 +537,10 @@ mod tests {
             gloss: "x".into(),
             proto: proto.into(),
             etymon: etymon.into(),
+            etymology: Vec::new(),
+            categories: Vec::new(),
+            topics: Vec::new(),
+            tags: Vec::new(),
         }
     }
 

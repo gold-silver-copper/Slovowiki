@@ -1,0 +1,4 @@
+{
+  "voda": "Example curated note shown on the entry page when copied to data/curation-notes.json.",
+  "123": "Numeric ids also work, but headword keys are more stable across rebuilds."
+}

@@ -42,6 +42,14 @@ pub struct EnrichEntry {
     pub synonyms: Vec<String>,
     #[serde(default)]
     pub antonyms: Vec<String>,
+    /// Wiktextract category/topic/tag metadata from the native edition. Old
+    /// caches deserialize with empty lists; re-run `extract-enrich` to populate.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl EnrichEntry {
@@ -51,6 +59,9 @@ impl EnrichEntry {
             && self.related.is_empty()
             && self.synonyms.is_empty()
             && self.antonyms.is_empty()
+            && self.categories.is_empty()
+            && self.topics.is_empty()
+            && self.tags.is_empty()
     }
 }
 
@@ -288,6 +299,9 @@ fn merge(into: &mut EnrichEntry, other: &EnrichEntry) {
     push_new(&mut into.related, &other.related, 48);
     push_new(&mut into.synonyms, &other.synonyms, 16);
     push_new(&mut into.antonyms, &other.antonyms, 10);
+    push_new(&mut into.categories, &other.categories, 32);
+    push_new(&mut into.topics, &other.topics, 24);
+    push_new(&mut into.tags, &other.tags, 24);
 }
 
 /// Distil one wiktextract entry into a compact enrichment record.
@@ -329,6 +343,7 @@ fn entry_from_value(v: &Value, lang: &str, word: &str) -> EnrichEntry {
         }
     }
 
+    let (categories, topics, tags) = wiki_metadata(v);
     EnrichEntry {
         lang: lang.to_string(),
         word: word.to_string(),
@@ -337,6 +352,64 @@ fn entry_from_value(v: &Value, lang: &str, word: &str) -> EnrichEntry {
         related,
         synonyms: word_list(v.get("synonyms"), 16),
         antonyms: word_list(v.get("antonyms"), 10),
+        categories,
+        topics,
+        tags,
+    }
+}
+
+fn wiki_metadata(value: &Value) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut categories = string_values(value.get("categories"), 24);
+    let mut topics = string_values(value.get("topics"), 16);
+    let mut tags = string_values(value.get("tags"), 16);
+    push_limited(&mut tags, string_values(value.get("raw_tags"), 8), 24);
+    if let Some(senses) = value.get("senses").and_then(Value::as_array) {
+        for sense in senses {
+            push_limited(
+                &mut categories,
+                string_values(sense.get("categories"), 12),
+                32,
+            );
+            push_limited(&mut topics, string_values(sense.get("topics"), 12), 24);
+            push_limited(&mut tags, string_values(sense.get("tags"), 12), 28);
+            push_limited(&mut tags, string_values(sense.get("raw_tags"), 8), 32);
+        }
+    }
+    (categories, topics, tags)
+}
+
+fn string_values(v: Option<&Value>, cap: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(arr) = v.and_then(Value::as_array) else {
+        return out;
+    };
+    for item in arr {
+        if out.len() >= cap {
+            break;
+        }
+        let s = item
+            .as_str()
+            .or_else(|| item.get("name").and_then(Value::as_str))
+            .or_else(|| item.get("category").and_then(Value::as_str))
+            .or_else(|| item.get("topic").and_then(Value::as_str))
+            .or_else(|| item.get("tag").and_then(Value::as_str));
+        let Some(s) = s else { continue };
+        let s = s.trim();
+        if s.chars().count() >= 2 && !out.iter().any(|x| x == s) {
+            out.push(s.to_string());
+        }
+    }
+    out
+}
+
+fn push_limited(dst: &mut Vec<String>, src: Vec<String>, cap: usize) {
+    for s in src {
+        if dst.len() >= cap {
+            break;
+        }
+        if !dst.iter().any(|x| x == &s) {
+            dst.push(s);
+        }
     }
 }
 

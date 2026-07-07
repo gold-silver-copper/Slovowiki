@@ -247,6 +247,10 @@ pub fn run_corpus_eval(official_path: &Path, _out_dir: &Path) -> Result<()> {
                 } else {
                     proto_word.clone()
                 },
+                etymology: Vec::new(),
+                categories: Vec::new(),
+                topics: Vec::new(),
+                tags: Vec::new(),
             })
             .collect();
         let set = CognateSet {

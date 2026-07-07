@@ -11,4 +11,4 @@ serde_json = "1.0"
 # Git dependency (rev-pinned) so the build is self-contained — CI and GitHub
 # Pages can build without the sibling checkout. For local work against a
 # sibling clone, override with a [patch] or swap to a path dependency.
-interslavic = { git = "https://github.com/gold-silver-copper/interslavic-rs", rev = "b2925d60d73b64d8c0e48712079e8efbb3869ccb" }
+interslavic = { git = "https://github.com/gold-silver-copper/interslavic-rs", rev = "71c2ddcceb025e04a68514b48784ba2b2f010955" }

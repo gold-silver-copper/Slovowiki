@@ -44,7 +44,9 @@ from its **own** language's Wiktionary. Every entry page then shows, per cognate
 
 - **Three independent etymologies** side by side — the Russian (Vasmer), Polish
   and Czech accounts of the word's Proto-Slavic → PIE history, each linking to the
-  source edition.
+  source edition. Russian display text is deterministically transliterated into
+  the site's Interslavic-style Latin script during every `export` run; source
+  links still point to the original Russian Wiktionary pages.
 - **Extra meanings** — the native senses (a Russian entry often lists 10+ senses
   where the English gloss gives one).
 - **Semantic web** — related, derived, synonym and antonym terms as chips, each

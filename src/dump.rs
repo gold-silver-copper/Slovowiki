@@ -60,9 +60,24 @@ pub struct LemmaEntry {
     /// The Proto-Slavic reconstruction (`*orvьnъ`) for inherited lemmas, else "".
     #[serde(default)]
     pub proto: String,
-    /// The non-Slavic source (`la computare`, `grc τῆλε`) for borrowings, else "".
+    /// The non-Slavic source (`la computare`, `grc τῆле`) for borrowings, else "".
     #[serde(default)]
     pub etymon: String,
+    /// English Wiktionary etymology paragraphs for this lemma. These are source
+    /// evidence, so the generated site may display them in English.
+    #[serde(default)]
+    pub etymology: Vec<String>,
+    /// Wiktextract top-level and sense-level category names from English Wiktionary.
+    /// Old caches deserialize with empty lists; re-run `extract-lemmas` to populate.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Wiktextract topical labels, often the cleanest source for a Wiktionary-like
+    /// category tree (e.g. technology/tools/weapons/hunting).
+    #[serde(default)]
+    pub topics: Vec<String>,
+    /// Grammatical/register tags retained as secondary metadata categories.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl LemmaEntry {
@@ -178,6 +193,8 @@ fn lemma_from_value(value: &Value) -> Option<LemmaEntry> {
         return None;
     }
     let gloss = lemma_gloss(value)?;
+    let etymology = lemma_etymology(value);
+    let (categories, topics, tags) = wiki_metadata(value);
     Some(LemmaEntry {
         lang: lang.to_string(),
         word,
@@ -185,7 +202,95 @@ fn lemma_from_value(value: &Value) -> Option<LemmaEntry> {
         gloss,
         proto,
         etymon,
+        etymology,
+        categories,
+        topics,
+        tags,
     })
+}
+
+fn lemma_etymology(value: &Value) -> Vec<String> {
+    let mut out: Vec<String> = value
+        .get("etymology_texts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|s| truncate_chars(s.trim(), 1800))
+        .filter(|s| !s.is_empty())
+        .take(4)
+        .collect();
+    if out.is_empty() {
+        if let Some(s) = value.get("etymology_text").and_then(Value::as_str) {
+            let s = truncate_chars(s.trim(), 2600);
+            if !s.is_empty() {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(max_chars).collect::<String>())
+    }
+}
+
+fn wiki_metadata(value: &Value) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut categories = string_values(value.get("categories"), 24);
+    let mut topics = string_values(value.get("topics"), 16);
+    let mut tags = string_values(value.get("tags"), 16);
+    if let Some(senses) = value.get("senses").and_then(Value::as_array) {
+        for sense in senses {
+            push_limited(
+                &mut categories,
+                string_values(sense.get("categories"), 12),
+                32,
+            );
+            push_limited(&mut topics, string_values(sense.get("topics"), 12), 24);
+            push_limited(&mut tags, string_values(sense.get("tags"), 12), 24);
+            push_limited(&mut tags, string_values(sense.get("raw_tags"), 8), 28);
+        }
+    }
+    (categories, topics, tags)
+}
+
+fn string_values(v: Option<&Value>, cap: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let Some(arr) = v.and_then(Value::as_array) else {
+        return out;
+    };
+    for item in arr {
+        if out.len() >= cap {
+            break;
+        }
+        let s = item
+            .as_str()
+            .or_else(|| item.get("name").and_then(Value::as_str))
+            .or_else(|| item.get("category").and_then(Value::as_str))
+            .or_else(|| item.get("topic").and_then(Value::as_str))
+            .or_else(|| item.get("tag").and_then(Value::as_str));
+        let Some(s) = s else { continue };
+        let s = s.trim();
+        if s.chars().count() >= 2 && !out.iter().any(|x| x == s) {
+            out.push(s.to_string());
+        }
+    }
+    out
+}
+
+fn push_limited(dst: &mut Vec<String>, src: Vec<String>, cap: usize) {
+    for s in src {
+        if dst.len() >= cap {
+            break;
+        }
+        if !dst.iter().any(|x| x == &s) {
+            dst.push(s);
+        }
+    }
 }
 
 /// True for a Slavic (or Proto-Slavic) source language — a borrowing *within*
@@ -630,6 +735,10 @@ mod tests {
                 gloss: "water".into(),
                 proto: "*voda".into(),
                 etymon: String::new(),
+                etymology: Vec::new(),
+                categories: Vec::new(),
+                topics: Vec::new(),
+                tags: Vec::new(),
             }],
         };
         idx.attach_etymology(&corpus);
