@@ -1304,6 +1304,10 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
 
     // ---- Slice A: reflexive "X sę" through the existing pipeline ----
     let (mut a_n, mut a_ex, mut a_nm) = (0usize, 0usize, 0usize);
+    // Entries whose cognates carry no detectable reflexive marker: the pipeline
+    // never appends " sę", so the full-lemma comparison is a structural miss —
+    // reported as its own bucket, not hidden inside the accuracy number.
+    let mut a_nodetect = 0usize;
     let (mut a_dev, mut a_dev_nm, mut a_held, mut a_held_nm) = (0usize, 0usize, 0usize, 0usize);
     for e in &multi {
         let toks: Vec<&str> = e.isv.trim().split_whitespace().collect();
@@ -1315,6 +1319,9 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         }
         a_n += 1;
+        if !input.reflexive {
+            a_nodetect += 1;
+        }
         let (cands, _) = crate::pipeline::generate(&input, proto.as_ref(), &cfg);
         let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
         let ex = ortho::exact_match(&pred, e.isv.trim());
@@ -1345,14 +1352,15 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         let mut cells1: HashMap<String, String> = HashMap::new();
         let mut cells2: HashMap<String, String> = HashMap::new();
         for (lang, cell) in &e.cells {
-            let variants = crate::normalize::split_cell(cell);
-            let Some((first, _)) = variants.first() else {
-                continue;
-            };
-            let t: Vec<&str> = first.split_whitespace().collect();
-            if t.len() == 2 {
-                cells1.insert(lang.clone(), t[0].to_string());
-                cells2.insert(lang.clone(), t[1].to_string());
+            // Any variant citing a two-token form votes — languages often list
+            // a one-word synonym first and the collocation second.
+            for (variant, _) in crate::normalize::split_cell(cell) {
+                let t: Vec<&str> = variant.split_whitespace().collect();
+                if t.len() == 2 {
+                    cells1.insert(lang.clone(), t[0].to_string());
+                    cells2.insert(lang.clone(), t[1].to_string());
+                    break;
+                }
             }
         }
         if cells1.len() < 2 {
@@ -1383,6 +1391,10 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         };
         let w1 = agree_adjective(&top(&in1), e.noun_traits.gender);
         let w2 = top(&in2);
+        if w1.is_empty() || w2.is_empty() {
+            b_gen -= 1; // a position produced no candidate: not generatable
+            continue;
+        }
         let pred = format!("{w1} {w2}");
         let ex = ortho::exact_match(&pred, e.isv.trim());
         let nm = ortho::normalized_match(&pred, e.isv.trim());
@@ -1420,38 +1432,52 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     }
     let (mut p_gloss, mut p_morph) = (0usize, 0usize);
     let (mut p_both, mut p_one, mut p_neither) = (0usize, 0usize, 0usize);
-    for (g, ipfs) in &by_gloss_ipf {
-        let Some(pfs) = by_gloss_pf.get(g) else {
+    // Memoized per-entry correctness: an entry's pipeline result is independent
+    // of its partner, and 1:1 greedy matching keeps hub lemmas from dominating
+    // the metric (each entry participates in at most one pair per gloss).
+    let mut score_memo: HashMap<String, bool> = HashMap::new();
+    let mut glosses: Vec<&&str> = by_gloss_ipf.keys().collect();
+    glosses.sort(); // deterministic pair selection
+    for g in glosses {
+        let ipfs = &by_gloss_ipf[*g];
+        let Some(pfs) = by_gloss_pf.get(*g) else {
             continue;
         };
+        p_gloss += ipfs.len().min(pfs.len());
+        let mut used: Vec<bool> = vec![false; pfs.len()];
         for i in ipfs {
-            for q in pfs {
-                p_gloss += 1;
-                // Morphological aspect partners share the consonant root (the
-                // pf is a prefixation or stem alternation of the ipf).
-                let ki = ortho::consonant_key(&ortho::to_standard(&i.isv.to_lowercase()));
-                let kq = ortho::consonant_key(&ortho::to_standard(&q.isv.to_lowercase()));
-                if !(ki.ends_with(&kq)
-                    || kq.ends_with(&ki)
-                    || ortho::shares_consonant_root(&ki, &kq))
-                {
-                    continue;
+            let ki = ortho::consonant_key(&ortho::to_standard(&i.isv.to_lowercase()));
+            let Some(qi) = pfs.iter().enumerate().position(|(x, q)| {
+                if used[x] {
+                    return false;
                 }
-                p_morph += 1;
-                let score = |e: &OfficialEntry| -> bool {
-                    let input = build_input(e);
-                    if !input.forms.iter().any(|f| f.modern) {
-                        return false;
-                    }
+                let kq = ortho::consonant_key(&ortho::to_standard(&q.isv.to_lowercase()));
+                ki.ends_with(&kq) || kq.ends_with(&ki) || ortho::shares_consonant_root(&ki, &kq)
+            }) else {
+                continue;
+            };
+            used[qi] = true;
+            let q = pfs[qi];
+            p_morph += 1;
+            let mut score = |e: &OfficialEntry| -> bool {
+                if let Some(&v) = score_memo.get(&e.id) {
+                    return v;
+                }
+                let input = build_input(e);
+                let v = if input.forms.iter().any(|f| f.modern) {
                     let (cands, _) = crate::pipeline::generate(&input, proto.as_ref(), &cfg);
                     let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
                     ortho::normalized_match(&pred, e.isv.trim())
+                } else {
+                    false
                 };
-                match (score(i), score(q)) {
-                    (true, true) => p_both += 1,
-                    (false, false) => p_neither += 1,
-                    _ => p_one += 1,
-                }
+                score_memo.insert(e.id.clone(), v);
+                v
+            };
+            match (score(i), score(q)) {
+                (true, true) => p_both += 1,
+                (false, false) => p_neither += 1,
+                _ => p_one += 1,
             }
         }
     }
@@ -1493,7 +1519,7 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     writeln!(s, "# Multi-word & aspect-pair benchmark (multiword-eval)\n")?;
     writeln!(
         s,
-        "**Denominators:** {} multi-word official lemmas ({} reflexive `X sę`, {} two-token, {} longer — the headline benchmark excludes all of them); {} morphologically related aspect pairs (of {} gloss-matched). **Leakage story:** the gold `isv` only selects the slice; generation sees the cognate cells + POS/gender, as in the headline benchmark. **Dev/holdout (seeded id split, normalized):** reflexive {:.2}%/{:.2}%, two-token {:.2}%/{:.2}%.\n",
+        "**Denominators:** {} multi-word official lemmas ({} reflexive `X sę`, {} two-token, {} longer — the headline benchmark excludes all of them); {} morphologically related 1:1 aspect pairs (of {} gloss-matched candidates). **Leakage story:** the gold `isv` only selects the slice; generation sees the cognate cells + POS/gender, as in the headline benchmark. **Dev/holdout (seeded id split, normalized, over the scored subsets):** reflexive {:.2}%/{:.2}%, two-token {:.2}%/{:.2}%.\n",
         multi.len(),
         n_sie,
         n_two,
@@ -1513,6 +1539,11 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         a_n,
         pct(a_ex, a_n),
         pct(a_nm, a_n)
+    )?;
+    writeln!(
+        s,
+        "| — of which no reflexive marker detected in the cognates (structural miss: ` sę` is never appended) | {} | — | — |",
+        a_nodetect
     )?;
     writeln!(
         s,

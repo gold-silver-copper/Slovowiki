@@ -138,9 +138,9 @@ normalized** accuracy.
 headline benchmark excludes all 1,837 multi-word official lemmas; this scores
 them separately — reflexive `X sę` (561 lemmas, the existing pipeline just never
 scored them): **25.0% exact / 30.8% normalized**; two-token collocations
-reconstructed per position with gender agreement (843 of 1,083 generatable):
-**11.5% / 17.3%**; and 1,566 morphologically related ipf/pf **aspect pairs**:
-both members correct 16.9%, one 33.0%, neither 50.1%. Full report:
+reconstructed per position with gender agreement (886 of 1,083 generatable):
+**11.9% / 17.7%**; and 1,440 morphologically related 1:1 ipf/pf **aspect
+pairs**: both members correct 16.5%, one 32.9%, neither 50.6%. Full report:
 `target/eval/multiword-aspect.md`.
 
 **Word-formation layer** (`src/derive.rs`, `cargo run --release -- derive-eval`):
