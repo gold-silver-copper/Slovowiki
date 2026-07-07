@@ -94,6 +94,16 @@ The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separate
 where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
 headline because it only scores words the site actually derives from a known ancestor.
 
+**Synonym-aware accuracy** (`cargo run --release -- synonym-eval`) reframes the
+strict metric honestly: Interslavic often has several valid words per concept and
+the dictionary records only one as *the* lemma, so a "miss" is frequently a valid
+synonym the committee didn't pick. Crediting a prediction that reproduces **any**
+official ISV lemma whose gloss matches the concept lifts top-1 from 48.9%
+normalized to **56.0% synonym-inclusive**; of the strict misses, ≥14% are
+demonstrably valid ISV synonyms (another official lemma for the same concept) and
+the rest are a mix of genuine errors and valid synonyms the dictionary doesn't
+list separately.
+
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss and
 attributes it to the pipeline **stage** that lost the official form (a full
 `RuleStep`-trace replay — see `target/eval/stage-attribution.md`): ~31%

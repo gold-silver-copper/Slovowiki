@@ -1094,6 +1094,138 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Synonym-aware accuracy (`synonym-eval`). The strict metric asks "did we match
+/// the ONE official headword?", but the cluster-selection measurement proved ~49%
+/// of misses are editorial word-choice — the engine produced a valid Interslavic
+/// word the committee simply did not pick as *the* lemma. This credits a
+/// prediction when it reproduces **any** official Interslavic lemma whose gloss
+/// matches this concept (an acceptable synonym), and breaks the remaining misses
+/// into "another official word, different sense" vs "no official word" (a genuinely
+/// novel/wrong form). Diagnostic only — never a gate.
+pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    use std::collections::{HashMap, HashSet};
+    let all = official::load(official_path)?;
+    // Every official ISV lemma → the union of its English gloss tokens, so a
+    // prediction can be checked against the meaning of any official word.
+    let mut by_form: HashMap<String, HashSet<String>> = HashMap::new();
+    for e in &all {
+        let isv = e.isv.trim();
+        if isv.is_empty() {
+            continue;
+        }
+        let key = ortho::to_standard(&isv.to_lowercase());
+        by_form
+            .entry(key)
+            .or_default()
+            .extend(crate::dump::gloss_tokens(&e.english));
+    }
+
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+    let (mut n, mut exact, mut norm) = (0usize, 0usize, 0usize);
+    // Miss breakdown: valid synonym | official word, other sense | not any official.
+    let (mut syn, mut other_sense, mut not_official) = (0usize, 0usize, 0usize);
+
+    for entry in all.iter().filter(|e| e.is_benchmarkable()) {
+        let input = build_input(entry);
+        if !input.forms.iter().any(|f| f.modern) {
+            continue;
+        }
+        n += 1;
+        let (cands, _) = crate::pipeline::generate(&input, proto.as_ref(), &cfg);
+        let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+        exact += ortho::exact_match(&pred, &entry.isv) as usize;
+        let nm = ortho::normalized_match(&pred, &entry.isv);
+        norm += nm as usize;
+        if nm {
+            continue;
+        }
+        // A miss: classify the prediction.
+        let pk = ortho::to_standard(&pred.trim().to_lowercase());
+        let gloss = crate::dump::gloss_tokens(&entry.english);
+        match by_form.get(&pk) {
+            Some(toks) if !pred.is_empty() && gloss.iter().any(|t| toks.contains(t)) => syn += 1,
+            Some(_) if !pred.is_empty() => other_sense += 1,
+            _ => not_official += 1,
+        }
+    }
+
+    let miss = n - norm;
+    let pct = |a: usize, b: usize| {
+        if b == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / b as f32
+        }
+    };
+    let syn_incl = norm + syn;
+    println!("Synonym-aware accuracy over {n} benchmarkable meanings:");
+    println!("  exact top-1                 {:.2}%", pct(exact, n));
+    println!("  normalized top-1 (strict)   {:.2}%", pct(norm, n));
+    println!(
+        "  synonym-inclusive top-1     {:.2}%   (+{:.2}pp: produced a valid ISV synonym)",
+        pct(syn_incl, n),
+        pct(syn, n)
+    );
+    println!("  Of the {miss} strict misses:");
+    println!(
+        "    valid ISV synonym (another official lemma, same concept) {:>5}  {:>5.1}%",
+        syn,
+        pct(syn, miss)
+    );
+    println!(
+        "    another official lemma, different sense                  {:>5}  {:>5.1}%",
+        other_sense,
+        pct(other_sense, miss)
+    );
+    println!(
+        "    not any official lemma (novel form or genuine error)     {:>5}  {:>5.1}%",
+        not_official,
+        pct(not_official, miss)
+    );
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# Synonym-aware accuracy (synonym-eval)\n")?;
+    writeln!(
+        s,
+        "The strict benchmark scores agreement with the ONE official headword. But ~49% of misses are editorial word-choice (see the cluster-selection measurement): the engine produced a valid Interslavic word the committee did not pick as *the* lemma. This credits a prediction that reproduces **any** official ISV lemma whose gloss matches the concept.\n"
+    )?;
+    writeln!(s, "| Metric | top-1 |")?;
+    writeln!(s, "|---|---:|")?;
+    writeln!(s, "| exact | {:.2}% |", pct(exact, n))?;
+    writeln!(s, "| normalized (strict) | {:.2}% |", pct(norm, n))?;
+    writeln!(
+        s,
+        "| **synonym-inclusive** | **{:.2}%** |",
+        pct(syn_incl, n)
+    )?;
+    writeln!(s, "\n## What the {miss} strict misses actually are\n")?;
+    writeln!(s, "| Class | count | share of misses |")?;
+    writeln!(s, "|---|---:|---:|")?;
+    writeln!(
+        s,
+        "| valid ISV synonym (another official lemma, same concept) | {} | {:.1}% |",
+        syn,
+        pct(syn, miss)
+    )?;
+    writeln!(
+        s,
+        "| another official lemma, different sense | {} | {:.1}% |",
+        other_sense,
+        pct(other_sense, miss)
+    )?;
+    writeln!(
+        s,
+        "| not any official lemma (novel form or genuine error) | {} | {:.1}% |",
+        not_official,
+        pct(not_official, miss)
+    )?;
+    std::fs::write(out_dir.join("synonym-accuracy.md"), s)?;
+    println!("Wrote {}", out_dir.join("synonym-accuracy.md").display());
+    Ok(())
+}
+
 /// Representative-selection headroom (the rep-eval probe). Oracle-representative
 /// showed ~+3.7pp is available from picking a better surface *within the winning
 /// cluster* — and, unlike cluster choice, that is a mechanical (non-editorial)

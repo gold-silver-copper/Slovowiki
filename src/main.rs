@@ -151,6 +151,16 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
+    /// Synonym-aware accuracy: credit a prediction that reproduces ANY official
+    /// Interslavic lemma whose gloss matches the concept (a valid synonym the
+    /// committee didn't pick as the headword), and break misses into synonym /
+    /// other-sense / not-official. Diagnostic — an honest picture, never a gate.
+    SynonymEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
     Evaluate {
         /// Official dictionary: full export with per-language translations.
@@ -206,6 +216,7 @@ fn main() -> Result<()> {
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),
         Command::SelectEval { official, out } => eval::run_select_eval(&official, &out),
         Command::RepEval { official, out } => eval::run_rep_eval(&official, &out),
+        Command::SynonymEval { official, out } => eval::run_synonym_eval(&official, &out),
         Command::Evaluate {
             official,
             dump,
