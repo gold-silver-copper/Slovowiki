@@ -96,15 +96,9 @@ fn iotate_final(stem: &str) -> String {
 }
 
 /// A stem counts as soft for the O⇒E ending alternation (RULE_SPEC §3.4).
+/// One definition of softness for the whole crate: morph's.
 fn ends_soft(stem: &str) -> bool {
-    stem.ends_with("lj")
-        || stem.ends_with("nj")
-        || stem.ends_with("rj")
-        || stem.ends_with("dž")
-        || matches!(
-            stem.chars().last(),
-            Some('š' | 'ž' | 'č' | 'c' | 'j' | 'ć' | 'đ')
-        )
+    crate::morph::stem_is_soft(stem) || stem.ends_with("rj")
 }
 
 fn strip_final_vowel(w: &str) -> &str {
@@ -174,13 +168,17 @@ pub fn derive_family(base: &str, pos: Pos) -> Vec<Derived> {
                         "odglagolny imennik",
                     );
                 } else if let Some(istem) = stem.strip_suffix('i') {
-                    push(
-                        &mut out,
-                        format!("{}eńje", iotate_final(istem)),
-                        Pos::Noun,
-                        "vnoun",
-                        "odglagolny imennik",
-                    );
+                    // Root i-verbs (piti, biti, žiti) take -ťje (piťje), not the
+                    // iotated -jeńje; only derive suffixal -iti stems (≥2 chars).
+                    if istem.chars().count() >= 2 {
+                        push(
+                            &mut out,
+                            format!("{}eńje", iotate_final(istem)),
+                            Pos::Noun,
+                            "vnoun",
+                            "odglagolny imennik",
+                        );
+                    }
                 }
                 // Agentive: učiti → učitelj, izdavati → izdavatelj.
                 if stem.chars().count() >= 2 && !stem.ends_with('n') {
@@ -195,18 +193,18 @@ pub fn derive_family(base: &str, pos: Pos) -> Vec<Derived> {
             }
         }
         Pos::Noun => {
-            if let Some(tstem) = b.strip_suffix("telj").map(|_| b) {
+            if b.ends_with("telj") {
                 // Agent-noun family: -teljstvo, -teljka.
                 push(
                     &mut out,
-                    format!("{tstem}stvo"),
+                    format!("{b}stvo"),
                     Pos::Noun,
                     "teljstvo",
                     "odvlečeny imennik",
                 );
                 push(
                     &mut out,
-                    format!("{tstem}ka"),
+                    format!("{b}ka"),
                     Pos::Noun,
                     "teljka",
                     "žensky dějatelj",
@@ -371,7 +369,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
     let mut index: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, e) in entries.iter().enumerate() {
         let w = e.isv.trim();
-        if w.is_empty() || w.contains(' ') {
+        if w.is_empty() || w.contains(' ') || w.contains('#') {
             continue;
         }
         index
@@ -485,7 +483,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
         }
         // -ny / -sky ← noun
         if d.pos == Pos::Adjective && n > 4 {
-            for (suf, pat) in [("ny", "ny"), ("sky", "sky")] {
+            for suf in ["ny", "sky"] {
                 if let Some(t) = w.strip_suffix(suf) {
                     let mut cands: Vec<String> = Vec::new();
                     for inv in inverse_palatalization(t) {
@@ -495,7 +493,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
                         }
                     }
                     if let Some(bi) = lookup(&cands, Pos::Noun) {
-                        push(bi, di, if pat == "ny" { "ny" } else { "sky" }, &mut pairs);
+                        push(bi, di, if suf == "ny" { "ny" } else { "sky" }, &mut pairs);
                     }
                 }
             }
@@ -509,6 +507,17 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
             }
         }
     }
+    // One relation, one pair: duplicate official rows (homograph/duplicate
+    // lemma entries) otherwise double-count in numerator and denominator.
+    let mut seen: std::collections::HashSet<(String, String, &'static str)> =
+        std::collections::HashSet::new();
+    pairs.retain(|p| {
+        seen.insert((
+            ortho::to_standard(&entries[p.base].isv.trim().to_lowercase()),
+            ortho::to_standard(&entries[p.derived].isv.trim().to_lowercase()),
+            p.pattern,
+        ))
+    });
     pairs
 }
 
@@ -570,7 +579,9 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             s.naive_exact += nex as usize;
             s.naive_norm += nnm as usize;
         }
-        if !nm && miss_rows.len() < 400 {
+        // The miss sample is the tuning artifact — publish DEV misses only,
+        // so nobody tunes seam rules against holdout gold forms.
+        if !nm && miss_rows.len() < 400 && !crate::eval::is_holdout_id(&derived.id) {
             miss_rows.push(format!(
                 "{},{},{},{},{}",
                 p.pattern,
@@ -623,7 +634,7 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     writeln!(s, "# Derivation benchmark (derive-eval)\n")?;
     writeln!(
         s,
-        "**Denominator:** {n} derivationally related official lemma pairs, mined by inverse suffix lookup over the official dictionary ({} entries). **Leakage story:** the layer receives the official *base* lemma + POS and must produce the official *derivative* forward; it never sees the derivative. Pair *selection* shares alternation knowledge with the layer (a disclosed bias — pairs the miner cannot align are excluded), but forward generation must still choose the right suffix allomorph, seam alternation and flavored spelling. **Dev/holdout (seeded id split):** normalized {:.2}% / {:.2}% ({} held out).\n",
+        "**Denominator:** {n} derivationally related official lemma pairs, mined by inverse suffix lookup over the official dictionary ({} entries). **Leakage story:** the layer receives the official *base* lemma + POS and must produce the official *derivative* forward; it never sees the derivative. Pair *selection* shares alternation knowledge with the layer (a disclosed bias — pairs the miner cannot align are excluded), but forward generation must still choose the right suffix allomorph, seam alternation and flavored spelling. A small share of mined pairs are string coincidences rather than true derivations (e.g. vino→vinny 'wine→guilty'); they inflate both layers symmetrically and are counted in the disclosed selection bias. **Dev/holdout (seeded id split):** normalized {:.2}% / {:.2}% ({} held out).\n",
         entries.len(),
         pct(dev.norm, dev.n),
         pct(held.norm, held.n),
@@ -666,7 +677,10 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             pct(st.naive_norm, st.n)
         )?;
     }
-    writeln!(s, "\n## Nearest misses (sample)\n")?;
+    writeln!(
+        s,
+        "\n## Nearest misses (dev split only — holdout misses are never published)\n"
+    )?;
     writeln!(
         s,
         "```\npattern,base,official,derived,naive\n{}\n```",
@@ -713,6 +727,39 @@ mod tests {
         let f = fam("učiti", Pos::Verb);
         assert!(f.contains(&("učeńje".into(), "vnoun")));
         assert!(f.contains(&("učitelj".into(), "telj")));
+    }
+
+    #[test]
+    fn naive_and_seam_layers_cover_the_same_patterns() {
+        // The naive baseline must target the same suffixes as the seam-aware
+        // layer, or the derive-eval delta measures a missing baseline pattern
+        // instead of the seam morphophonemics. Guard with representative bases.
+        for (base, pos) in [
+            ("dobry", Pos::Adjective),
+            ("prositi", Pos::Verb),
+            ("dělati", Pos::Verb),
+            ("kniga", Pos::Noun),
+            ("učitelj", Pos::Noun),
+        ] {
+            let mut a: Vec<&str> = derive_family(base, pos).iter().map(|d| d.pattern).collect();
+            let mut b: Vec<&str> = naive_family(base, pos).iter().map(|d| d.pattern).collect();
+            a.sort();
+            b.sort();
+            assert_eq!(a, b, "pattern sets differ for {base}");
+        }
+    }
+
+    #[test]
+    fn bare_root_i_verbs_get_no_iotated_gerund() {
+        // piti/biti/žiti take -ťje (piťje), not a garbage iotated -jeńje.
+        for v in ["piti", "biti", "žiti"] {
+            assert!(
+                !derive_family(v, Pos::Verb)
+                    .iter()
+                    .any(|d| d.pattern == "vnoun"),
+                "{v} must not derive an iotated gerund"
+            );
+        }
     }
 
     #[test]

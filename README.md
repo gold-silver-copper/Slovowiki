@@ -132,12 +132,14 @@ from one citation form the engine derives its regular family — abstract `-osť
 adverb, verbal noun `-ńje` (with iotation: prositi→prošeńje, roditi→rođeńje),
 agentive `-telj`/`-teljstvo`/`-teljka`, denominal `-ny`/`-sky` (with first
 palatalization: kniga→knižny, Grek→grečsky), diminutive `-ka`/`-ica`, negation
-`ne-`. Benchmarked on **2,214 derivationally related official lemma pairs**
-(mined by inverse suffix lookup; the layer derives the official base forward and
-never sees the derivative): **96.1% exact / 99.7% normalized**, vs 48.1% / 83.6%
-for naive concatenation — the seam morphophonemics is worth **+48pp exact**.
-Every entry page shows the family ("Slovotvorstvo") with official members
-cross-linked and unattested members marked as machine proposals.
+`ne-`. Benchmarked on **2,115 derivationally related official lemma pairs**
+(mined by inverse suffix lookup, deduped across duplicate rows; the layer
+derives the official base forward and never sees the derivative): **96.0% exact
+/ 99.7% normalized**, vs 47.9% / 83.6% for naive concatenation — the seam
+morphophonemics is worth **+48pp exact**. Every entry page (generated and
+official-only) shows the family ("Slovotvorstvo") with official members
+cross-linked and unattested members marked as machine proposals; families
+derived from an unmatched reconstruction are flagged as hypothetical.
 
 **Confidence calibration** (high-confidence candidates match far more often — as intended):
 

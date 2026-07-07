@@ -2075,14 +2075,11 @@ fn fnv1a(s: &str) -> u64 {
 /// ~25% of entries form the HOLDOUT split; rules are developed against the DEV
 /// split and must generalize to the holdout. A rule that gains on dev but not on
 /// holdout is memorizing dictionary idiosyncrasies (overfitting guard).
-fn is_holdout(id: &str) -> bool {
-    fnv1a(id) % 4 == 0
-}
-
-/// Public alias for other benchmarks (derive-eval etc.) so every report uses
-/// the SAME seeded split.
+/// The ONE seeded dev/holdout split, shared by every benchmark (evaluate,
+/// derive-eval, …) so all dev/holdout numbers are computed on the same
+/// entries. Never change the hash or the modulus.
 pub fn is_holdout_id(id: &str) -> bool {
-    is_holdout(id)
+    fnv1a(id) % 4 == 0
 }
 
 /// Complementary error function (Abramowitz & Stegun 7.1.26, |ε| ≤ 1.5e-7),
@@ -2162,7 +2159,7 @@ fn split_rates(results: &[EntryResult]) -> SplitRates {
     let (mut de, mut dn, mut dd) = (0usize, 0usize, 0usize);
     let (mut he, mut hn, mut hd) = (0usize, 0usize, 0usize);
     for r in results {
-        if is_holdout(&r.id) {
+        if is_holdout_id(&r.id) {
             hd += 1;
             he += r.exact as usize;
             hn += r.normalized as usize;
@@ -2351,12 +2348,12 @@ fn write_methodology(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
     let dev: Vec<&EntryResult> = production
         .results
         .iter()
-        .filter(|r| !is_holdout(&r.id))
+        .filter(|r| !is_holdout_id(&r.id))
         .collect();
     let held: Vec<&EntryResult> = production
         .results
         .iter()
-        .filter(|r| is_holdout(&r.id))
+        .filter(|r| is_holdout_id(&r.id))
         .collect();
     let mut dev_bins = vec![(0usize, 0usize); 10]; // (n, hits) per score decile
     for r in &dev {
@@ -2445,7 +2442,7 @@ fn write_methodology(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
             p,
             "{},{},{},{},{},{},{},{},{:.3},{},{},{},{:.3}",
             r.id,
-            is_holdout(&r.id) as u8,
+            is_holdout_id(&r.id) as u8,
             csv_escape(&r.gloss),
             r.pos.code(),
             csv_escape(&r.isv),

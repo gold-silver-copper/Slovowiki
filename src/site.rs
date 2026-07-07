@@ -261,7 +261,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     }
 
     let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap_or_default();
-    let mut official_map: std::collections::HashMap<String, (String, String)> =
+    let mut official_map: std::collections::HashMap<String, (String, String, crate::model::Pos)> =
         std::collections::HashMap::new();
     for e in &official_entries {
         let isv = e.isv.trim();
@@ -270,7 +270,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }
         official_map
             .entry(crate::orthography::to_standard(&isv.to_lowercase()))
-            .or_insert_with(|| (isv.to_string(), e.english.clone()));
+            .or_insert_with(|| (isv.to_string(), e.english.clone(), e.pos));
     }
 
     let entry_dir = out_dir.join("entry");
@@ -332,7 +332,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             g.candidates.iter().take(5).enumerate().find_map(|(i, c)| {
                 official_map
                     .get(&crate::orthography::to_standard(&c.form.to_lowercase()))
-                    .map(|(isv, en)| (i + 1, isv.clone(), en.clone()))
+                    .map(|(isv, en, _)| (i + 1, isv.clone(), en.clone()))
             });
         for c in g.candidates.iter().take(5) {
             covered.insert(crate::orthography::to_standard(&c.form.to_lowercase()));
@@ -644,16 +644,19 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Some((_, isv, _)) => synonyms_block(isv, &thesaurus, &isv_to_id),
             None => String::new(),
         };
-        // Word-formation family from the display headword (the official lemma
-        // when matched, else the reconstruction).
-        let derivation = derivation_block(
-            p.matched
-                .as_ref()
-                .map(|(_, isv, _)| isv.as_str())
-                .unwrap_or_else(|| p.g.form()),
-            p.g.set.pos,
-            &isv_to_id,
-        );
+        // Word-formation family from the display headword: the official lemma
+        // with its OFFICIAL part of speech when matched (the form-only match can
+        // cross POS), else the reconstruction — marked as such in the block.
+        let derivation = match &p.matched {
+            Some((_, isv, _)) => {
+                let pos = official_map
+                    .get(&crate::orthography::to_standard(&isv.to_lowercase()))
+                    .map(|(_, _, pos)| *pos)
+                    .unwrap_or(p.g.set.pos);
+                derivation_block(isv, pos, &isv_to_id, true)
+            }
+            None => derivation_block(p.g.form(), p.g.set.pos, &isv_to_id, false),
+        };
         let meta = meta_by_id.get(&p.id).expect("generated entry meta");
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
         let entry_card = entry_infobox(meta);
@@ -737,6 +740,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         let isv = e.isv.trim();
         let fold = crate::orthography::to_standard(&isv.to_lowercase());
         let syn = synonyms_block(isv, &thesaurus, &isv_to_id);
+        let deriv = derivation_block(isv, e.pos, &isv_to_id, true);
         let meta = meta_by_id.get(oid).expect("official-only entry meta");
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
         let entry_card = entry_infobox(meta);
@@ -754,6 +758,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Some(&xref),
             *oid,
             &syn,
+            &deriv,
             &wiki_top,
             &entry_card,
             &wiki_bottom,
@@ -1082,6 +1087,7 @@ fn official_only_page(
     xref: Option<&crate::enrich::Xref>,
     id: usize,
     synonyms: &str,
+    derivation: &str,
     wiki_top: &str,
     entry_card: &str,
     wiki_bottom: &str,
@@ -1124,7 +1130,7 @@ fn official_only_page(
                <div class='banner info'><b>Oficialne slovo.</b> Generator ješče ne izvodi jego iz srodnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>\
                <div class='headword-block'><div class='headmeta'><span class='badge pos'>{pos}</span> <span class='pill src-official'>oficialny slovnik</span></div>\
                  <p class='def'><b>Smysl:</b> {en}</p></div>\
-               {synonyms}\
+               {synonyms}{derivation}\
                <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
                <section><h2 id='cognaty'>Slovjanski dokaz</h2>{cog}</section>\
                {etymology}{native_conn}\
@@ -1225,6 +1231,7 @@ fn derivation_block(
     headword: &str,
     pos: crate::model::Pos,
     isv_to_id: &std::collections::HashMap<String, usize>,
+    attested_base: bool,
 ) -> String {
     let fam = crate::derive::derive_family(headword, pos);
     if fam.is_empty() {
@@ -1252,10 +1259,15 @@ fn derivation_block(
             }
         }
     }
+    let base_note = if attested_base {
+        ""
+    } else {
+        " <b>Baza je mašinova rekonstrukcija</b> (ne oficialna lemma), tako i odvodženja sųt hypotetične."
+    };
     format!(
         "<section><h2 id='slovotvorstvo'>Slovotvorstvo</h2><div class='chips'>{chips}</div>\
          <p class='muted'>Pravilne odvodženja (palatalizacija prěd sufiksami, jotacija prěd -ńje, O⇒E po mękkyh). \
-         Sinje = stranica na sajtě; <sup>?</sup> = pravilno tvorjeny kandidat bez zapisa v slovniku.</p></section>"
+         Sinje = stranica na sajtě; <sup>?</sup> = pravilno tvorjeny kandidat bez zapisa v slovniku.{base_note}</p></section>"
     )
 }
 
