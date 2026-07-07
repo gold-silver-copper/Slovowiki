@@ -68,6 +68,12 @@ fn kept_ladder() -> Vec<Rung> {
     explicit.explicit_etymology = true;
     let mut medoid = explicit;
     medoid.medoid_representative = true;
+    let mut deriv = medoid;
+    deriv.derivational_suffixes = true;
+    let mut hiatus = deriv;
+    hiatus.loan_hiatus = true;
+    let mut spirant = hiatus;
+    spirant.spirantization_repair = true;
 
     vec![
         Rung { name: "baseline", description: "Transliterate the first available form; no branch balancing, no repairs (the original prototype behavior).", cfg: base },
@@ -87,7 +93,10 @@ fn kept_ladder() -> Vec<Rung> {
         Rung { name: "+verb-class", description: "Verb conjugation classes: jat after hushing spelled a (drzati, slysati), statives -eti on East/West e-stem evidence (kameneti).", cfg: verbclass },
         Rung { name: "+voicing", description: "Voicing correspondences: devoiced prefixes bes-/is- -> bez-/iz- and loan nz -> ns, each corroborated by a cognate with the voiced/Latin spelling.", cfg: voicing },
         Rung { name: "+explicit-etymology", description: "Use Wiktionary's stated (lang→ancestor) etymology to pick the Proto-Slavic reconstruction directly, before the fuzzy descendant+gloss link — the precise ancestor the corpus site uses.", cfg: explicit },
-        Rung { name: "+medoid-rep (production)", description: "Pick the winning cluster's representative as the medoid — the member minimizing total folded edit distance to the others (the most central attested form) — instead of the fixed REP_PRIORITY, avoiding dialectal/oblique outliers. Measured by rep-eval (+1.09pp exact), the biggest recoverable slice of the +3.7pp oracle-representative ceiling.", cfg: medoid },
+        Rung { name: "+medoid-rep", description: "Pick the winning cluster's representative as the medoid — the member minimizing total folded edit distance to the others (the most central attested form) — instead of the fixed REP_PRIORITY, avoiding dialectal/oblique outliers. Measured by rep-eval (+1.09pp exact), the biggest recoverable slice of the +3.7pp oracle-representative ceiling.", cfg: medoid },
+        Rung { name: "+deriv-suffixes", description: "Derivational-suffix normalization (root-consistency invariant [DERIV]), each categorical in the dictionary: -telj- kept before suffixes (53 -teljstvo/-teljny/-teljsky vs 0 hard), feminine i-stem soft -sť (516 vs 0), deverbal -livy (152 vs 0 -ljivy).", cfg: deriv },
+        Rung { name: "+loan-hiatus", description: "Keep the Graeco-Latin -ia-/-io- hiatus in internationalisms (socialny, entuziazm, sociolog) where the Slavic cognates' -ija- glide is a national adaptation: 24 -ial- vs 0 -ijal- in the dictionary, 139 midword -io- vs 1 -ijo-.", cfg: hiatus },
+        Rung { name: "+spirantization (production)", description: "Undo the *g→h spirantization a Czech/Slovak/Ukrainian/Belarusian representative leaks into the surface (blahosklonnost→blago-), corroborated per consonant position by ≥2 g-preserving cognates (ru/pl/South). ISV has no g→h rule (RULE_SPEC §2); genuine *x/loan h stays because the g-preserving lects write h there too.", cfg: spirant },
     ]
 }
 
@@ -144,6 +153,7 @@ struct EntryResult {
     norm_edit: f32,
     branch_cov: usize,
     confidence: Option<Confidence>,
+    score: f32,
     n_langs: usize,
 }
 
@@ -351,6 +361,7 @@ fn evaluate_config(
         let top = cands.first();
         let predicted = top.map(|c| c.form.clone()).unwrap_or_default();
         let confidence = top.map(|c| c.confidence);
+        let score = top.map(|c| c.score).unwrap_or(0.0);
         let top_branch_cov = top.map(|c| c.branch_coverage as usize).unwrap_or(0);
 
         let exact = ortho::exact_match(&predicted, &entry.isv);
@@ -382,6 +393,7 @@ fn evaluate_config(
             norm_edit,
             branch_cov,
             confidence,
+            score,
             n_langs,
         };
 
@@ -436,12 +448,13 @@ fn stage_of_step(id: &str, is_proto: bool) -> &'static str {
         "liquid-metathesis" | "tj-dj-palatal" | "nasal-vowel" | "y-recovery" | "jat-reflex"
         | "adj-fleeting-vowel" | "loan-y-i" | "loan-epenthesis" | "loan-ac-ec" | "loan-ija"
         | "loan-masc-a" | "loan-fem-a" | "loan-ok-suffix" | "loan-yvati" | "verb-husing-a"
-        | "verb-stative-eti" | "prefix-voicing" | "loan-ns" => "4-repair",
+        | "verb-stative-eti" | "prefix-voicing" | "loan-ns" | "spirantization-hg" => "4-repair",
         // Morphology / endings (Stage 7).
         "prefix-orz" | "prefix-perd" | "intl-diphthong" | "intl-ic-ical" | "intl-al"
         | "intl-ative" | "intl-ive" | "intl-ous" | "intl-ijny" | "intl-ism" | "intl-ist"
         | "intl-tion" | "intl-sion" | "intl-ssion" | "intl-verb" | "verb-inf-ti" | "adj-hard-y"
-        | "adj-soft-i" | "adv-alno" | "noun-alnost" | "noun-ost" | "noun-verbal" | "noun-telj" => {
+        | "adj-soft-i" | "adv-alno" | "noun-alnost" | "noun-ost" | "noun-verbal" | "noun-telj"
+        | "noun-ija" | "noun-ika" | "deriv-telj" | "deriv-ost" | "deriv-liv" | "loan-hiatus" => {
             "7-endings"
         }
         _ => "4-repair",
@@ -679,7 +692,9 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
         *stage_hist.entry(stage).or_default() += 1;
         *detail_hist.entry((stage, detail.clone())).or_default() += 1;
 
-        if miss_rows.len() < 500 {
+        // All misses (no cap): predictions.csv has the hits, this has the
+        // per-stage blame — together they make offline pattern mining possible.
+        {
             miss_rows.push(format!(
                 "{},{},{},{},{},{},{},{}",
                 csv_escape(&entry.english),
@@ -1673,6 +1688,20 @@ pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result
     write_report_md(out_dir, &runs, &rejected, production)?;
     write_diffs(out_dir, baseline, production)?;
     write_errors_sample(out_dir, production)?;
+    write_methodology(out_dir, &runs)?;
+
+    // Overfitting guard: the production config on the seeded holdout split.
+    let sp = split_rates(&production.results);
+    println!(
+        "Overfitting guard (seeded 75/25 split, {} held out): exact dev {:.2}% / holdout {:.2}% (gap {:+.2}pp), norm dev {:.2}% / holdout {:.2}% (gap {:+.2}pp)",
+        sp.held_n,
+        sp.dev_exact,
+        sp.held_exact,
+        sp.dev_exact - sp.held_exact,
+        sp.dev_norm,
+        sp.held_norm,
+        sp.dev_norm - sp.held_norm,
+    );
 
     println!("Wrote benchmark report to {}", out_dir.display());
     println!(
@@ -2021,6 +2050,410 @@ fn write_errors_sample(out_dir: &Path, best: &RunMetrics) -> Result<()> {
         )?;
     }
     std::fs::write(out_dir.join("errors-sample.csv"), s)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Evaluation-methodology instruments: overfitting guard (seeded holdout split),
+// paired significance for ladder rungs, bootstrap confidence intervals, and
+// score calibration. All deterministic (seeded, no system RNG) so the report is
+// reproducible byte-for-byte.
+// ---------------------------------------------------------------------------
+
+/// Deterministic FNV-1a hash of an entry id, used for the seeded dev/holdout
+/// split. Stable across runs, platforms and rule changes (depends only on the
+/// entry's id string), so the same entries are held out forever.
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// ~25% of entries form the HOLDOUT split; rules are developed against the DEV
+/// split and must generalize to the holdout. A rule that gains on dev but not on
+/// holdout is memorizing dictionary idiosyncrasies (overfitting guard).
+fn is_holdout(id: &str) -> bool {
+    fnv1a(id) % 4 == 0
+}
+
+/// Complementary error function (Abramowitz & Stegun 7.1.26, |ε| ≤ 1.5e-7),
+/// enough precision for p-value reporting.
+fn erfc(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    let y = poly * (-x * x).exp();
+    if x >= 0.0 {
+        y
+    } else {
+        2.0 - y
+    }
+}
+
+/// Two-sided sign test (McNemar without correction terms) on the discordant
+/// pairs: `fixed` entries the new rung newly matches, `broke` entries it newly
+/// misses. Under H0 (the rule has no effect) the discordants are Binomial(n,½);
+/// normal approximation with continuity correction.
+fn sign_test_p(fixed: usize, broke: usize) -> f64 {
+    let n = fixed + broke;
+    if n == 0 {
+        return 1.0;
+    }
+    let z = ((fixed as f64 - broke as f64).abs() - 1.0).max(0.0) / (n as f64).sqrt();
+    erfc(z / std::f64::consts::SQRT_2)
+}
+
+/// Deterministic xorshift64* PRNG for the bootstrap (seeded, reproducible).
+struct XorShift64(u64);
+impl XorShift64 {
+    fn next(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+/// Percentile-bootstrap 95% CI (1000 resamples, seeded) for a hit rate over
+/// per-entry booleans. Returns (low%, high%).
+fn bootstrap_ci(hits: &[bool]) -> (f32, f32) {
+    let n = hits.len();
+    if n == 0 {
+        return (0.0, 0.0);
+    }
+    let mut rng = XorShift64(0x9e37_79b9_7f4a_7c15);
+    let mut rates: Vec<f32> = (0..1000)
+        .map(|_| {
+            let mut hit = 0usize;
+            for _ in 0..n {
+                hit += hits[rng.below(n)] as usize;
+            }
+            100.0 * hit as f32 / n as f32
+        })
+        .collect();
+    rates.sort_by(|a, b| a.total_cmp(b));
+    (rates[25], rates[974])
+}
+
+struct SplitRates {
+    dev_exact: f32,
+    dev_norm: f32,
+    held_exact: f32,
+    held_norm: f32,
+    held_n: usize,
+}
+
+fn split_rates(results: &[EntryResult]) -> SplitRates {
+    let (mut de, mut dn, mut dd) = (0usize, 0usize, 0usize);
+    let (mut he, mut hn, mut hd) = (0usize, 0usize, 0usize);
+    for r in results {
+        if is_holdout(&r.id) {
+            hd += 1;
+            he += r.exact as usize;
+            hn += r.normalized as usize;
+        } else {
+            dd += 1;
+            de += r.exact as usize;
+            dn += r.normalized as usize;
+        }
+    }
+    let pct = |a: usize, b: usize| {
+        if b == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / b as f32
+        }
+    };
+    SplitRates {
+        dev_exact: pct(de, dd),
+        dev_norm: pct(dn, dd),
+        held_exact: pct(he, hd),
+        held_norm: pct(hn, hd),
+        held_n: hd,
+    }
+}
+
+/// The methodology report: per-rung dev-vs-holdout generalization, paired
+/// significance of each rung's delta, bootstrap CI on the headline, and the
+/// score-calibration table (reliability, ECE, Brier).
+fn write_methodology(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
+    let production = runs.last().unwrap();
+    let mut s = String::new();
+    writeln!(s, "# Evaluation methodology — statistical instruments\n")?;
+
+    // ---- 1. Overfitting guard: seeded 75/25 dev/holdout split ----
+    let prod_split = split_rates(&production.results);
+    writeln!(s, "## Overfitting guard — seeded 75/25 dev/holdout split\n")?;
+    writeln!(
+        s,
+        "Entries are split by a deterministic hash of their dictionary id (~25% held out, **{}** entries; the split never changes). Rules are developed against dev; a kept rule must not gain on dev while flat/negative on holdout — that gap is the overfitting signal. The dev−holdout gap for the production config should stay within the holdout's sampling noise (±~1pp).\n",
+        prod_split.held_n
+    )?;
+    writeln!(
+        s,
+        "| Rung | exact dev | exact holdout | gap | norm dev | norm holdout | gap |"
+    )?;
+    writeln!(s, "|---|---:|---:|---:|---:|---:|---:|")?;
+    for r in runs {
+        let sp = split_rates(&r.results);
+        writeln!(
+            s,
+            "| {} | {:.2}% | {:.2}% | {:+.2} | {:.2}% | {:.2}% | {:+.2} |",
+            r.name,
+            sp.dev_exact,
+            sp.held_exact,
+            sp.dev_exact - sp.held_exact,
+            sp.dev_norm,
+            sp.held_norm,
+            sp.dev_norm - sp.held_norm,
+        )?;
+    }
+
+    // ---- 2. Paired significance of each ladder rung ----
+    writeln!(s, "\n## Ladder-rung significance (paired sign test)\n")?;
+    writeln!(
+        s,
+        "Each rung vs the previous rung, paired per entry: `fixed` = newly matched, `broke` = newly missed, on the **exact** metric (the primary keep-metric) and the normalized metric. p is the two-sided sign test on the discordant pairs — a rung whose p ≳ 0.05 on its keep-metric is not distinguishable from noise on this benchmark and should be treated as provisional, not proven.\n"
+    )?;
+    writeln!(
+        s,
+        "| Rung | Δ exact | fixed/broke (exact) | p (exact) | Δ norm | fixed/broke (norm) | p (norm) |"
+    )?;
+    writeln!(s, "|---|---:|---:|---:|---:|---:|---:|")?;
+    for w in runs.windows(2) {
+        let (prev, cur) = (&w[0], &w[1]);
+        let prev_map: BTreeMap<&str, &EntryResult> =
+            prev.results.iter().map(|r| (r.id.as_str(), r)).collect();
+        let (mut fixed_n, mut broke_n) = (0usize, 0usize);
+        let (mut fixed_e, mut broke_e) = (0usize, 0usize);
+        for r in &cur.results {
+            if let Some(p) = prev_map.get(r.id.as_str()) {
+                match (p.normalized, r.normalized) {
+                    (false, true) => fixed_n += 1,
+                    (true, false) => broke_n += 1,
+                    _ => {}
+                }
+                match (p.exact, r.exact) {
+                    (false, true) => fixed_e += 1,
+                    (true, false) => broke_e += 1,
+                    _ => {}
+                }
+            }
+        }
+        let d_ex = 100.0 * (Bucket::rate(cur.exact, cur.n) - Bucket::rate(prev.exact, prev.n));
+        let d_nm =
+            100.0 * (Bucket::rate(cur.normalized, cur.n) - Bucket::rate(prev.normalized, prev.n));
+        writeln!(
+            s,
+            "| {} | {:+.2}pp | {}/{} | {:.4} | {:+.2}pp | {}/{} | {:.4} |",
+            cur.name,
+            d_ex,
+            fixed_e,
+            broke_e,
+            sign_test_p(fixed_e, broke_e),
+            d_nm,
+            fixed_n,
+            broke_n,
+            sign_test_p(fixed_n, broke_n)
+        )?;
+    }
+
+    // ---- 3. Bootstrap CI on the headline ----
+    let exact_hits: Vec<bool> = production.results.iter().map(|r| r.exact).collect();
+    let norm_hits: Vec<bool> = production.results.iter().map(|r| r.normalized).collect();
+    let (exl, exh) = bootstrap_ci(&exact_hits);
+    let (nml, nmh) = bootstrap_ci(&norm_hits);
+    writeln!(
+        s,
+        "\n## Headline uncertainty (percentile bootstrap, 1000 seeded resamples)\n"
+    )?;
+    writeln!(
+        s,
+        "- exact top-1 **{:.2}%** (95% CI {:.2}–{:.2}%)\n- normalized top-1 **{:.2}%** (95% CI {:.2}–{:.2}%)\n\nDeltas smaller than ~half this interval width should not be read as real without the paired test above (the paired test is far more sensitive than comparing two independent CIs).\n",
+        100.0 * Bucket::rate(production.exact, production.n),
+        exl,
+        exh,
+        100.0 * Bucket::rate(production.normalized, production.n),
+        nml,
+        nmh,
+    )?;
+
+    // ---- 4. Score calibration: reliability table, ECE, Brier ----
+    writeln!(
+        s,
+        "## Score calibration (production top-1 score as P(normalized match))\n"
+    )?;
+    let mut bins: Vec<(usize, f64, usize)> = vec![(0, 0.0, 0); 10]; // (n, Σscore, hits)
+    let mut brier = 0.0f64;
+    for r in &production.results {
+        let p = r.score.clamp(0.0, 1.0) as f64;
+        let y = r.normalized as u8 as f64;
+        brier += (p - y) * (p - y);
+        let b = ((p * 10.0) as usize).min(9);
+        bins[b].0 += 1;
+        bins[b].1 += p;
+        bins[b].2 += r.normalized as usize;
+    }
+    let n_tot = production.results.len().max(1);
+    brier /= n_tot as f64;
+    let mut ece = 0.0f64;
+    writeln!(s, "| score bin | n | mean score | empirical match | gap |")?;
+    writeln!(s, "|---|---:|---:|---:|---:|")?;
+    for (i, (n, sum_p, hits)) in bins.iter().enumerate() {
+        if *n == 0 {
+            continue;
+        }
+        let conf = sum_p / *n as f64;
+        let acc = *hits as f64 / *n as f64;
+        ece += (*n as f64 / n_tot as f64) * (conf - acc).abs();
+        writeln!(
+            s,
+            "| {:.1}–{:.1} | {} | {:.3} | {:.3} | {:+.3} |",
+            i as f64 / 10.0,
+            (i + 1) as f64 / 10.0,
+            n,
+            conf,
+            acc,
+            acc - conf,
+        )?;
+    }
+    writeln!(
+        s,
+        "\n- **ECE (expected calibration error): {:.4}** — mean |score − empirical match rate| weighted by bin size; 0 is perfectly calibrated.\n- **Brier score: {:.4}** (lower is better; a constant base-rate predictor scores {:.4}).\n- The three-way confidence badge (high/medium/low, thresholds 0.72/0.45 in `Confidence::from_score`) is derived from this score; if a bin's gap drifts past ~0.1 the thresholds should be re-fit.",
+        ece,
+        brier,
+        {
+            let base = Bucket::rate(production.normalized, production.n) as f64;
+            base * (1.0 - base)
+        }
+    )?;
+
+    // ---- 5. Isotonic recalibration, dev-fit / holdout-validated ----
+    // Fit a monotone score→probability map on the DEV split only (histogram
+    // bins pooled by PAVA), then measure ECE/Brier on the HOLDOUT split. This is
+    // the leakage-disciplined recipe for fixing the overconfidence above: the
+    // holdout numbers say what the calibrator is worth on unseen entries.
+    let dev: Vec<&EntryResult> = production
+        .results
+        .iter()
+        .filter(|r| !is_holdout(&r.id))
+        .collect();
+    let held: Vec<&EntryResult> = production
+        .results
+        .iter()
+        .filter(|r| is_holdout(&r.id))
+        .collect();
+    let mut dev_bins = vec![(0usize, 0usize); 10]; // (n, hits) per score decile
+    for r in &dev {
+        let b = ((r.score.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+        dev_bins[b].0 += 1;
+        dev_bins[b].1 += r.normalized as usize;
+    }
+    // PAVA: pool adjacent bins that violate monotonicity (weighted means).
+    let mut pools: Vec<(f64, f64)> = Vec::new(); // (weight, mean)
+    for (n, hits) in &dev_bins {
+        if *n == 0 {
+            continue;
+        }
+        pools.push((*n as f64, *hits as f64 / *n as f64));
+        while pools.len() >= 2 && pools[pools.len() - 2].1 > pools[pools.len() - 1].1 {
+            let (w2, m2) = pools.pop().unwrap();
+            let (w1, m1) = pools.pop().unwrap();
+            pools.push((w1 + w2, (w1 * m1 + w2 * m2) / (w1 + w2)));
+        }
+    }
+    // Expand the pooled means back onto the 10 deciles.
+    let mut iso = [0.0f64; 10];
+    {
+        let mut pi = 0usize;
+        let mut left = pools.first().map(|p| p.0).unwrap_or(0.0);
+        for (b, (n, _)) in dev_bins.iter().enumerate() {
+            if *n == 0 {
+                iso[b] = pools.get(pi).map(|p| p.1).unwrap_or(0.0);
+                continue;
+            }
+            iso[b] = pools[pi].1;
+            left -= *n as f64;
+            if left <= 0.0 && pi + 1 < pools.len() {
+                pi += 1;
+                left = pools[pi].0;
+            }
+        }
+    }
+    let calibrate = |score: f32| iso[((score.clamp(0.0, 1.0) * 10.0) as usize).min(9)];
+    let eval_split = |rs: &[&EntryResult], use_cal: bool| -> (f64, f64) {
+        // (ECE, Brier) binning by the (possibly calibrated) probability.
+        let mut b10 = vec![(0usize, 0.0f64, 0usize); 10];
+        let mut brier = 0.0f64;
+        for r in rs {
+            let p = if use_cal {
+                calibrate(r.score)
+            } else {
+                r.score.clamp(0.0, 1.0) as f64
+            };
+            let y = r.normalized as u8 as f64;
+            brier += (p - y) * (p - y);
+            let b = ((p * 10.0) as usize).min(9);
+            b10[b].0 += 1;
+            b10[b].1 += p;
+            b10[b].2 += r.normalized as usize;
+        }
+        let n = rs.len().max(1) as f64;
+        let mut ece = 0.0f64;
+        for (bn, sp, hits) in &b10 {
+            if *bn == 0 {
+                continue;
+            }
+            ece += (*bn as f64 / n) * (sp / *bn as f64 - *hits as f64 / *bn as f64).abs();
+        }
+        (ece, brier / n)
+    };
+    let (ece_raw, brier_raw) = eval_split(&held, false);
+    let (ece_cal, brier_cal) = eval_split(&held, true);
+    writeln!(
+        s,
+        "\n### Isotonic recalibration (fit on dev, validated on holdout)\n\nA monotone score→probability map (decile histogram + pool-adjacent-violators) fit on the dev split only, then applied to the untouched holdout:\n\n| Holdout metric | raw score | recalibrated | Δ |\n|---|---:|---:|---:|\n| ECE | {ece_raw:.4} | {ece_cal:.4} | {:+.4} |\n| Brier | {brier_raw:.4} | {brier_cal:.4} | {:+.4} |\n\nThe recalibrated probability is what a downstream consumer (site reliability badge, novel-word filter) should read as *P(matches the official lemma)*; the raw score remains the ranking key. Refit whenever the ladder changes.",
+        ece_cal - ece_raw,
+        brier_cal - brier_raw,
+    )?;
+
+    std::fs::write(out_dir.join("methodology.md"), s)?;
+
+    // Full per-entry predictions dump (hits AND misses) for offline pattern
+    // mining and run-to-run diffing — the capped errors-sample.csv only shows
+    // the nearest 400 misses.
+    let mut p = String::from(
+        "id,holdout,gloss,pos,official,predicted,exact,normalized,score,confidence,branch_cov,n_langs,norm_edit\n",
+    );
+    for r in &production.results {
+        writeln!(
+            p,
+            "{},{},{},{},{},{},{},{},{:.3},{},{},{},{:.3}",
+            r.id,
+            is_holdout(&r.id) as u8,
+            csv_escape(&r.gloss),
+            r.pos.code(),
+            csv_escape(&r.isv),
+            csv_escape(&r.predicted),
+            r.exact as u8,
+            r.normalized as u8,
+            r.score,
+            r.confidence.map(conf_label).unwrap_or("-"),
+            r.branch_cov,
+            r.n_langs,
+            r.norm_edit,
+        )?;
+    }
+    std::fs::write(out_dir.join("predictions.csv"), p)?;
     Ok(())
 }
 

@@ -4231,16 +4231,16 @@ fn metrics_page() -> String {
   <table class='wikitable'>
     <thead><tr><th>Statistika</th><th>Aktualno</th><th>Značenje</th></tr></thead>
     <tbody>
-    <tr><td><b>točno prvy izbor</b> (povno)</td><td>41,01%</td><td>Prědvidženje je <b>identično</b> oficialnoj variantnoj lemmě, znak-v-znak.</td></tr>
-    <tr><td><b>normalizovano — prvy izbor</b></td><td>48,88%</td><td>Identično <b>po složenju</b> oběh v standardny alfavit (ě=e, ć=č…). Glavna měrka i porog stalnoj integracije.</td></tr>
+    <tr><td><b>točno prvy izbor</b> (povno)</td><td>41,65%</td><td>Prědvidženje je <b>identično</b> oficialnoj variantnoj lemmě, znak-v-znak.</td></tr>
+    <tr><td><b>normalizovano — prvy izbor</b></td><td>49,59%</td><td>Identično <b>po složenju</b> oběh v standardny alfavit (ě=e, ć=č…). Glavna měrka i porog stalnoj integracije.</td></tr>
     <tr><td>skelet prvy izbor</td><td>—</td><td>Identično po agresivnom ASCII-složenju (bez diakritiky, složene sibilanty). Najslabějše sito.</td></tr>
-    <tr><td><b>normalizovano prve 3 / prve 5</b></td><td>59,57% / 62,19%</td><td>Nekotory od prvyh 3 / 5 rangovanyh kandidatov sovpada (normalizovano).</td></tr>
-    <tr><td><b>srědnja pravopisna distancija</b></td><td>0,226</td><td>Srědnja normalizovana Levenshtein-distancija (0 = identično, 1 = vpolno različno).</td></tr>
+    <tr><td><b>normalizovano prve 3 / prve 5</b></td><td>60,48% / 63,12%</td><td>Nekotory od prvyh 3 / 5 rangovanyh kandidatov sovpada (normalizovano).</td></tr>
+    <tr><td><b>srědnja pravopisna distancija</b></td><td>0,224</td><td>Srědnja normalizovana Levenshtein-distancija (0 = identično, 1 = vpolno različno).</td></tr>
     </tbody>
   </table>
 
   <h2 id='ladder'>Lěstvica odstranjenja</h2>
-  <p>Točnosť raste od <b>osnovy</b> (27,52% točno — prvobytny prototip) do <b>produkcije</b> (41,01%). Vsaka stupnja dodaje <b>točno jedno</b> pravilo, tako že jego dělta je pripisiva. Pravila, ktore izměrjeno <b>uhudšajų</b> točnosť, sų odbrošene i zapisane kako „odbrošene eksperimenty“. Polny izvěsť: <code>candidate-generation-report.md</code>.</p>
+  <p>Točnosť raste od <b>osnovy</b> (27,52% točno — prvobytny prototip) do <b>produkcije</b> (41,65%). Vsaka stupnja dodaje <b>točno jedno</b> pravilo, tako že jego dělta je pripisiva. Pravila, ktore izměrjeno <b>uhudšajų</b> točnosť, sų odbrošene i zapisane kako „odbrošene eksperimenty“. Polny izvěsť: <code>candidate-generation-report.md</code>.</p>
 
   <h2 id='razbivka'>Razbivka po kategorijah</h2>
   <ul>
@@ -4252,10 +4252,11 @@ fn metrics_page() -> String {
   <h2 id='kalibracija'>Kalibracija pouzdanosti</h2>
   <p>Vsakomu kandidatu dajemo <b>kalibrovanu pouzdanosť</b>. Dobra kalibracija znači: vysokopouzdane kandidaty sovpadajų čęstěje.</p>
   <table class='wikitable'><thead><tr><th>Pouzdanosť</th><th>n</th><th>normalizovano sovpadenje</th></tr></thead>
-  <tbody><tr><td>vysoka</td><td>6&nbsp;975</td><td>72%</td></tr><tr><td>srědnja</td><td>7&nbsp;110</td><td>38%</td></tr><tr><td>nizka</td><td>2&nbsp;215</td><td>12%</td></tr></tbody></table>
+  <tbody><tr><td>vysoka</td><td>6&nbsp;988</td><td>72%</td></tr><tr><td>srědnja</td><td>7&nbsp;097</td><td>39%</td></tr><tr><td>nizka</td><td>2&nbsp;215</td><td>12%</td></tr></tbody></table>
+  <p>Podrobna kalibracija je v <code>methodology.md</code>: tablica pouzdanosti po decilah, ECE i Brier, plus <b>izotonična rekalibracija</b> — naučena na razvojnoj časti i prověrjena na odloženoj četvrtině (ECE na odloženyh: 0,195 syrovo → <b>0,013</b> rekalibrovano). Rekalibrovana věrojetnosť je to, čto třěba čitati kako <i>P(sovpadenja s oficialnoju lemmoju)</i>.</p>
 
   <h2 id='corpus'>Sajtovy pųť (corpus-eval)</h2>
-  <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,3% točno / 62,8% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
+  <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,6% točno / 63,1% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
 
   <h2 id='proto'>Praslovjansky stroj (proto-eval)</h2>
   <p>Praslovjansky pravilny stroj izměrjeny izolovano od povęzanja, ranga i konsensusa:</p>
@@ -4268,7 +4269,7 @@ fn metrics_page() -> String {
   <h2 id='audit'>Analiza promahov (prověrka)</h2>
   <ul>
     <li><b>Tri klasy promahov</b>: <i>križna grupa</i> (~48% — oficialny korenj je v dokazě, ale izbran drugy), <i>prava grupa–kriva forma</i> (~30%), <i>korenj otsutny</i> (~21% — oficialnogo korenja net v srodnyh slovah).</li>
-    <li><b>Histogram pripisanja stupnjam</b>: prěigrivaje sled pravil pobědnika i pripisuje promah stupnji, ktora izgubila odgovor — grupa/glas ~31%, sľanje/rang ~21%, korenj-otsutny ~21%, normalizacija/predstavnik ~18%, zakončenja ~7%, praslovjansky stroj ~1,6%. Vidi <code>stage-attribution.md</code>.</li>
+    <li><b>Histogram pripisanja stupnjam</b>: prěigrivaje sled pravil pobědnika i pripisuje promah stupnji, ktora izgubila odgovor — grupa/glas ~33%, sľanje/rang ~22%, korenj-otsutny ~22%, normalizacija/predstavnik ~15%, zakončenja ~6%, praslovjansky stroj ~1,6%. Vidi <code>stage-attribution.md</code>.</li>
     <li><b>Kohezija</b>: kolko različnyh srodnyh grup ima vsaky smysl (89,5% ima ≥3).</li>
   </ul>
   <p>Komanda: <code>audit</code>.</p>
@@ -4276,24 +4277,24 @@ fn metrics_page() -> String {
   <h2 id='oracle'>Diagnostične granice (idealny test)</h2>
   <p>Da izměriti <b>gorny prědel</b> vsake stupnje, dělajemo ju „idealnų“ (čitajų oficialny odgovor) dok vse niže ostaje realno. To <b>nikogda</b> ne ide v produkciju — samo pokazuje, gdě je vȯzstanovima greška.</p>
   <table class='wikitable'><thead><tr><th>Idealna stupnja</th><th>Δ točno</th></tr></thead>
-  <tbody><tr><td>izbor grupy</td><td>+3,9pp — glavno redakcijno, nedostižno slěpo</td></tr><tr><td>izbor predstavnika</td><td>+3,7pp — dostižno (vidi rep-eval)</td></tr><tr><td>proto-povęzanje</td><td>+2,6pp</td></tr><tr><td>vse trě zajedno</td><td>+10,7pp</td></tr></tbody></table>
+  <tbody><tr><td>izbor grupy</td><td>+4,5pp — glavno redakcijno, nedostižno slěpo</td></tr><tr><td>izbor predstavnika</td><td>+2,3pp (medoid uže vzęl +1,1pp)</td></tr><tr><td>proto-povęzanje</td><td>+2,7pp</td></tr><tr><td>vse trě zajedno</td><td>+9,4pp</td></tr></tbody></table>
   <p>Komanda: <code>oracle</code>.</p>
 
   <h2 id='probes'>Izbor grupy i predstavnika (select-eval / rep-eval)</h2>
   <p>Měrimo, kolko od gornih prědelov može vȯzstanoviti <b>pravilo bez utečki</b> (ne čitajuče odgovor):</p>
   <ul>
     <li><b>select-eval</b> (izbor grupy): vse slěpe pravila (najviše językov / větvi, internacionalizm-prvo) <b>uhudšajų</b> — potvŕđaje, že križna grupa je redakcijna granica, ne programna greška.</li>
-    <li><b>rep-eval</b> (izbor predstavnika): pravilo <b>medoid</b> (najcentralnějša forma, najmenša suma distancij do drugih) daje <b>+1,09pp</b> i je uže v produkciji; ostaje ~+2,6pp do granice.</li>
+    <li><b>rep-eval</b> (izbor predstavnika): pravilo <b>medoid</b> (najcentralnějša forma, najmenša suma distancij do drugih) daje <b>+1,09pp</b> i je uže v produkciji; ostaje ~+2,3pp do granice.</li>
   </ul>
 
   <h2 id='synonym'>Sinonimno-svěstna točnosť (synonym-eval)</h2>
   <p>Strogo testovo množstvo pytaje „sovpada li s <b>jedinoju</b> oficialnoju lemmoju?“, ale medžuslovjansky ima mnogo validnyh slov na jedno značenje, a slovnik zapisuje samo jedno. Ta měrka pripisuje prědvidženju, ktore reproduktuje <b>kojukoli</b> oficialnu lemmu s tym že značenjem (iz sinonimnogo tezaurusa):</p>
   <table class='wikitable'><thead><tr><th>Měrka</th><th>prvy izbor</th></tr></thead>
-  <tbody><tr><td>točno</td><td>41,01%</td></tr><tr><td>normalizovano (strogo)</td><td>48,88%</td></tr><tr><td><b>sinonimno-vključno</b></td><td><b>55,01%</b></td></tr></tbody></table>
-  <p>Razbivka strogih promahov: <b>12,0% validny sinonim</b> (druga oficialna lemma, isto značenje), 7,7% druga oficialna lemma (drugo značenje), 80,3% ne-oficialna forma (nova ili prava greška — nerazlučima bez tezaurusa maternjego govoritelja). Komanda: <code>synonym-eval</code>.</p>
+  <tbody><tr><td>točno</td><td>41,65%</td></tr><tr><td>normalizovano (strogo)</td><td>49,59%</td></tr><tr><td><b>sinonimno-vključno</b></td><td><b>55,76%</b></td></tr></tbody></table>
+  <p>Razbivka strogih promahov: <b>12,2% validny sinonim</b> (druga oficialna lemma, isto značenje), 7,9% druga oficialna lemma (drugo značenje), 79,8% ne-oficialna forma (nova ili prava greška — nerazlučima bez tezaurusa maternjego govoritelja). Komanda: <code>synonym-eval</code>.</p>
 
   <h2 id='artefakty'>Artefakty</h2>
-  <p>Vse měrjenja sų zapisane v <code>target/eval/</code>: <code>candidate-generation-report.md</code>, <code>stage-attribution.md</code>, <code>oracle-ladder.md</code>, <code>cluster-selection.md</code>, <code>rep-selection.md</code>, <code>synonym-accuracy.md</code>. Vsaka je reproducibilna jednoju komandoju.</p>
+  <p>Vse měrjenja sų zapisane v <code>target/eval/</code>: <code>candidate-generation-report.md</code>, <code>stage-attribution.md</code>, <code>oracle-ladder.md</code>, <code>cluster-selection.md</code>, <code>rep-selection.md</code>, <code>synonym-accuracy.md</code>, <code>methodology.md</code> (razděl razvoj/kontrola bez prěučenja, značimosť stupnjev, bootstrap-intervaly, kalibracija), <code>predictions.csv</code> (vse prědvidženja). Vsaka je reproducibilna jednoju komandoju.</p>
 </article>"##;
     page("Statistiky točnosti — medžuslovjansky", body, 0)
 }

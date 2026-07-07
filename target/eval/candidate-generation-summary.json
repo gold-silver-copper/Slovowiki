@@ -1480,11 +1480,260 @@
       "exact_top1": 0.41012269258499146,
       "mean_normalized_edit_distance": 0.22619755566120148,
       "n": 16300,
-      "name": "+medoid-rep (production)",
+      "name": "+medoid-rep",
       "normalized_top1": 0.48883435130119324,
       "normalized_top3": 0.595705509185791,
       "normalized_top5": 0.6219018697738647,
       "skeleton_top1": 0.4915337562561035
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.23076923191547394,
+          "n": 13,
+          "normalized": 0.23076923191547394
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.1284741908311844,
+          "n": 3526,
+          "normalized": 0.17073170840740204
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.31702929735183716,
+          "n": 5561,
+          "normalized": 0.40891924500465393
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.6258333325386047,
+          "n": 7200,
+          "normalized": 0.7101389169692993
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 6975,
+          "normalized": 0.719139814376831
+        },
+        "low": {
+          "n": 2215,
+          "normalized": 0.1178329586982727
+        },
+        "medium": {
+          "n": 7110,
+          "normalized": 0.3818565309047699
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.3653315007686615,
+          "n": 2896,
+          "normalized": 0.4785911738872528
+        },
+        "adv": {
+          "exact": 0.20700152218341827,
+          "n": 657,
+          "normalized": 0.33028918504714966
+        },
+        "noun": {
+          "exact": 0.504783570766449,
+          "n": 8362,
+          "normalized": 0.5712748169898987
+        },
+        "num": {
+          "exact": 0.1517857164144516,
+          "n": 112,
+          "normalized": 0.2589285671710968
+        },
+        "pron": {
+          "exact": 0.38383838534355164,
+          "n": 99,
+          "normalized": 0.4141414165496826
+        },
+        "verb": {
+          "exact": 0.3006708323955536,
+          "n": 4174,
+          "normalized": 0.3694297969341278
+        }
+      },
+      "description": "Derivational-suffix normalization (root-consistency invariant [DERIV]), each categorical in the dictionary: -telj- kept before suffixes (53 -teljstvo/-teljny/-teljsky vs 0 hard), feminine i-stem soft -sť (516 vs 0), deverbal -livy (152 vs 0 -ljivy).",
+      "exact_top1": 0.41257667541503906,
+      "mean_normalized_edit_distance": 0.22608572244644165,
+      "n": 16300,
+      "name": "+deriv-suffixes",
+      "normalized_top1": 0.4903067350387573,
+      "normalized_top3": 0.598650336265564,
+      "normalized_top5": 0.624785304069519,
+      "skeleton_top1": 0.4930061399936676
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.23076923191547394,
+          "n": 13,
+          "normalized": 0.23076923191547394
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.1290414035320282,
+          "n": 3526,
+          "normalized": 0.17129892110824585
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.3181082606315613,
+          "n": 5561,
+          "normalized": 0.4101780354976654
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.6261110901832581,
+          "n": 7200,
+          "normalized": 0.7104166746139526
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 6975,
+          "normalized": 0.7195699214935303
+        },
+        "low": {
+          "n": 2215,
+          "normalized": 0.1187358945608139
+        },
+        "medium": {
+          "n": 7110,
+          "normalized": 0.3827004134654999
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.3663673996925354,
+          "n": 2896,
+          "normalized": 0.47997236251831055
+        },
+        "adv": {
+          "exact": 0.20852358639240265,
+          "n": 657,
+          "normalized": 0.33181124925613403
+        },
+        "noun": {
+          "exact": 0.5055010914802551,
+          "n": 8362,
+          "normalized": 0.5719923377037048
+        },
+        "num": {
+          "exact": 0.1517857164144516,
+          "n": 112,
+          "normalized": 0.2589285671710968
+        },
+        "pron": {
+          "exact": 0.38383838534355164,
+          "n": 99,
+          "normalized": 0.4141414165496826
+        },
+        "verb": {
+          "exact": 0.3006708323955536,
+          "n": 4174,
+          "normalized": 0.3694297969341278
+        }
+      },
+      "description": "Keep the Graeco-Latin -ia-/-io- hiatus in internationalisms (socialny, entuziazm, sociolog) where the Slavic cognates' -ija- glide is a national adaptation: 24 -ial- vs 0 -ijal- in the dictionary, 139 midword -io- vs 1 -ijo-.",
+      "exact_top1": 0.41319018602371216,
+      "mean_normalized_edit_distance": 0.22602489590644836,
+      "n": 16300,
+      "name": "+loan-hiatus",
+      "normalized_top1": 0.4909816086292267,
+      "normalized_top3": 0.5993865132331848,
+      "normalized_top5": 0.625460147857666,
+      "skeleton_top1": 0.4936809837818146
+    },
+    {
+      "by_branch_coverage": [
+        {
+          "branch_coverage": 0,
+          "exact": 0.23076923191547394,
+          "n": 13,
+          "normalized": 0.23076923191547394
+        },
+        {
+          "branch_coverage": 1,
+          "exact": 0.13031160831451416,
+          "n": 3530,
+          "normalized": 0.17308782041072845
+        },
+        {
+          "branch_coverage": 2,
+          "exact": 0.32289978861808777,
+          "n": 5559,
+          "normalized": 0.41644179821014404
+        },
+        {
+          "branch_coverage": 3,
+          "exact": 0.6294804215431213,
+          "n": 7198,
+          "normalized": 0.7160322070121765
+        }
+      ],
+      "by_confidence": {
+        "high": {
+          "n": 6988,
+          "normalized": 0.7220950126647949
+        },
+        "low": {
+          "n": 2215,
+          "normalized": 0.1200902909040451
+        },
+        "medium": {
+          "n": 7097,
+          "normalized": 0.39044666290283203
+        }
+      },
+      "by_pos": {
+        "adj": {
+          "exact": 0.37223756313323975,
+          "n": 2896,
+          "normalized": 0.4892955720424652
+        },
+        "adv": {
+          "exact": 0.21004566550254822,
+          "n": 657,
+          "normalized": 0.3333333432674408
+        },
+        "noun": {
+          "exact": 0.5074145197868347,
+          "n": 8362,
+          "normalized": 0.5749820470809937
+        },
+        "num": {
+          "exact": 0.1517857164144516,
+          "n": 112,
+          "normalized": 0.2589285671710968
+        },
+        "pron": {
+          "exact": 0.4141414165496826,
+          "n": 99,
+          "normalized": 0.4444444477558136
+        },
+        "verb": {
+          "exact": 0.3047436475753784,
+          "n": 4174,
+          "normalized": 0.3751796782016754
+        }
+      },
+      "description": "Undo the *g→h spirantization a Czech/Slovak/Ukrainian/Belarusian representative leaks into the surface (blahosklonnost→blago-), corroborated per consonant position by ≥2 g-preserving cognates (ru/pl/South). ISV has no g→h rule (RULE_SPEC §2); genuine *x/loan h stays because the g-preserving lects write h there too.",
+      "exact_top1": 0.41650307178497314,
+      "mean_normalized_edit_distance": 0.2242974489927292,
+      "n": 16300,
+      "name": "+spirantization (production)",
+      "normalized_top1": 0.4958895742893219,
+      "normalized_top3": 0.6048465967178345,
+      "normalized_top5": 0.631165623664856,
+      "skeleton_top1": 0.4985889494419098
     }
   ]
 }

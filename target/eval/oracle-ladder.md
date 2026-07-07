@@ -4,11 +4,11 @@ Each row makes ONE pipeline stage perfect (by reading the official answer) while
 
 | Stage oracle | exact top-1 | Δ exact | norm top-1 | Δ norm |
 |---|---:|---:|---:|---:|
-| baseline (production) | 41.01% | — | 48.88% | — |
-| oracle-cluster | 45.29% | +4.28pp | 55.38% | +6.50pp |
-| oracle-representative | 43.59% | +2.58pp | 52.69% | +3.80pp |
-| oracle-proto-link | 43.68% | +2.67pp | 52.45% | +3.57pp |
-| oracle-all | 50.60% | +9.59pp | 63.34% | +14.46pp |
+| baseline (production) | 41.65% | — | 49.59% | — |
+| oracle-cluster | 46.12% | +4.47pp | 56.29% | +6.71pp |
+| oracle-representative | 43.90% | +2.25pp | 52.99% | +3.40pp |
+| oracle-proto-link | 44.33% | +2.67pp | 53.16% | +3.57pp |
+| oracle-all | 51.06% | +9.41pp | 63.80% | +14.21pp |
 
 - **oracle-cluster** — force the vote to the cluster whose consonant key matches the official lemma; representative + repairs then run on the right cluster.
 - **oracle-representative** — pick the winning group's member whose folded form is closest to the official lemma.

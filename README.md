@@ -61,7 +61,7 @@ committed and the site build stays self-contained.
   by a generated word (of ~21.4k), one representative page per lemma (homographs and
   duplicate sets deduped), with no leakage from the dictionary into the generation.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
-  **58.3% exact / 62.8% normalized** on the ~7.4k entries with a known ancestor.
+  **58.6% exact / 63.1% normalized** on the ~7.4k entries with a known ancestor.
 - `data/novel-words.tsv` — 2,066 high/medium-confidence words the engine derived that
   are **not** in the official dictionary (candidate new vocabulary, with ancestors).
 
@@ -85,14 +85,14 @@ the official dictionary, **without ever showing the generator the answer**
 
 | Metric | Baseline (prototype) | Production | Δ |
 |---|---:|---:|---:|
-| exact top-1 | 27.52% | **41.01%** | +13.49 pp |
-| normalized top-1 | 35.23% | **48.88%** | +13.65 pp |
-| normalized top-3 | 43.26% | **59.57%** | +16.31 pp |
-| normalized top-5 | — | **62.19%** | — |
-| mean normalized edit distance | 0.252 | **0.226** | −0.026 |
+| exact top-1 | 27.52% | **41.65%** (95% CI 40.9–42.4) | +14.13 pp |
+| normalized top-1 | 35.23% | **49.59%** (95% CI 48.8–50.3) | +14.36 pp |
+| normalized top-3 | 43.26% | **60.48%** | +17.22 pp |
+| normalized top-5 | — | **63.12%** | — |
+| mean normalized edit distance | 0.252 | **0.224** | −0.028 |
 
 The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
-(`cargo run -- corpus-eval`): **58.3% exact / 62.8% normalized** on the ~7.4k entries
+(`cargo run -- corpus-eval`): **58.6% exact / 63.1% normalized** on the ~7.4k entries
 where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
 headline because it only scores words the site actually derives from a known ancestor.
 
@@ -100,26 +100,27 @@ headline because it only scores words the site actually derives from a known anc
 strict metric honestly: Interslavic often has several valid words per concept and
 the dictionary records only one as *the* lemma, so a "miss" is frequently a valid
 synonym the committee didn't pick. Crediting a prediction that reproduces **any**
-official ISV lemma whose gloss matches the concept lifts top-1 from 48.9%
-normalized to **56.0% synonym-inclusive**; of the strict misses, ≥14% are
+official ISV lemma whose gloss matches the concept lifts top-1 from 49.6%
+normalized to **55.8% synonym-inclusive**; of the strict misses, ≥12% are
 demonstrably valid ISV synonyms (another official lemma for the same concept) and
 the rest are a mix of genuine errors and valid synonyms the dictionary doesn't
 list separately.
 
 A data-quality **audit** (`cargo run --release -- audit`) classifies every miss and
 attributes it to the pipeline **stage** that lost the official form (a full
-`RuleStep`-trace replay — see `target/eval/stage-attribution.md`): ~31%
-*cluster/vote* (a different, usually editorial, root was chosen), ~21%
-*merge/rank* (a correct candidate was generated but demoted — of which only ~2.6%
+`RuleStep`-trace replay — see `target/eval/stage-attribution.md`): ~33%
+*cluster/vote* (a different, usually editorial, root was chosen), ~22%
+*merge/rank* (a correct candidate was generated but demoted — of which only ~1.9%
 of all misses are a genuine same-cluster ranking bug, the rest being synonym
-word-choice), ~21% *root-absent* (unfixable from evidence), ~18%
-*normalize/representative*, ~7% *endings*, and only **~1.6%** the Proto-Slavic
+word-choice), ~22% *root-absent* (unfixable from evidence), ~15%
+*normalize/representative*, ~6% *endings*, and only **~1.6%** the Proto-Slavic
 *rule engine*. 89.5% of meanings split across ≥3 cognate clusters. A companion
 **oracle ladder** (`cargo run --release -- oracle`, diagnostic-only) measures each
-stage's upper-bound headroom: cluster +3.9pp / representative +3.7pp / proto-link
-+2.6pp exact. The representative lever was the recoverable one: shipping the
-**medoid** representative (below) captured +1.1pp of it, and ~+2.6pp of
-oracle-representative ceiling remains.
+stage's upper-bound headroom: cluster +4.5pp / proto-link +2.7pp /
+representative +2.3pp exact. The representative lever was the recoverable one:
+shipping the **medoid** representative (below) captured +1.1pp of it, and the V8
+derivational-morphology pass (below) converted another +0.6pp of the
+endings/representative tail into matches.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
 (`cargo run --release -- proto-eval`): on the 20.1% of words it confidently links
@@ -130,9 +131,17 @@ normalized** accuracy.
 
 | confidence | n | normalized match |
 |---|---:|---:|
-| high | 6,975 | 72% |
-| medium | 7,110 | 38% |
+| high | 6,988 | 72% |
+| medium | 7,097 | 39% |
 | low | 2,215 | 12% |
+
+Beyond the three-way badge, `target/eval/methodology.md` now carries a full
+**reliability table** (score decile → empirical match rate), **ECE** and **Brier**
+scores, plus an **isotonic recalibration** fit on the dev split and validated on
+the untouched holdout: holdout ECE drops from 0.195 (raw score, systematically
+overconfident) to **0.013** recalibrated — the recalibrated probability is what a
+downstream consumer (reliability badge, novel-word filter) should read as
+*P(matches the official lemma)*; the raw score remains the ranking key.
 
 Full metrics, POS-specific accuracy, branch-coverage analysis, regression/improvement
 lists and the remaining-error breakdown are regenerated into `target/eval/` (a committed
@@ -184,6 +193,23 @@ snapshot is under version control).
     against the diagnostic oracle-representative ceiling; **+1.09 pp exact** — the
     single biggest generation win after the two-stage proto model, and the first
     representative-selection rule to beat the fixed priority.
+15. **Derivational-suffix normalization** (root-consistency invariant `[DERIV]`) —
+    each categorical in the dictionary: `-telj-` kept before derivational suffixes
+    (53 official -teljstvo/-teljny/-teljsky vs **zero** hard -tel- there; the old
+    word-final `-telj` rule missed the whole derived family), feminine i-stems end
+    soft `-sť` (516 vs 0: kosť, radosť, zabolěvajemosť), and the deverbal
+    adjective suffix is `-livy` (152 vs 0 -ljivy). +0.25 pp exact, 40 fixed / 0
+    broken.
+16. **Graeco-Latin hiatus in loans** — ISV keeps `-ia-`/`-io-` (socialny,
+    entuziazm, sociolog) where Slavic cognates insert a glide `-ija-`: 24 official
+    -ial- vs 0 -ijal-, 139 midword -io- vs 1 -ijo- (kopijovati, hence the
+    noun/adjective gate). +0.06 pp exact, 10 fixed / 0 broken.
+17. **Spirantization repair** — a Czech/Slovak/Ukrainian/Belarusian representative
+    leaks its *g→h shift into the surface (blahosklonnost, kalihrafija); each `h`
+    is checked per consonant position against the g-preserving cognates
+    (ru/pl/South) and restored to `g` on ≥2 corroborating witnesses. Genuine *x/loan
+    `h` (duh, alkohol) stays — the g-preserving lects write `h` there too.
+    +0.33 pp exact / +0.49 pp normalized, 57 fixed / 3 broken.
 
 ## What was rejected (regressed the benchmark)
 
@@ -203,6 +229,29 @@ bug against the binary); the confirmed bugs were fixed with a regression test ea
 top-1 drops below a floor** — the floor measures the *shipped* production config
 (`runs.last()`), not the best ablation rung, and a test asserts the ladder ends at
 `ConsensusConfig::production()`, so a production regression can't slip through.
+
+`evaluate` additionally writes **statistical instruments** to
+`target/eval/methodology.md` (all deterministic/seeded, reproducible
+byte-for-byte):
+
+- **Overfitting guard** — a seeded 75/25 dev/holdout split (stable FNV hash of the
+  entry id, so the held-out quarter never changes); every rung is reported on both
+  splits and a kept rule must generalize to the holdout. The three V8 rules hold
+  their gains on the holdout and leave the dev−holdout gap unchanged (+0.96pp).
+- **Paired significance** — each rung vs the previous, two-sided sign test on the
+  discordant entries (fixed/broke), on both metrics. This exposed that
+  `+explicit-etymology` is noise on the normalized metric (215 fixed / 205 broke,
+  p=0.66 — it is kept for its exact-metric gain, p=0.02) and `+depleophony`
+  actually nets −2 entries on exact.
+- **Bootstrap 95% CIs** on the headline (1000 seeded resamples), so ladder deltas
+  are read against sampling noise.
+- **Calibration** — reliability table (score decile → empirical match rate), ECE
+  and Brier, plus a dev-fit / holdout-validated **isotonic recalibration** (see
+  the calibration section above).
+- **Full predictions dump** — `target/eval/predictions.csv` (every entry with
+  prediction, split, score, hit flags) and an uncapped `audit-misses.csv` (every
+  miss with per-stage blame), for offline pattern mining; the V8 suffix rules
+  were found by mining exactly these residuals.
 
 The benchmark is **leakage-free w.r.t. the answer form**: the generator sees the modern
 cognates plus the official row's POS/gender/`genesis` metadata, but never the `isv`
@@ -305,6 +354,8 @@ target/eval/proto-engine-report.md               proto-engine per-rule error wor
 target/eval/regressions.csv                      matched before, not after
 target/eval/improvements.csv                     newly matched
 target/eval/errors-sample.csv                    nearest remaining misses
+target/eval/methodology.md                       holdout split, rung significance, bootstrap CIs, calibration
+target/eval/predictions.csv                      every entry's prediction (full dump, for offline mining)
 ```
 
 The V7 full-pipeline review (stage-attribution histogram, oracle ladder, and the

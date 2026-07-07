@@ -4,11 +4,11 @@ Given the right cluster, which attested surface should represent it? This forces
 
 | Rule | exact | Δ exact | norm | Δ norm |
 |---|---:|---:|---:|---:|
-| production | 41.01% | +0.00pp | 48.88% | +0.00pp |
-| medoid | 41.01% | +0.00pp | 48.88% | +0.00pp |
-| modal-skeleton | 39.18% | -1.83pp | 46.26% | -2.62pp |
-| shortest | 30.20% | -10.81pp | 36.52% | -12.36pp |
-| oracle-representative | 43.59% | +2.58pp | 52.69% | +3.80pp |
+| production | 41.65% | +0.00pp | 49.59% | +0.00pp |
+| medoid | 41.65% | +0.00pp | 49.59% | +0.00pp |
+| modal-skeleton | 39.87% | -1.79pp | 47.06% | -2.53pp |
+| shortest | 31.83% | -9.82pp | 38.19% | -11.40pp |
+| oracle-representative | 43.90% | +2.25pp | 52.99% | +3.40pp |
 
 - **production** — the fixed REP_PRIORITY (sl, hr, sr, pl, …) surface choice.
 - **medoid** — the group member minimizing total folded edit distance to the others (most central form).

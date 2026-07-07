@@ -1,7 +1,6 @@
 id,gloss,pos,official,baseline_pred,final_pred
 24042,apricot,noun,abrikos,abrikos,kajsija
 19625,absorb,verb,absorbovati,absorbovati,absarbavac
-24137,iceberg,noun,ajsberg,ajsberg,ajsberh
 16922,accusative,noun,akuzativ,akuzativ,vinitelen padež
 24220,aqueduct,noun,akvedukt,akvedukt,akvadukt
 24224,alarm,noun,alarm,alarm,tryvoga
@@ -10,7 +9,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 36748,autist,noun,autist,autist,avtist
 36747,autism,noun,autizm,autizm,avtizm
 24337,advance,verb,avansovati,avansovati,avansavac
-24370,autograph,noun,avtograf,avtograf,avtohraf
 6452,car factory,noun,avtozavod,avtozavod,avtazavod
 384,swamp,noun,bagno,bagno,blåto
 22452,Bahamas,noun,Bahamy,bahamy,bahami
@@ -46,11 +44,11 @@ id,gloss,pos,official,baseline_pred,final_pred
 2308,eyebrow,noun,brȯv,brov,bry
 24849,"splash, gush",verb,bryzgati,bryzgati,brizgati
 14481,hut,noun,budka,budka,hata
-37366,"accountant (f.), bookkeeper (f.)",noun,buhhalterka,buhhalterka,buhhaltarka
+37366,"accountant (f.), bookkeeper (f.)",noun,buhhalterka,buhhalterka,buhgaltarka
 2486,letter (alphabet),noun,bukva,bukva,buky
 32996,bunker,noun,bunker,bunker,bunkr
 24876,"high grass, weed",noun,burjan,burjan,burijan
-16745,bottle,noun,butylka,butylka,butelka
+16745,bottle,noun,butylka,butylka,buteljka
 5758,"tsar, emperor",noun,caŕ,car,cěsarj
 35835,Istanbul,noun,Carigrad,carigrad,stambul
 883,brick,noun,cegla,cegla,cigla
@@ -77,7 +75,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 5288,"today, nowadays",adv,dneś,dnes,danes
 19481,"welfare, prosperity",noun,dobrobyt,dobrobyt,dobrobit
 36195,"additionally, in addition",adv,dodatno,dodatno,dodatkovo
-25286,catch up with,verb,dognati,dognati,dohnati
 31826,burn down,verb,dogorěti,dogoreti,dograti
 5348,"arrive, get to, commute",verb,doježđati,doježdžati,dajazdžac
 7162,prove,verb,dokazyvati,dokazyvati,dokazovati
@@ -105,10 +102,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 17367,ambiguous,adj,dvuznačny,dvuznačny,dvojznačny
 5638,exploit,verb,eksploatovati,eksploatovati,ekspluatavac
 371,export,verb,eksportovati,eksportovati,ekspartavac
-3586,enthusiast,noun,entuziast,entuziast,entuzijast
-7452,enthusiasm,noun,entuziazm,entuziazm,entuzijazm
 25497,fig,noun,figa,figa,smoky
-7482,"subsidiary, branch (of a company)",noun,filial,filial,filijal
 37217,"finale, end",noun,final,final,finale
 5150,finance,verb,finansovati,finansovati,finansavac
 34950,background,noun,fon,fon,tlo
@@ -118,27 +112,20 @@ id,gloss,pos,official,baseline_pred,final_pred
 22438,Guyana,noun,Gajana,gajana,gujana
 17387,bagpipes,noun,gajdy,gajdy,gajdi
 23564,galaxy,noun,galaktika,galaktika,galaktyka
-25553,gallop,verb,galopovati,galopovati,halapavac
-2670,fade,verb,gasnųti,gasnuti,hasnuti
-25586,gastritis,noun,gastrit,gastrit,hastrit
+25553,gallop,verb,galopovati,galopovati,galapavac
 25589,howitzer,noun,gaubica,gaubica,haubica
-4064,newspaper,noun,gazeta,gazeta,hazeta
-25600,gas,verb,gazovati,gazovati,hazavac
+25600,gas,verb,gazovati,gazovati,gazavac
 37102,gymnast,noun,gimnast,gimnast,gimnosť
 25645,gnaw,verb,glodati,glodati,gryzti
-19708,deeply,adv,glųboko,gluboko,hlųboko
-36126,"dwarf, gnome",noun,gnom,gnom,hnom
 17422,race,noun,gonka,gonka,honka
 17423,racer,noun,gonščik,gonščik,honščyk
 25735,pheasant’s eye,noun,goricvět,goricvet,gorocvet
-25738,become bitter,verb,goŕknųti,gorknuti,horknuti
 25743,mountain,adj,gorsky,gorsky,gorny
-25746,lord (of the house),noun,gospodaŕ,gospodar,hospodar
+25746,lord (of the house),noun,gospodaŕ,gospodar,gospodarj
 31902,landowner,noun,gospodaŕ,gospodar,gospodarj
-16793,housekeeping,noun,gospodaŕstvo,gospodarstvo,hospodarstvo
 3290,"gentleman, lord, mister, master, sir",noun,gospodin,gospodin,gpan
 2676,hornbeam,noun,grab,grab,grabr
-23399,plunder,verb,grabiti,grabiti,hrabic
+23399,plunder,verb,grabiti,grabiti,grabic
 17433,mayor,noun,grådonačęľnik,gradonačelnik,mer
 7660,citizen,noun,gråđanka,građanka,graždanka
 7663,"civil, civilian",adj,gråđansky,građansky,graždansky
@@ -147,26 +134,21 @@ id,gloss,pos,official,baseline_pred,final_pred
 782,thunder,verb,greměti,gremeti,grměti
 673,mushroom,noun,grib,grib,gųba
 1885,threat,noun,groźba,grozba,groza
-3950,group,verb,grupovati,grupovati,hrupavac
+3950,group,verb,grupovati,grupovati,grupavac
 2570,pear,noun,gruša,gruša,kruša
-37048,rodent,noun,gryzun,gryzun,hryzun
 17446,sponge,noun,gųbka,gubka,gųba
 2571,goose,noun,gųś,gus,gųsak
 429,caterpillar,noun,gųsenica,gusenica,vųsěnica
-25888,thicken,verb,gųstěti,gusteti,hustěti
-25894,density,noun,gųstota,gustota,hustota
-25896,thicket,noun,gųšća,gušča,hųšča
 2574,nail,noun,gvozď,gvozd,gvozdej
 31874,hook,noun,hak,hak,kuka
 4663,chemical,adj,hemičny,hemičny,himičny
-35189,hygienic,adj,higieničny,higieničny,hihieničny
 1828,hide,verb,hovati,hovati,havac
 22620,chromium,noun,hrom,hrom,grom
 26018,limp,verb,hromati,hromati,hramati
 1245,brushwood,noun,hrust,hrust,hrasti
 36251,lose weight,verb,hudnųti,hudnuti,hudnųc
 26099,"abbess (of an orthodox monastery), mother superior",noun,igumenja,igumenja,igumenija
-4959,immigrate,verb,imigrovati,imigrovati,imihravac
+4959,immigrate,verb,imigrovati,imigrovati,imigravac
 3764,"otherwise, else",adv,inače,inače,inako
 16944,instrumental,noun,instrumental,instrumental,tvoritelen padež
 7947,so,adv,itak,itak,tako
@@ -192,8 +174,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 36480,Java,noun,Java,java,jav
 26331,ide,noun,jaź,jaz,jez
 22630,iodine,noun,jod,jod,jed
-26424,musk deer,noun,kabarga,kabarga,kabarha
-35687,calligraphic,adj,kaligrafičny,kaligrafičny,kalihrafičny
 2553,calculate,verb,kalkulovati,kalkulovati,kalkulavac
 26449,murky,adj,kaľny,kalny,galy
 4227,cameraman,noun,kameraman,kameraman,operator
@@ -214,7 +194,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 26588,red-footed falcon,noun,kobčik,kobčik,kobec
 26592,"poker, rabble, fire iron, fireplace poker",noun,kočerga,kočerga,kočerha
 16951,code,noun,kod,kod,kad
-143,whom,pron,kogo,kogo,koho
 36274,coconut,noun,kokos,kokos,kokoš
 26596,"hen, chicken",noun,kokoška,kokoška,kokoš
 37354,"cola, coke",noun,kola,kola,kolo
@@ -247,7 +226,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 246,whore,noun,kurva,kurva,kury
 2645,Kuwait,noun,Kuvejt,kuvejt,kuvajt
 32030,quartz,noun,kvarc,kvarc,tvŕd
-21331,"gentle, mild, meek, lenient, placable, smooth, suave, sweet, agreeable, accommodating",adj,lagodny,lagodny,lahodny
 32147,kindness,noun,laska,laska,lasica
 32148,"favour, favor, grace",noun,laska,laska,lasica
 267,flatter,verb,laskati,laskati,lastiti
@@ -264,7 +242,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 32726,lens,noun,linza,linza,lęća
 27229,letter (alphabet),noun,litera,litera,buky
 6203,literary,adj,literarny,literarny,literaturniji
-332,liturgical,adj,liturgičny,liturgičny,liturhičny
 14683,meadow,noun,livada,livada,lųka
 2886,boat,noun,lodka,lodka,čȯln
 386,"elk, moose",noun,loś,los,las
@@ -281,7 +258,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 2686,ointment,noun,masť,mast,maz
 27447,mate (chess),noun,mat,mat,mati
 27484,she-bear,noun,medvědica,medvedica,mečka
-27517,memorial,noun,memorial,memorial,memorijal
 33809,manager,noun,menedžer,menedžer,menadžer
 23649,Mercury,noun,Merkurij,merkurij,merkur
 32882,metropolis,noun,metropolija,metropolija,metropola
@@ -308,12 +284,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 23045,mousetrap,noun,myšelovka,myšelovka,mišolovka
 27933,acquire,verb,nabyti,nabyti,nabyc
 32383,acquire,verb,nabyvati,nabyvati,nabyvac
-37321,national socialist,noun,nacionalsocialist,nacionalsocialist,nacionalsocijalist
 36881,"hopeful, promising, auspicious",adj,nadějny,nadejny,nadeđny
 5814,"oversee, supervise, inspect",verb,nadględati,nadgledati,nadzirati
 15398,sudden,adj,nagly,nagly,nezajapny
-27975,"prod, shoo",verb,nagnati,nagnati,nahnati
-27983,nudity,noun,nagota,nagota,nahota
 35889,"especially, particularly",adv,najmě,najme,osobeno
 28082,sharpen,verb,naostriti,naostriti,naoštriti
 20898,"striking, conspicuous, bright, showy",adj,napadny,napadny,jarky
@@ -334,11 +307,11 @@ id,gloss,pos,official,baseline_pred,final_pred
 23706,unusually,adv,neobyčno,neobyčno,neobično
 14750,"unwillingly, reluctantly, willy-nilly",adv,neohotno,neohotno,neohųtne
 36443,"not seldom, not rarely",adv,nerědko,neredko,neradko
-23226,nervosity,noun,nervoznosť,nervoznost,nervovist
+23226,nervosity,noun,nervoznosť,nervoznost,nervovisť
 16862,bat,noun,netopyŕ,netopyr,netopyrj
 34975,"unlucky person, loser, outsider",noun,neudačnik,neudačnik,nieudačnik
 22310,"misery, distress",noun,nevolja,nevolja,nevola
-17957,independence,noun,nezavisnosť,nezavisnost,nezavisimost
+17957,independence,noun,nezavisnosť,nezavisnost,nezavisimosť
 23711,tenderness,noun,něžnosť,nežnost,něga
 17966,thread,noun,nitka,nitka,nit
 3863,spend the night,verb,noćevati,nočevati,noćivati
@@ -346,8 +319,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 15707,"notary, notary public",noun,notaŕ,notar,notarius
 998,both,num,oba,oba,oba dva
 9772,promise,noun,oběćańje,obećanje,sȯljubo
-28740,gnaw,verb,obgryzati,obgryzati,obhryzati
-28741,gnaw,verb,obgryzti,obgryzti,obhryzti
 17995,#disclose,verb,objaviti,objaviti,råzkryti
 28776,"go round, travel round, make a detour",verb,obježđati,obježdžati,ab'jazdžac
 22532,"#clothe, dress, don, put on",verb,oblačati,oblačati,oblačiti
@@ -355,7 +326,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 20557,"surround, circle, put round",verb,oblagati,oblagati,oblehati
 18005,lick,verb,oblizyvati,oblizyvati,oblizivati
 4216,"con, cheat, delude, deceive, hoodwink",verb,obmanyvati,obmanyvati,obmanjiivati
-2217,enrich,verb,obogatiti,obogatiti,obohatiti
 22671,"direct (attention), turn (attention)",verb,obråtiti,obratiti,obvråtiti
 22673,convert (sbd. to a religion),verb,obråtiti,obratiti,obvråtiti
 9887,outline,verb,obrysovati,obrysovati,abrysavac
@@ -370,7 +340,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 19939,"feel, sense",verb,odčuvati,odčuvati,adčuvac
 35533,"dedication, commitment",noun,oddanosť,oddanost,predanosť
 16838,"clothe, dress",verb,oděvati,odevati,odivati
-5647,bite off,verb,odgryzti,odgryzti,adhryzci
+5647,bite off,verb,odgryzti,odgryzti,adgryzci
 5498,departure,noun,odjezd,odjezd,ad'ezd
 5487,go away,verb,odježđati,odježdžati,ad'jazdžac
 5568,"put away, put off, put aside, put back",verb,odkladati,odkladati,adkladac
@@ -384,11 +354,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 34361,tear away,verb,odryvati,odryvati,adryvac
 19983,"put aside, set aside",verb,odstaviti,odstaviti,adstavic
 5110,shoot off,verb,odstrěliti,odstreliti,adstrelic
-1423,"courage, bravery",noun,odvaga,odvaga,odvaha
 5380,screw off,verb,odvinųti,odvinuti,otvintiti
 29291,candle-end,noun,ogarȯk,ogarok,ugarak
-173,"announce, declare, herald",verb,oglåsiti,oglasiti,ohlasiti
-23401,plunder,verb,ograbiti,ograbiti,ahrabic
+23401,plunder,verb,ograbiti,ograbiti,agrabic
 3613,fence,noun,ogråda,ograda,obgråda
 3865,willingly,adv,ohotno,ohotno,ohųtne
 5364,"petrify, turn into stone",verb,okameniti,okameniti,prevratit v kamen
@@ -432,21 +400,22 @@ id,gloss,pos,official,baseline_pred,final_pred
 1697,bosom,noun,pazuha,pazuha,pazduha
 2842,bee,noun,pčela,pčela,bčela
 29868,beekeeper,noun,pčelaŕ,pčelar,bčeljarj
-23605,pedagogic,adj,pedagogičny,pedagogičny,pedahahičny
+23605,pedagogic,adj,pedagogičny,pedagogičny,pedagagičny
 10533,one fifth,num,pętina,petina,odna pataja
 2261,"placard, poster",noun,plakat,plakat,plakati
 5196,beach,noun,plaž,plaž,plaža
 3134,soil,noun,počva,počva,pod
 5575,thank,verb,podękovati,podekovati,podakovati
-36558,foothills,noun,podgoŕje,podgorje,podhorie
+36558,foothills,noun,podgoŕje,podgorje,podgorie
 4493,"water, irrigate",verb,podliti,podliti,politi
 1115,floor,noun,podloga,podloga,pol
 2404,"similarly, alike, likewise",adv,podobno,podobno,podobne
 1117,"sign, subscribe",verb,podpisyvati,podpisyvati,podpisovati
 21752,"base, foundation",noun,podstava,podstava,osnova
 35496,cellar,noun,podval,podval,istba
-21427,immerse,verb,pogrųžati,pogružati,pahrųžac
+21427,immerse,verb,pogrųžati,pogružati,pagrųžac
 18284,hangover,noun,pohmeľje,pohmelje,pahmelle
+29921,"sheath, vagina",noun,pohva,pohva,pogva
 35409,"scold, rebuke, reprimand, reproach",verb,pokarati,pokarati,upreknuti
 1108,show,verb,pokazyvati,pokazyvati,pokazivati
 10857,polish,verb,polirati,polirati,polirovati
@@ -479,11 +448,9 @@ id,gloss,pos,official,baseline_pred,final_pred
 5991,interrogate,verb,prěslušati,preslušati,råzsprositi
 32336,"criminality, crime rate",noun,prěstųpnosť,prestupnost,prestapnosť
 22288,exaggerate,verb,prěuveličiti,preuveličiti,preuveličati
-22175,"predominance, preponderance, supremacy",noun,prěvaga,prevaga,prevaha
 22729,"surpass, exceed",verb,prěvysiti,prevysiti,prevyšiti
 11394,surname,noun,prězimę,prezime,familija
 36563,Transnistria,noun,Pridněstrovje,pridnestrovje,pridnestrovie
-18469,bend,verb,prignųti,prignuti,prihnuti
 20078,"command, order",verb,prikazyvati,prikazyvati,prikazovati
 30011,primate,noun,primat,primat,primati
 18487,"attribute, ascribe",verb,pripisyvati,pripisyvati,pripisovati
@@ -493,11 +460,10 @@ id,gloss,pos,official,baseline_pred,final_pred
 22010,impose (penalty),verb,prisųditi,prisuditi,presuditi
 11517,"bring about, evoke, lead to",verb,privoditi,privoditi,privadeti
 3014,ground,adj,prizemny,prizemny,nazemny
-20659,mileage,noun,proběg,probeg,probeh
 1217,"away, aside, off",adv,prȯč,proč,preč
 4264,"salesperson, salesman, shopkeeper, seller, vendor",noun,prodavec,prodavec,prodavač
-5422,lose (game),verb,proigrati,proigrati,prohrati
-5423,lose (game),verb,proigryvati,proigryvati,prohryvati
+5422,lose (game),verb,proigrati,proigrati,prograti
+5423,lose (game),verb,proigryvati,proigryvati,progryvati
 2943,prosecutor,noun,prokuror,prokuror,prokurator
 5588,break through,verb,prolamyvati,prolamyvati,prolamovati
 6152,spill over,verb,proliti,proliti,preliti
@@ -514,16 +480,11 @@ id,gloss,pos,official,baseline_pred,final_pred
 36985,psalter,noun,psaltyŕ,psaltyr,psaltir
 15507,"birdie, fledgling",noun,ptačę,ptače,ptica
 30056,glad,adj,rad,rad,rady
-16072,level,noun,rang,rang,ranh
 1383,early,adv,rano,rano,ran
 1331,round,noun,raund,raund,krųg
 11748,"take apart, disassemble, take into pieces",verb,råzbirati,razbirati,rozebirati
 30145,undress,verb,råzděvati,razdevati,razodijevati
-18596,"divulge, publicize",verb,råzglåsiti,razglasiti,råzhlasiti
-2349,"anger, make angry",verb,råzgněvati,razgnevati,råzhnevati
-30180,#dispersal,noun,råzgon,razgon,råzhon
 30203,#crack,verb,råzgryzati,razgryzati,råzgrizati
-30204,crack,verb,råzgryzti,razgryzti,råzhryzti
 5589,break up,verb,råzlamyvati,razlamyvati,råzlamovati
 23009,disarm,verb,råzorųžiti,razoružiti,razoružati
 32646,"incite, kindle",verb,råzžigati,razžigati,råzžihati
@@ -618,7 +579,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 4989,"stream, current",noun,struja,struja,strumy
 18913,"knock, rap, tap",verb,stukati,stukati,stukac
 12688,"thing, matter",noun,stvaŕ,stvar,već
-3293,really,adv,stvarno,stvarno,dejstvitelno
+3293,really,adv,stvarno,stvarno,dejstviteljno
 1404,shame,noun,styd,styd,sråm
 21595,judge,noun,sųďja,sudja,sudija
 12725,"wife, spouse",noun,sųprųga,supruga,žena
@@ -637,7 +598,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 4844,educate,verb,školiti,školiti,školovati
 18854,rope,noun,šnur,šnur,vųže
 1585,shock,noun,šok,šok,sok
-30858,"bar, rod",noun,štanga,štanga,štanha
 1586,state,noun,štat,štat,dŕžava
 1883,there,adv,tam,tam,tamo
 20208,dance,verb,tancevati,tancevati,tancovati
@@ -664,7 +624,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 21184,boa,noun,udav,udav,boa
 4209,perfect,verb,udoskonaliti,udoskonaliti,udaskanalic
 5562,strangle,verb,udušiti,udušiti,udusiti
-2291,fade,verb,ugasnųti,ugasnuti,uhasnouti
+2291,fade,verb,ugasnųti,ugasnuti,ugasnouti
 5820,catch sight of,verb,uględati,ugledati,zamečati
 13223,unify,verb,ujediniti,ujediniti,unificirovati
 20242,"point out, show, indicate, demonstrate",verb,ukazyvati,ukazyvati,ukazovati
@@ -681,7 +641,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 13414,wipe,verb,utirati,utirati,brysati
 5188,attention,noun,uvaga,uvaga,uvaha
 30958,"immortalise, immortalize",verb,uvěkověčiti,uvekovečiti,ovekovečiti
-5645,weight,noun,vaga,vaga,vaha
 3472,"bring down, knock down",verb,valiti,valiti,valic
 1698,currency,noun,valuta,valuta,měna
 31007,vampire,noun,vampir,vampir,vųpyr
@@ -724,12 +683,11 @@ id,gloss,pos,official,baseline_pred,final_pred
 22415,import,noun,vvoz,vvoz,uvoz
 22416,import,verb,vvoziti,vvoziti,uvoziti
 34765,highly,adv,vysoko,vysoko,visoko
-13633,alpine,adj,vysokogorsky,vysokogorsky,vysokohorsky
 13638,height,noun,vyšina,vyšina,višina
 14027,"fall ill, get sick",verb,zabolěti,zaboleti,zablati
 36693,"fall ill, get sick",verb,zabolěvati,zabolevati,zablavati
 31492,"blaze up, flame up",verb,zagorěti,zagoreti,zagrati
-31494,abroad,noun,zagranica,zagranica,zahraniči
+31494,abroad,noun,zagranica,zagranica,zagraniči
 19373,"busy, occupied",adj,zajęty,zajęty,zęujaty
 20314,nook,noun,zakųtȯk,zakutok,kųt
 19398,puzzled,adj,zamotany,zamotany,zmateny

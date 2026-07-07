@@ -11,10 +11,28 @@
 //! Output is the flavored/etymological spelling (so `-osť`, `-aľnosť`); the
 //! standard reduction (§1.3) folds it for the normalized metric.
 
-use crate::model::{Pos, RuleStep};
+use crate::model::{Gender, Pos, RuleStep};
 
 const DERIV: &str = "https://interslavic.fun/learn/vocabulary/derivation/";
 const STEEN: &str = "https://steen.free.fr/interslavic/grammar.html";
+
+/// Which lemma-normalization rule families to run (each is a benchmark-gated
+/// `ConsensusConfig` flag, so the ablation ladder can attribute its effect).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LemmaRules {
+    /// §5.2 internationalism ending table.
+    pub intl: bool,
+    /// §3 native POS lemma endings.
+    pub endings: bool,
+    /// Verbal/nominal prefix normalization (råz-, prěd-).
+    pub prefixes: bool,
+    /// Derivational-suffix normalization (root-consistency invariant [DERIV]):
+    /// -telj- kept before suffixes, feminine i-stem -sť, -livy.
+    pub deriv: bool,
+    /// Graeco-Latin hiatus in loans: ISV keeps -ia- (social-, entuziazm), the
+    /// Slavic cognates' glide (-ija-) is a national adaptation.
+    pub loan_hiatus: bool,
+}
 
 /// Normalize the lemma ending. `intl` gates the internationalism table; `endings`
 /// gates the native POS endings; `prefixes` gates verbal/nominal prefix
@@ -22,10 +40,16 @@ const STEEN: &str = "https://steen.free.fr/interslavic/grammar.html";
 pub fn normalize_lemma(
     word: &str,
     pos: Pos,
-    intl: bool,
-    endings: bool,
-    prefixes: bool,
+    gender: Option<Gender>,
+    rules: LemmaRules,
 ) -> (String, Vec<RuleStep>) {
+    let LemmaRules {
+        intl,
+        endings,
+        prefixes,
+        deriv,
+        loan_hiatus,
+    } = rules;
     let mut trace = Vec::new();
     let mut w = word.to_string();
 
@@ -74,7 +98,139 @@ pub fn normalize_lemma(
         }
     }
 
+    if loan_hiatus {
+        if let Some((next, id, why)) = loan_hiatus_rule(&w, pos) {
+            if next != w {
+                trace.push(RuleStep::new(id, &w, &next, why, Some(DERIV)));
+                w = next;
+            }
+        }
+    }
+
+    if deriv {
+        // Unlike the ending stages, several derivational rules can apply to one
+        // word (dějatelnost → -telj- AND -sť), so run them all in sequence.
+        for (next, id, why) in derivational_suffixes(&w, pos, gender) {
+            if next != w {
+                trace.push(RuleStep::new(id, &w, &next, why, Some(DERIV)));
+                w = next;
+            }
+        }
+    }
+
     (w, trace)
+}
+
+/// Derivational-suffix normalization (the root-consistency invariant `[DERIV]`:
+/// the same suffix must surface identically in every derivative). Each rule is
+/// categorical in the official dictionary:
+///  * `-telj-` is kept before derivational suffixes — 53 lemmas in
+///    -teljstvo/-teljny/-teljsky (+6 -teljka) vs **zero** with hard -tel- there;
+///    the word-final `-telj` rule alone missed the derived family.
+///  * feminine i-stems end soft `-sť` — 516 feminine lemmas in -sť vs **zero**
+///    in plain -st (kost́, radosť, zabolěvajemosť); masculines (most, tekst) are
+///    untouched. The general noun `-ost` → `-osť` covers the abstract suffix
+///    when gender is unknown, behind a closed skip list (most/post/tost/hvost).
+///  * the deverbal adjective suffix is `-livy` — 152 lemmas in -liv- vs **zero**
+///    in -ljiv- (South-Slavic cognates write -ljiv).
+fn derivational_suffixes(
+    word: &str,
+    pos: Pos,
+    gender: Option<Gender>,
+) -> Vec<(String, &'static str, &'static str)> {
+    let mut out = Vec::new();
+    let mut w = word.to_string();
+
+    // -ljiv- → -liv- (suffix positions only, so šljiva-like roots are safe).
+    for suf in ["ljivy", "ljivi", "ljivo", "ljivosť", "ljivost"] {
+        if w.ends_with(suf) {
+            let next = format!("{}l{}", &w[..w.len() - suf.len()], &suf[2..]);
+            out.push((
+                next.clone(),
+                "deriv-liv",
+                "Sufiks -liv(y): medžuslovjansky drži tvŕde l (South -ljiv je narodna adaptacija).",
+            ));
+            w = next;
+            break;
+        }
+    }
+
+    // -telj- kept before derivational suffixes (učiteljstvo, bditeljny), unless
+    // the root is one of the closed set of genuine hard -tel- words.
+    let hard_tel = ["hotel", "kotel", "kostel", "dětel"];
+    if !hard_tel.iter().any(|r| w.contains(r)) {
+        for (suf, rep) in [
+            ("telstvo", "teljstvo"),
+            ("telnosť", "teljnosť"),
+            ("telnost", "teljnosť"),
+            ("telny", "teljny"),
+            ("telno", "teljno"),
+            ("telsky", "teljsky"),
+            ("telka", "teljka"),
+        ] {
+            if w.ends_with(suf) && w.chars().count() > suf.chars().count() + 1 {
+                let next = format!("{}{}", &w[..w.len() - suf.len()], rep);
+                out.push((
+                    next.clone(),
+                    "deriv-telj",
+                    "Sufiks dějatelja *-teljь drži mękke lj i prěd sufiksami (-teljstvo, -teljny).",
+                ));
+                w = next;
+                break;
+            }
+        }
+    }
+
+    // Feminine i-stem: soft -sť (kosť, radosť). Categorical for feminine nouns;
+    // when gender is unknown, only the abstract -osť suffix is safe (skip the
+    // closed masculine set most/post/tost/hvost).
+    if pos == Pos::Noun && w.ends_with("st") && w.chars().count() > 3 {
+        let feminine = gender == Some(Gender::Feminine);
+        let osty = w.ends_with("ost")
+            && !["most", "post", "tost", "hvost", "avanpost", "kompost"].contains(&w.as_str());
+        if feminine || osty {
+            let next = format!("{}ť", &w[..w.len() - 1]);
+            out.push((
+                next,
+                "deriv-ost",
+                "Žensky i-kmen: mękke -sť (kosť, radosť, novosť).",
+            ));
+        }
+    }
+
+    out
+}
+
+/// Graeco-Latin hiatus in internationalisms: Interslavic keeps the Latin -ia-
+/// hiatus (socialny, entuziazm, sociolog) where the Slavic cognates insert a
+/// glide (-ija-). Categorical in the dictionary: 24 -ial- vs 0 -ijal-, 2 -iaz(m)
+/// vs 0 -ijaz-, 3 -iast- vs 0 -ijast-, 139 midword -io- vs 1 -ijo- (kopijovati,
+/// a verb — hence the noun/adjective gate for -ijo-).
+fn loan_hiatus_rule(word: &str, pos: Pos) -> Option<(String, &'static str, &'static str)> {
+    let mut w = word.to_string();
+    for pat in ["ijal", "ijazm", "ijast"] {
+        if w.contains(pat) {
+            w = w.replace(pat, &pat.replacen('j', "", 1));
+        }
+    }
+    // Midword -ijo- → -io- (socijolog → sociolog); nouns/adjectives only, the
+    // word-final feminine -ijo is the nom.sg -ija (handled by noun-ija) and
+    // verbs like kopijovati genuinely keep the glide.
+    if matches!(pos, Pos::Noun | Pos::Adjective) {
+        if let Some(i) = w.find("ijo") {
+            if i + 3 < w.len() {
+                w = format!("{}{}{}", &w[..i], "io", &w[i + 3..]);
+            }
+        }
+    }
+    if w != word {
+        return Some((
+            w,
+            "loan-hiatus",
+            "Grečsko-latinsky zěv -ia-/-io- sę drži v internacionalizmah (socialny, sociolog); -ija- je narodna adaptacija.",
+        ));
+    }
+    None
 }
 
 /// Replace a matched suffix. Returns the new string.
@@ -503,19 +659,29 @@ mod tests {
         assert!(super::normalize_prefix("rosa").is_none());
     }
 
+    fn rules(intl: bool, endings: bool) -> super::LemmaRules {
+        super::LemmaRules {
+            intl,
+            endings,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn latin_entia_antia_endings_normalize() {
         // Slovene/SC -enca/-anca (Latin -entia/-antia) → -encija/-ancija.
-        let (w, _) = super::normalize_lemma("licenca", crate::model::Pos::Noun, true, true, false);
+        let (w, _) =
+            super::normalize_lemma("licenca", crate::model::Pos::Noun, None, rules(true, true));
         assert_eq!(w, "licencija");
-        let (w, _) = super::normalize_lemma("aroganca", crate::model::Pos::Noun, true, true, false);
+        let (w, _) =
+            super::normalize_lemma("aroganca", crate::model::Pos::Noun, None, rules(true, true));
         assert_eq!(w, "arogancija");
     }
 
     #[test]
     fn agent_noun_and_feminine_nominative_endings() {
         use crate::model::Pos;
-        let n = |w: &str| super::normalize_lemma(w, Pos::Noun, true, true, false).0;
+        let n = |w: &str| super::normalize_lemma(w, Pos::Noun, None, rules(true, true)).0;
         // Agentive *-teljь: bare -tel gains the soft l.
         assert_eq!(n("izbiratel"), "izbiratelj");
         assert_eq!(n("proizvoditel"), "proizvoditelj");
@@ -531,12 +697,62 @@ mod tests {
     #[test]
     fn soft_stem_adjective_takes_i() {
         use crate::model::Pos;
-        let a = |w: &str| super::normalize_lemma(w, Pos::Adjective, false, true, false).0;
+        let a = |w: &str| super::normalize_lemma(w, Pos::Adjective, None, rules(false, true)).0;
         // A hushing stem before -y takes the soft ending -i.
         assert_eq!(a("staršy"), "starši");
         assert_eq!(a("božy"), "boži");
         // A hard stem keeps -y.
         assert_eq!(a("dobry"), "dobry");
+    }
+
+    #[test]
+    fn derivational_suffixes_normalize() {
+        use crate::model::{Gender, Pos};
+        let deriv = super::LemmaRules {
+            endings: true,
+            deriv: true,
+            ..Default::default()
+        };
+        // -telj- kept before derivational suffixes.
+        let n = |w: &str, p: Pos, g: Option<Gender>| super::normalize_lemma(w, p, g, deriv).0;
+        assert_eq!(n("izdatelstvo", Pos::Noun, None), "izdateljstvo");
+        assert_eq!(n("bditelny", Pos::Adjective, None), "bditeljny");
+        assert_eq!(n("neprijatelsky", Pos::Adjective, None), "neprijateljsky");
+        assert_eq!(n("izključitelno", Pos::Adverb, None), "izključiteljno");
+        // ... via the endings-stage -nost first: dějatelnost → dějateljnosť.
+        assert_eq!(n("dějatelnost", Pos::Noun, None), "dějateljnosť");
+        // The closed hard -tel- set is protected.
+        assert_eq!(n("kotelny", Pos::Adjective, None), "kotelny");
+        // Feminine i-stem takes the soft -sť; masculines don't.
+        assert_eq!(
+            n("kost", Pos::Noun, Some(Gender::Feminine)),
+            "kosť".to_string()
+        );
+        assert_eq!(n("zabolevajemost", Pos::Noun, None), "zabolevajemosť");
+        assert_eq!(n("most", Pos::Noun, None), "most");
+        assert_eq!(n("kompost", Pos::Noun, None), "kompost");
+        // Deverbal -livy, suffix position only.
+        assert_eq!(n("razdražljivy", Pos::Adjective, None), "razdražlivy");
+        assert_eq!(n("šljiva", Pos::Noun, Some(Gender::Feminine)), "šljiva");
+    }
+
+    #[test]
+    fn loan_hiatus_kept_in_internationalisms() {
+        use crate::model::Pos;
+        let hia = super::LemmaRules {
+            loan_hiatus: true,
+            ..Default::default()
+        };
+        let n = |w: &str, p: Pos| super::normalize_lemma(w, p, None, hia).0;
+        assert_eq!(n("socijalny", Pos::Adjective), "socialny");
+        assert_eq!(n("nacionalsocijalizm", Pos::Noun), "nacionalsocializm");
+        assert_eq!(n("entuzijazm", Pos::Noun), "entuziazm");
+        assert_eq!(n("entuzijastičny", Pos::Adjective), "entuziastičny");
+        assert_eq!(n("socijologija", Pos::Noun), "sociologija");
+        // Word-final -ijo (feminine nom.sg citation) is not the loan hiatus.
+        assert_eq!(n("fizioterapijo", Pos::Noun), "fizioterapijo");
+        // Verbs keep the glide (kopijovati is official).
+        assert_eq!(n("kopijovati", Pos::Verb), "kopijovati");
     }
 
     #[test]

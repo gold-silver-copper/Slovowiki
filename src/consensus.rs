@@ -120,6 +120,18 @@ pub struct ConsensusConfig {
     /// attested form) — instead of the fixed REP_PRIORITY, avoiding dialectal /
     /// oblique outliers. The rep-eval probe measured +1.09pp exact.
     pub medoid_representative: bool,
+    /// Derivational-suffix normalization (root-consistency invariant [DERIV]):
+    /// -telj- kept before suffixes (-teljstvo/-teljny), feminine i-stem -sť
+    /// (kosť, radosť), deverbal -livy — each categorical in the dictionary.
+    pub derivational_suffixes: bool,
+    /// Keep the Graeco-Latin -ia-/-io- hiatus in internationalisms (socialny,
+    /// entuziazm, sociolog) where Slavic cognates insert the glide -ija-.
+    pub loan_hiatus: bool,
+    /// Undo the *g→h spirantization a Czech/Slovak/Ukrainian/Belarusian
+    /// representative leaks (blahosklonnost → blago-), corroborated per
+    /// consonant position by ≥2 g-preserving cognates (ru/pl/South). ISV has
+    /// no g→h rule [RULE_SPEC §2].
+    pub spirantization_repair: bool,
 }
 
 impl ConsensusConfig {
@@ -149,6 +161,9 @@ impl ConsensusConfig {
             verb_class_repair: false,
             voicing_repair: false,
             medoid_representative: false,
+            derivational_suffixes: false,
+            loan_hiatus: false,
+            spirantization_repair: false,
         }
     }
 
@@ -180,6 +195,9 @@ impl ConsensusConfig {
             verb_class_repair: true,
             voicing_repair: true,
             medoid_representative: true,
+            derivational_suffixes: true,
+            loan_hiatus: true,
+            spirantization_repair: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -210,6 +228,9 @@ impl ConsensusConfig {
             verb_class_repair: true,
             voicing_repair: true,
             medoid_representative: true,
+            derivational_suffixes: true,
+            loan_hiatus: true,
+            spirantization_repair: true,
         }
     }
 }
@@ -730,9 +751,14 @@ fn reconstruct(
         let (fixed, steps) = crate::morph::normalize_lemma(
             &form,
             input.pos,
-            cfg.internationalism,
-            cfg.lemma_endings,
-            cfg.prefix_normalization,
+            input.gender,
+            crate::morph::LemmaRules {
+                intl: cfg.internationalism,
+                endings: cfg.lemma_endings,
+                prefixes: cfg.prefix_normalization,
+                deriv: cfg.derivational_suffixes,
+                loan_hiatus: cfg.loan_hiatus,
+            },
         );
         form = fixed;
         trace.extend(steps);
@@ -769,7 +795,90 @@ fn reconstruct(
             form = fixed;
         }
     }
+
+    // Repair 9: undo the *g→h spirantization a Czech/Slovak/Ukrainian/Belarusian
+    // representative leaks (blahosklonnost, kalihrafija). Interslavic has no g→h
+    // rule (RULE_SPEC §2), and only those four lects shifted *g→h, so each h is
+    // checked per consonant position against the g-preserving cognates
+    // (ru/pl/South): ≥2 attesting g at that position restore the g. Genuine h
+    // (*x: duh, suh; loans: alkohol) stays — the g-preserving lects write h there
+    // too.
+    if cfg.spirantization_repair
+        && matches!(rep.lang_code.as_str(), "cs" | "sk" | "uk" | "be")
+        && form.contains('h')
+    {
+        if let Some(fixed) = spirantize_h_to_g(&form, per_lang) {
+            if fixed != form {
+                trace.push(RuleStep::new(
+                    "spirantization-hg",
+                    form.clone(),
+                    fixed.clone(),
+                    "Spirantizacija *g→h (češsko/slovačsko/ukrajinsko/běloruska) vrnjena: g-držeči kognaty potvŕdžajut g."
+                        .to_string(),
+                    Some(DOC_ORTHO),
+                ));
+                form = fixed;
+            }
+        }
+    }
     (form, trace)
+}
+
+/// Languages that did NOT undergo the *g→h spirantization, so their cognates
+/// witness the etymological g/h faithfully.
+const G_PRESERVING: &[&str] = &["ru", "pl", "sl", "hr", "sr", "bs", "bg", "mk"];
+
+/// The consonant sequence of a form in folded-ASCII space (vowels and the glide
+/// `j` dropped), used to align consonant positions across cognates whose vowels
+/// and endings differ.
+fn cons_seq(s: &str) -> Vec<char> {
+    ortho::ascii_skeleton(s)
+        .chars()
+        .filter(|c| !"aeiouy".contains(*c) && *c != 'j')
+        .collect()
+}
+
+/// See Repair 9: replace an `h` with `g` when ≥2 g-preserving cognates attest a
+/// `g` at the same consonant position (and g outvotes h there).
+fn spirantize_h_to_g(form: &str, per_lang: &BTreeMap<&str, &SourceForm>) -> Option<String> {
+    let donors: Vec<Vec<char>> = G_PRESERVING
+        .iter()
+        .filter_map(|l| per_lang.get(l))
+        .map(|f| cons_seq(&f.norm.latin))
+        .collect();
+    if donors.len() < 2 {
+        return None;
+    }
+    let mut out = String::new();
+    let mut k = 0usize; // consonant index in cons_seq space
+    let mut changed = false;
+    for ch in form.chars() {
+        let folded: String = ortho::ascii_skeleton(&ch.to_string());
+        let n_cons = folded
+            .chars()
+            .filter(|c| !"aeiouy".contains(*c) && *c != 'j')
+            .count();
+        if ch == 'h' {
+            let (mut g, mut h) = (0usize, 0usize);
+            for d in &donors {
+                match d.get(k) {
+                    Some('g') => g += 1,
+                    Some('h') => h += 1,
+                    _ => {}
+                }
+            }
+            if g >= 2 && g > h {
+                out.push('g');
+                changed = true;
+            } else {
+                out.push(ch);
+            }
+        } else {
+            out.push(ch);
+        }
+        k += n_cons;
+    }
+    changed.then_some(out)
 }
 
 /// Voicing repairs (see `ConsensusConfig::voicing_repair`):
@@ -1611,6 +1720,34 @@ mod tests {
             is_intl_meaning: intl,
             reflexive: false,
         }
+    }
+
+    #[test]
+    fn spirantization_restores_g_from_g_preserving_cognates() {
+        let ru = form("ru", Branch::East, "blagosklonnostj");
+        let pl = form("pl", Branch::West, "blagosklonnošč");
+        let hr = form("hr", Branch::South, "blagosklonost");
+        let mut per_lang: BTreeMap<&str, &SourceForm> = BTreeMap::new();
+        per_lang.insert("ru", &ru);
+        per_lang.insert("pl", &pl);
+        per_lang.insert("hr", &hr);
+        // Czech/Slovak h with ≥2 g-preserving witnesses at the same consonant
+        // position → g restored.
+        assert_eq!(
+            spirantize_h_to_g("blahosklonnosť", &per_lang).as_deref(),
+            Some("blagosklonnosť")
+        );
+
+        // Genuine *x/loan h stays: the g-preserving cognates write h there too.
+        let ru2 = form("ru", Branch::East, "alkogolj");
+        let pl2 = form("pl", Branch::West, "alkohol");
+        let hr2 = form("hr", Branch::South, "alkohol");
+        let mut per_lang2: BTreeMap<&str, &SourceForm> = BTreeMap::new();
+        per_lang2.insert("ru", &ru2);
+        per_lang2.insert("pl", &pl2);
+        per_lang2.insert("hr", &hr2);
+        // ru g is outvoted 1-2 at that position → no change (returns None).
+        assert_eq!(spirantize_h_to_g("alkohol", &per_lang2), None);
     }
 
     #[test]
