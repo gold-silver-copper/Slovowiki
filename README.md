@@ -53,10 +53,10 @@ from its **own** language's Wiktionary. Every entry page then shows, per cognate
 The cache is built by filtering the RU/PL/CS dumps to the ~70k cognate words that
 actually appear in the corpus (streamed in seconds), so the enrichment is
 committed and the site build stays self-contained.
-- `cargo run -- export` — generate the cognate-set site (~22.4k words; falls back to the
+- `cargo run -- export` — generate the cognate-set site (~21.4k words after merging notation-variant and same-concept duplicates; falls back to the
   dictionary-seeded site if the lemma cache is absent).
 - Independent validation: **~4.8k distinct official Interslavic lemmas are reproduced**
-  by a generated word (of ~22.4k), one representative page per lemma (homographs and
+  by a generated word (of ~21.4k), one representative page per lemma (homographs and
   duplicate sets deduped), with no leakage from the dictionary into the generation.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
   **56.6% exact / 61.0% normalized** on the ~7.4k entries with a known ancestor.

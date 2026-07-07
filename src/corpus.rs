@@ -126,15 +126,23 @@ pub fn build_sets(corpus: &LemmaCorpus) -> Vec<CognateSet> {
             {
                 continue;
             }
+            // Key inherited sets by a *normalized* reconstruction so pure notation
+            // variants of the same proto merge into one cognate set: stress-accent
+            // variants (*bьràti ≡ *bьrati, *bràtrъ ≡ *bratrъ) and optional-segment
+            // notation (*(j)edinъ ≡ *edinъ). POS still gates, so a real homograph
+            // (num *edinъ vs adj *edinъ "same") stays split. Merging is safe here —
+            // build_sets feeds only the site, never the leakage-free benchmark.
             inherited
-                .entry((e.proto.clone(), pos_class(&e.pos)))
+                .entry((proto_merge_key(&e.proto), pos_class(&e.pos)))
                 .or_default()
                 .push(e.clone());
         }
     }
 
     let mut sets = Vec::new();
-    for ((proto, _), members) in inherited {
+    for ((_key, _), members) in inherited {
+        // Display the most common original reconstruction among the merged members.
+        let proto = most_common_proto(&members);
         if let Some(set) = finish_set(proto.clone(), proto, false, members) {
             sets.push(set);
         }
@@ -242,6 +250,56 @@ fn finish_set(
 /// c→k, so the same Graeco-Latin root clusters regardless of local spelling.
 fn intl_key(latin: &str) -> String {
     ortho::ascii_skeleton(latin).replace('j', "")
+}
+
+/// A normalized reconstruction key that collapses pure notation variants of the
+/// same Proto-Slavic form: drops the `*`, any parenthesized *optional* segment
+/// (`*(j)edinъ`→`edinъ`), and stress accents (`*bьràti`→`bьrati`), while keeping
+/// the etymological letters (ě ę ǫ ъ ь ȯ y) that actually distinguish a
+/// reconstruction. Two reconstructions differing only by stress or an optional
+/// segment are the same word, so this never fuses distinct roots.
+fn proto_merge_key(proto: &str) -> String {
+    let s = proto.trim().trim_start_matches('*');
+    let mut out = String::with_capacity(s.len());
+    let mut depth = 0i32;
+    for c in s.chars() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = (depth - 1).max(0),
+            _ if depth > 0 => {}
+            _ => out.push(debase_stress(c)),
+        }
+    }
+    out
+}
+
+/// Strip a stress-accented base vowel to its plain base; leave etymological
+/// letters untouched (mirrors the reconstruction-cleaning in the proto engine).
+fn debase_stress(c: char) -> char {
+    match c {
+        'à' | 'á' | 'â' | 'ã' | 'ā' | 'ǎ' | 'ȁ' | 'ȃ' => 'a',
+        'è' | 'é' | 'ê' | 'ẽ' | 'ē' | 'ȅ' | 'ȇ' => 'e',
+        'ì' | 'í' | 'î' | 'ĩ' | 'ī' | 'ȉ' | 'ȋ' => 'i',
+        'ò' | 'ó' | 'ô' | 'õ' | 'ō' | 'ȍ' | 'ȏ' => 'o',
+        'ù' | 'ú' | 'û' | 'ũ' | 'ū' | 'ȕ' | 'ȗ' => 'u',
+        'ý' | 'ỳ' | 'ŷ' | 'ȳ' => 'y',
+        other => other,
+    }
+}
+
+/// The most common original reconstruction among merged members (for display).
+fn most_common_proto(members: &[LemmaEntry]) -> String {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for m in members {
+        if !m.proto.is_empty() {
+            *counts.entry(m.proto.as_str()).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, n)| *n)
+        .map(|(p, _)| p.to_string())
+        .unwrap_or_default()
 }
 
 fn most_common_etymon(members: &[LemmaEntry]) -> String {

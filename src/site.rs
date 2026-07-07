@@ -280,7 +280,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     let mut search = String::from("[\n");
     let mut first_search = true;
     let mut rows: Vec<HomeRow> = Vec::new();
-    let (mut n, mut high, mut med, mut low, mut official, mut borrowed) = (0usize, 0, 0, 0, 0, 0);
+    let (mut official, mut borrowed) = (0usize, 0usize);
+    // n / high / med / low are computed after same-concept suppression (below).
+    let (n, high, med, low);
     let mut lemma_total = 0usize;
     // Folded spellings covered by any generated candidate, so official-only
     // pages are emitted exactly for the rest.
@@ -294,6 +296,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         display: String,
         status: MatchStatus,
         matched: Option<(usize, String, String)>,
+        /// A redundant same-concept duplicate (same folded form + overlapping
+        /// gloss as a better set): not rendered, kept out of search/links.
+        suppressed: bool,
     }
     impl FamilyEntry for Prepared {
         fn id(&self) -> usize {
@@ -316,16 +321,11 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         }
         id += 1;
-        n += 1;
         lemma_total += members;
         if g.set.borrowed {
             borrowed += 1;
         }
-        match g.confidence {
-            Confidence::High => high += 1,
-            Confidence::Medium => med += 1,
-            Confidence::Low => low += 1,
-        }
+        // n / high / med / low are recomputed after same-concept suppression.
         // Authoritative match: ANY ranked candidate reproducing an official
         // lemma (folded) puts the entry under the official headword.
         let matched: Option<(usize, String, String)> =
@@ -355,6 +355,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             display,
             status,
             matched,
+            suppressed: false,
         });
     }
 
@@ -406,12 +407,71 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         official -= demoted;
     }
 
+    // Same-concept suppression: after the official representative is chosen,
+    // collapse the remaining duplicate pages that share a folded form AND a gloss
+    // token with a stronger set (numbers tagged noun vs num, `jaky` "strong,
+    // firm" ×2, duplicate proper nouns). True homographs (disjoint gloss: `ja` =
+    // I / and / yes) keep their own page. Suppressed pages are not rendered, and
+    // are kept out of search, families, and cross-links. Display-only.
+    {
+        let gloss_of = |p: &Prepared| -> Vec<String> {
+            match &p.matched {
+                Some((_, _, en)) => crate::dump::gloss_tokens(en),
+                None => crate::dump::gloss_tokens(&p.g.set.gloss),
+            }
+        };
+        let rank = |p: &Prepared| (p.matched.is_some(), (p.g.score * 1000.0) as i32);
+        let mut by_form: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, p) in prepared.iter().enumerate() {
+            by_form
+                .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
+                .or_default()
+                .push(i);
+        }
+        let mut suppressed_n = 0usize;
+        for (_f, mut group) in by_form {
+            if group.len() < 2 {
+                continue;
+            }
+            group.sort_by(|&a, &b| rank(&prepared[b]).cmp(&rank(&prepared[a])));
+            let mut kept: Vec<Vec<String>> = Vec::new();
+            for &i in &group {
+                let g = gloss_of(&prepared[i]);
+                if !g.is_empty() && kept.iter().any(|k| g.iter().any(|t| k.contains(t))) {
+                    prepared[i].suppressed = true;
+                    suppressed_n += 1;
+                } else {
+                    kept.push(g);
+                }
+            }
+        }
+        // Recompute display counts over the surviving pages.
+        n = prepared.iter().filter(|p| !p.suppressed).count();
+        high = prepared
+            .iter()
+            .filter(|p| !p.suppressed && matches!(p.g.confidence, Confidence::High))
+            .count();
+        med = prepared
+            .iter()
+            .filter(|p| !p.suppressed && matches!(p.g.confidence, Confidence::Medium))
+            .count();
+        low = prepared
+            .iter()
+            .filter(|p| !p.suppressed && matches!(p.g.confidence, Confidence::Low))
+            .count();
+        println!("Suppressed {suppressed_n} same-concept duplicate pages.");
+    }
+
     // Word families: entries whose ancestors share a Proto-Slavic stem
     // (*starъ/*starostь/*starьcь) or the same loan etymon (la magister →
     // majstor/maestro/magistr) cross-link each other.
     let mut families: std::collections::BTreeMap<String, Vec<usize>> =
         std::collections::BTreeMap::new();
     for (i, p) in prepared.iter().enumerate() {
+        if p.suppressed {
+            continue;
+        }
         if let Some(k) = family_key(&p.g.set) {
             families.entry(k).or_default().push(i);
         }
@@ -424,6 +484,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // enrichment into a site-wide semantic graph.
     let mut xref = crate::enrich::Xref::new();
     for p in &prepared {
+        if p.suppressed {
+            continue;
+        }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
         }
@@ -435,6 +498,9 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
 
     // Second pass: render pages (with family links) + the search index.
     for (i, p) in prepared.iter().enumerate() {
+        if p.suppressed {
+            continue;
+        }
         let family = family_block(i, &prepared, &families);
         let html = corpus_entry_page(
             p.id,
