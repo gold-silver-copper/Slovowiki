@@ -195,6 +195,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         &top_rows,
     );
     std::fs::write(out_dir.join("index.html"), home)?;
+    std::fs::write(out_dir.join("search.html"), search_page())?;
     std::fs::write(
         out_dir.join("about.html"),
         about_page(
@@ -504,6 +505,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         &rows,
     );
     std::fs::write(out_dir.join("index.html"), home)?;
+    std::fs::write(out_dir.join("search.html"), search_page())?;
     std::fs::write(
         out_dir.join("about.html"),
         corpus_about(n, lemma_total, official),
@@ -618,10 +620,10 @@ fn family_block<T: FamilyEntry>(
         return String::new();
     }
     format!(
-        "<details class='sec' open><summary>Rodina slov — obči prědȯk</summary>
-           <p class='muted'>Slova iz toj že etimologičnoj rodiny ({label}):</p>
-           <ul class='compact-list'>{items}</ul>
-         </details>"
+        "<section><h2 id='rodina'>Rodina slov</h2>\
+           <p class='muted'>Slova iz toj že etimologičnoj rodiny ({label}):</p>\
+           <ul class='compact-list'>{items}</ul>\
+         </section>"
     )
 }
 
@@ -709,16 +711,13 @@ fn corpus_entry_page(
 
     let etymology = if g.set.borrowed {
         format!(
-            "<p><b>Internacionalizm</b> (zaimka). Etimon: <span class='mention'>{}</span>.</p>
-             <p class='muted'>Forma je normalizovana po medžuslovjanskyh pravilah za internacionalizmy (-cija, -izm, -ist, -ičny); niže sų slovjanske zaimky toj že korene.</p>",
+            "<p>Internacionalizm (zaimka). Etimon: <span class='mention'>{}</span>. Niže sų slovjanske refleksy toj že korene.</p>",
             esc(&etymon_display(&g.set.etymon))
         )
     } else {
         format!(
-            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>{}</a>. Wiktionary povęzuje vse niže naslědniky s tojoju rekonstrukcijeju.</p>
-             <p class='muted'>Praslovjansko pravilo izvodi formų s pravilnymi znakami (ě, ć/đ, å, ȯ, y); medžuvětvovy konsensus daje alternativų.</p>",
-            esc(g.set.proto.trim_start_matches('*')),
-            esc(&g.set.proto),
+            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{p}'>*{p}</a>.</p>",
+            p = esc(g.set.proto.trim_start_matches('*')),
         )
     };
 
@@ -738,31 +737,26 @@ fn corpus_entry_page(
         .unwrap_or_default();
     let alternatives = alternatives_block(&g.candidates);
     let trace = trace_block(top);
-
     let foot = if official.is_some() {
-        "Oficialne slovo medžuslovjanskogo slovnika; rekonstrukcija i dokazy sų mašinno generovane (Wiktionary, CC BY-SA)."
+        "Oficialne slovo; rekonstrukcija i dokazy mašinno generovane (Wiktionary, CC BY-SA)."
     } else {
         "Mašinno generovana rekonstrukcija iz cognatov (Wiktionary, CC BY-SA). Ne oficialny standard."
     };
     let body = format!(
-        "<article class='entry'>
-           <h1 class='page-title firstHeading'>{}</h1>
-           {banner}
-           {headline}
-           <details class='sec' open><summary>Cognaty — slovjanske slova toj korene ({} językov)</summary>{cognates}</details>
-           <details class='sec' open><summary>Etimologija (praslovjanska rekonstrukcija)</summary>{etymology}</details>
-           {native_etym}
-           {native_conn}
-           {family}
-           <details class='sec' open><summary>Prěgibanje</summary>{inflection}</details>
-           <details class='sec'><summary>Alternativne kandidaty</summary>{alternatives}</details>
-           <details class='sec'><summary>Sled pravil</summary>{trace}</details>
-           <p class='foot'>{foot}</p>
+        "<article class='entry'>\
+           <h1 class='page-title firstHeading'>{headword}</h1>\
+           {banner}{headline}\
+           <section><h2 id='formy'>Formy i kandidaty</h2>{alternatives}</section>\
+           <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
+           <section><h2 id='cognaty'>Cognaty — {nlangs} językov</h2>{cognates}</section>\
+           <section><h2 id='etimologija'>Etimologija</h2>{etymology}</section>\
+           {native_etym}{native_conn}{family}\
+           <section><h2 id='sled'>Sled pravil</h2>{trace}</section>\
+           <p class='foot'>{foot}</p>\
          </article>",
-        esc(&headword),
-        g.n_langs,
+        headword = esc(&headword),
+        nlangs = g.n_langs,
     );
-    let _ = id;
     page(&format!("{headword} — medžuslovjansky"), &body, 1)
 }
 
@@ -807,26 +801,32 @@ fn official_only_page(
     }
     let inflection = inflection_table(isv, e.pos.code());
     let body = format!(
-        "<article class='entry'>
-           <h1 class='page-title firstHeading'>{}</h1>
-           <div class='banner info'><b>Oficialne slovo</b> medžuslovjanskogo slovnika. Generator ješče ne izvodi jego iz cognatnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>
-           <div class='headword-block'>
-             <div class='headmeta'><span class='badge pos'>{}</span> <span class='pill src-official'>oficialny slovnik</span></div>
-             <p class='def'><b>Anglijski smysl:</b> {}</p>
-           </div>
-           <details class='sec' open><summary>Slovjanski dokaz (iz oficialnogo slovnika)</summary>{}</details>
-           {native_etym}
-           {native_conn}
-           <details class='sec' open><summary>Prěgibanje</summary>{}</details>
-           <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>
+        "<article class='entry'>\
+           <h1 class='page-title firstHeading'>{isv}</h1>\
+           <div class='banner info'><b>Oficialne slovo.</b> Generator ješče ne izvodi jego iz cognatnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>\
+           <div class='headword-block'><div class='headmeta'><span class='badge pos'>{pos}</span> <span class='pill src-official'>oficialny slovnik</span></div>\
+             <p class='def'><b>Smysl:</b> {en}</p></div>\
+           <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
+           <section><h2 id='cognaty'>Slovjanski dokaz</h2>{cog}</section>\
+           {native_etym}{native_conn}\
+           <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>\
          </article>",
-        esc(isv),
-        esc(&pos_heading(e.pos.code())),
-        esc(&e.english),
-        cog,
-        inflection,
+        isv = esc(isv),
+        pos = esc(&pos_heading(e.pos.code())),
+        en = esc(&e.english),
     );
     page(&format!("{isv} — medžuslovjansky"), &body, 1)
+}
+
+/// The full search-results page (search.html). Reads `?q=` and lists every match;
+/// the header search box (present on every page) submits here on Enter.
+fn search_page() -> String {
+    let body = "<article class='entry search-page'>\
+      <h1 class='firstHeading'>Iskanje</h1>\
+      <p class='muted'>Napiši v polje gore i pritisni <b>Enter</b>. Najdeno: <b id='rescount'>0</b> rezultatov.</p>\
+      <div id='page-results' class='results full'></div>\
+    </article>";
+    page("Iskanje — medžuslovjansky", body, 0)
 }
 
 /// Human-readable borrowing source: `la computare` → `latinsky computare`.
@@ -942,9 +942,9 @@ fn enrich_etymology_section(
         return String::new();
     }
     format!(
-        "<details class='sec'><summary>Etimologija po narodnyh slovnikah (RU / PL / CS)</summary>\
+        "<section><h2 id='etym-nar'>Etimologija po narodnyh slovnikah (RU / PL / CS)</h2>\
          <div class='etym-sources'>{rows}</div>\
-         <p class='muted'>Iz narodnyh Wiktionary (ru/pl/cs.wiktionary.org), CC BY-SA — različne slovniky, različne pogledy na istoriju slova.</p></details>"
+         <p class='muted'>Iz narodnyh Wiktionary (ru/pl/cs), CC BY-SA — različne pogledy na istoriju slova.</p></section>"
     )
 }
 
@@ -1027,7 +1027,9 @@ fn enrich_connections_section(
     if blocks.is_empty() {
         return String::new();
     }
-    format!("<details class='sec'><summary>Značenja i semantične vęzi (RU / PL / CS)</summary>{blocks}</details>")
+    format!(
+        "<section><h2 id='vezi'>Značenja i semantične vęzi (RU / PL / CS)</h2>{blocks}</section>"
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1059,52 +1061,51 @@ fn corpus_home(
     list.push_str("</tbody></table>");
 
     let body = format!(
-        "<section class='home-heading'>
-           <h1 class='firstHeading'>Medžuslovjansky generator</h1>
-           <p class='muted'>Slovnik medžuslovjanskyh slov generovany iz <b>vsěh</b> naslědovanyh slovjanskyh lemm v Wiktionary — grupovanyh po praslovjanskom korene. Čim viče językov potvŕđaje korenj, tym veća uvěrjenost.</p>
-           <div class='searchbox'><input id='q' type='search' placeholder='Iskaj po slově ili anglijskom smyslu…' autocomplete='off'><div id='results' class='results'></div></div>
+        "<section class='home-hero'>
+           <h1 class='firstHeading'>Medžuslovjansky slovnik</h1>
+           <p class='lede'>Naučno obosnovany generator medžuslovjanskyh slov iz slovjanskyh dokazov, měrjeny protiv oficialnogo slovnika. Iskaj v polju gore (Enter za vse rezultaty), ili prěgledaj slova niže.</p>
          </section>
-         <section class='wiki-layout'>
-           <article class='wiki-main-list'>
-             <h2>Najbolje potvŕđene slova</h2>
-             <p class='muted'>Sortovano po čislu językov. Pokazano 400 od <b>{total}</b> slov; iskaj gore za vse.</p>
+         <div class='home-cols'>
+           <article class='home-main'>
+             <h2 id='slova'>Slova</h2>
+             <p class='muted'>Prvyh 400 od <b>{total}</b> zapisov. „Sila dogadki“ = kalibrovana uvěrjenost + ocěna.</p>
              {list}
            </article>
-           <aside class='wiki-sidebar'>
-             <div class='portal-box'><h3>Slučajno slovo</h3><div id='spotlight'><p class='muted'>Nakladajě sę…</p></div><button id='randbtn' type='button'>Drugo slovo</button></div>
-             <div class='portal-box stats-portal'><h3>Slovnik</h3>
+           <aside class='home-aside'>
+             <div class='side-box'><div class='side-h'>Slovnik</div>
                <table class='wikitable compact-table'>
-                 <tr><th>Slov (cognatnyh grup)</th><td>{total}</td></tr>
-                 <tr><th>Slovjanskyh lemm</th><td>{lemmas}</td></tr>
-                 <tr><th>Internacionalizmov</th><td>{borrowed}</td></tr>
-                 <tr><th>Visoka uvěrjenost</th><td>{high}</td></tr>
-                 <tr><th>Srědnja</th><td>{med}</td></tr>
-                 <tr><th>Nizka</th><td>{low}</td></tr>
-                 <tr><th>V oficialnom slovniku</th><td>{official}</td></tr>
-                 <tr><th>Oficialne bez rekonstrukcije</th><td>{official_only}</td></tr>
+                 <tr><th>Slov</th><td>{total}</td></tr>
+                 <tr><th>Lemm</th><td>{lemmas}</td></tr>
+                 <tr><th>= oficialnomu</th><td>{official}</td></tr>
+                 <tr><th>Oficialne-only</th><td>{official_only}</td></tr>
+                 <tr><th>Zaimky</th><td>{borrowed}</td></tr>
                </table>
              </div>
-             <div class='portal-box'><h3>Kako radi</h3><ul class='compact-list'>
-               <li>Vse slovjanske lemmy iz Wiktionary, grupovane po praslovjanskom korene.</li>
-               <li>Praslovjansko pravilo daje formų; konsensus daje alternativų.</li>
-               <li>Uvěrjenost = čislo językov i větvej.</li>
+             <div class='side-box'><div class='side-h'>Uvěrjenost</div>
+               <table class='wikitable compact-table'>
+                 <tr><th>Vysoka</th><td>{high}</td></tr>
+                 <tr><th>Srědnja</th><td>{med}</td></tr>
+                 <tr><th>Nizka</th><td>{low}</td></tr>
+               </table>
+             </div>
+             <div class='side-box'><div class='side-h'>Kako radi</div><ul class='compact-list'>
+               <li>Medžuvětvovy konsensus (6 podgrup) izbira korenj.</li>
+               <li>Praslovjansko pravilo daje flavornų formų.</li>
                <li><a href='about.html'>O metodě →</a></li>
              </ul></div>
            </aside>
-         </section>
-         <script>{js}</script>",
+         </div>",
         total = compact(n),
+        list = list,
         lemmas = compact(lemma_total),
+        official = compact(official),
+        official_only = compact(official_only),
         borrowed = compact(borrowed),
         high = compact(high),
         med = compact(med),
         low = compact(low),
-        official = compact(official),
-        official_only = compact(official_only),
-        list = list,
-        js = SEARCH_JS,
     );
-    page("Medžuslovjansky generator", &body, 0)
+    page("Medžuslovjansky slovnik", &body, 0)
 }
 
 fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
@@ -1319,55 +1320,62 @@ fn keys_json(keys: &[(String, usize)]) -> String {
     s
 }
 
+// Client-side search. Loaded on EVERY page (the search box lives in the header),
+// so SITE_BASE ('' at root, '../' under /entry/) resolves the fetch and links.
+// Typing shows a top-8 dropdown; Enter (or the full-results link) goes to
+// search.html?q, which lists every match.
 const SEARCH_JS: &str = r#"
 let IDX=null;
-async function ensure(){ if(IDX)return IDX; const r=await fetch('search.json'); IDX=await r.json(); return IDX; }
-const q=document.getElementById('q'), out=document.getElementById('results');
-let t=null;
-const STR={V:['vysoka','conf-high'],S:['srědnja','conf-med'],N:['nizka','conf-low']};
-function strBadge(e){ const s=STR[e[5]]||STR.N; return `<span class='reliability ${s[1]}'>${s[0]}</span> <span class='score muted'>${(e[6]||0).toFixed?e[6].toFixed(2):e[6]}</span>`; }
-q.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ run(); sync(); },120); });
-function sync(){ const v=q.value.trim(); history.replaceState(null,'', v?('?q='+encodeURIComponent(v)):location.pathname); }
-// Fold flavored Interslavic letters (å ȯ ě ę ų ć č š ž …) to plain ASCII so the
-// query "kratoky" or "kratky" can find "kråtȯky"/"kråtky". NFD strips combining
-// marks; đ has no decomposition and is folded by hand.
-function fold(x){ return x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d'); }
+async function ensure(){ if(IDX)return IDX; const r=await fetch(SITE_BASE+'search.json'); IDX=await r.json(); return IDX; }
+var q=document.getElementById('q'), out=document.getElementById('results'), pageRes=document.getElementById('page-results');
+var STR={V:['vysoka','conf-high'],S:['srědnja','conf-med'],N:['nizka','conf-low']};
+function strBadge(e){ var s=STR[e[5]]||STR.N; return "<span class='reliability "+s[1]+"'>"+s[0]+"</span>"; }
+function fold(x){ return x.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d'); }
+function scoreAll(raw){
+  var s=raw.trim().toLowerCase(); if(!s) return [];
+  var s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
+  for(var i=0;i<IDX.length;i++){ var e=IDX[i], f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
+    var gs=g.split(/[,;]\s*/), ff=fold(f), sc=0, anchor=0;
+    if(f===s||f===s2)sc=100; else if(ff===sf)sc=90;
+    else{ for(var k=0;k<ks.length;k++){ var kr=ks[k]; if(kr[0]===s2||kr[0]===sf){ sc=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
+    if(!sc){ if(f.indexOf(s2)===0||ff.indexOf(sf)===0)sc=60;
+      else if(gs.some(function(x){return x.trim()===s||x.trim()===s2;}))sc=55;
+      else if(ks.some(function(kr){return kr[0].indexOf(sf)===0;}))sc=50;
+      else if(f.indexOf(s2)>=0)sc=40; else if(g.indexOf(s2)>=0)sc=20; }
+    if(sc>0)hits.push([sc,e,anchor]); if(hits.length>3000)break; }
+  hits.sort(function(a,b){return b[0]-a[0];}); return hits;
+}
+function hitHTML(e,a){ return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+e[1]+"</b> <span class='hp'>"+e[3]+"</span> <span class='hg'>"+e[2]+"</span> <span class='hs'>"+strBadge(e)+"</span></a>"; }
 async function run(){
-  let s=q.value.trim().toLowerCase(); if(!s){out.innerHTML='';return;}
-  // English verbs are cited without the infinitive marker ("eat", not "to eat").
-  const s2=s.replace(/^to\s+/,'');
-  const sf=fold(s2);
-  const idx=await ensure();
-  const hits=[];
-  for(const e of idx){ const f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
-    const gs=g.split(/[,;]\s*/).map(x=>x.trim());
-    const ff=fold(f);
-    let score=0, anchor=0;
-    if(f===s||f===s2)score=100;
-    else if(ff===sf)score=90;
-    else{ for(const kr of ks){ if(kr[0]===s2||kr[0]===sf){ score=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
-    if(!score){
-      if(f.startsWith(s2)||ff.startsWith(sf))score=60;
-      else if(gs.some(x=>x===s||x===s2))score=55;
-      else if(ks.some(kr=>kr[0].startsWith(sf)))score=50;
-      else if(f.includes(s2))score=40;
-      else if(g.includes(s2))score=20;
-    }
-    if(score>0)hits.push([score,e,anchor]); if(hits.length>600)break; }
-  hits.sort((a,b)=>b[0]-a[0]);
-  out.innerHTML=hits.slice(0,60).map(([_,e,a])=>`<a class='hit' href='entry/${e[0]}.html${a?('#cand-'+a):''}'><b>${e[1]}</b> <span class='hp'>${e[3]}</span> <span class='hg'>${e[2]}</span> <span class='hs'>${strBadge(e)}</span></a>`).join('')||"<div class='muted'>Ničto ne najdeno.</div>";
+  await ensure(); var v=q?q.value:''; var hits=scoreAll(v);
+  if(out){ if(v.trim()){ var h=hits.slice(0,8).map(function(x){return hitHTML(x[1],x[2]);}).join('');
+      if(!h)h="<div class='muted nohit'>Ničto ne najdeno.</div>";
+      else if(hits.length>8)h+="<a class='hit more' href='"+SITE_BASE+"search.html?q="+encodeURIComponent(v.trim())+"'>Vse "+hits.length+" rezultatov -></a>";
+      out.innerHTML=h; out.style.display='block'; } else out.style.display='none'; }
+  if(pageRes){ var c=document.getElementById('rescount'); if(c)c.textContent=hits.length;
+    pageRes.innerHTML=hits.slice(0,400).map(function(x){return hitHTML(x[1],x[2]);}).join('')||"<div class='muted'>Ničto ne najdeno.</div>"; }
 }
-// Random "word of the moment" for the sidebar spotlight.
-async function randomWord(){
-  const idx=await ensure(); if(!idx.length)return;
-  const e=idx[Math.floor(Math.random()*idx.length)];
-  const el=document.getElementById('spotlight'); if(!el)return;
-  el.innerHTML=`<a class='spotlight-word' href='entry/${e[0]}.html'>${e[1]}</a><div class='muted'>${e[3]} · ${e[2]}</div><div class='spot-strength'>Sila dogadki: ${strBadge(e)}</div>`;
-}
-const rb=document.getElementById('randbtn'); if(rb) rb.addEventListener('click',randomWord);
+function goSearch(e){ e.preventDefault(); var v=q.value.trim(); if(v) location.href=SITE_BASE+'search.html?q='+encodeURIComponent(v); return false; }
+if(q){ var t=null; q.addEventListener('input',function(){ clearTimeout(t); t=setTimeout(run,110); });
+  q.addEventListener('focus',function(){ if(q.value.trim())run(); }); }
+document.addEventListener('click',function(ev){ if(out&&!ev.target.closest('.hsearch'))out.style.display='none'; });
+async function randomWord(){ await ensure(); if(!IDX.length)return; var e=IDX[Math.floor(Math.random()*IDX.length)];
+  var el=document.getElementById('spotlight'); if(!el)return; var box=document.getElementById('spotbox'); if(box)box.style.display='';
+  el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+e[1]+"</a><div class='muted'>"+e[3]+" · "+e[2]+"</div>"; }
+var rb=document.getElementById('randbtn'); if(rb) rb.addEventListener('click',randomWord);
 if(document.getElementById('spotlight')) randomWord();
-// Pre-fill and run from a ?q= URL so shared links (…/?q=to+eat) work.
-(function(){ const p=new URLSearchParams(location.search).get('q'); if(p){ q.value=p; run(); } })();
+(function(){ var p=new URLSearchParams(location.search).get('q'); if(p&&q){ q.value=p; run(); } })();
+"#;
+
+/// Builds the "Na toj strane" contents tree in the sidebar from the section
+/// headings, and hides the box when a page has none (home / search).
+const TOC_JS: &str = r#"
+(function(){ var nav=document.getElementById('toc-nav'); if(!nav)return;
+  var hs=document.querySelectorAll('main h2[id], main h3[id]'); var box=nav.closest('.toc-box');
+  if(!hs.length){ if(box)box.style.display='none'; return; }
+  var html=''; hs.forEach(function(h){ html+="<a class='toc-"+h.tagName.toLowerCase()+"' href='#"+h.id+"'>"+h.textContent+"</a>"; });
+  nav.innerHTML=html;
+})();
 "#;
 
 // ---------------------------------------------------------------------------
@@ -1473,9 +1481,11 @@ fn etymology_block(g: &Generation) -> String {
 }
 
 fn alternatives_block(candidates: &[Candidate]) -> String {
-    if candidates.len() <= 1 {
-        return "<p class='muted'>Nema alternativnyh kandidatov.</p>".to_string();
+    if candidates.is_empty() {
+        return "<p class='muted'>Bez kandidatov.</p>".to_string();
     }
+    // Always show the ranked forms (the top one is the headword); this is now a
+    // primary section, so even a single-candidate entry lists its form + score.
     let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th>Ocěna</th><th>Uvěrjenost</th><th>Větvi</th></tr></thead><tbody>");
     for (i, c) in candidates.iter().enumerate() {
         let _ = write!(
@@ -1744,19 +1754,39 @@ const REPO_URL: &str = "https://github.com/gold-silver-copper/interslavic-wiktio
 fn page(title: &str, body: &str, depth: usize) -> String {
     let up = if depth == 0 { "" } else { "../" };
     format!(
-        "<!doctype html><html lang='art'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{title}</title><link rel='stylesheet' href='{up}wiktionary.css'></head><body>\
+        "<!doctype html><html lang='art'><head>\
+         <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>\
+         <title>{title}</title><link rel='stylesheet' href='{up}wiktionary.css'>\
+         <script>var SITE_BASE='{up}';</script></head><body>\
          <header class='site-header'>\
-           <a class='brand' href='{up}index.html'>Medžuslovjansky generator</a>\
-           <nav class='nav'><a href='{up}index.html'>Slovnik</a><a href='{up}about.html'>O metodě</a><a href='{REPO_URL}'>Kod</a></nav>\
+           <a class='brand' href='{up}index.html'>Medžuslovjansky <span class='brand-sub'>slovnik</span></a>\
+           <form class='hsearch' onsubmit='return goSearch(event)' autocomplete='off' role='search'>\
+             <input id='q' type='search' placeholder='Iskaj slovo ili anglijski smysl…  (Enter za vse rezultaty)' spellcheck='false'>\
+             <button class='hsearch-go' type='submit' title='Iskaj'>→</button>\
+             <div id='results' class='dropdown'></div>\
+           </form>\
+           <nav class='nav'><a href='{up}index.html'>Slovnik</a><a href='{up}search.html'>Iskanje</a><a href='{up}about.html'>O metodě</a><a href='{REPO_URL}'>Kod</a></nav>\
          </header>\
-         <main>{body}</main>\
-         <script>(function(){{var h=location.hash;if(h&&/^#cand-\\d+$/.test(h)){{var t=document.querySelector(h);if(t){{var d=t.closest('details');if(d)d.open=true;t.scrollIntoView({{block:'center'}});}}}}}})();</script>\
+         <div class='layout'>\
+           <aside class='sidebar'>\
+             <div class='side-box toc-box'><div class='side-h'>Na toj straně</div><nav id='toc-nav' class='toc'></nav></div>\
+             <div class='side-box'><div class='side-h'>Nastroje</div>\
+               <a class='side-link' href='{up}index.html'>📖 Vse slova</a>\
+               <button id='randbtn' class='side-link' type='button'>🎲 Slučajno slovo</button>\
+               <a class='side-link' href='{up}search.html'>🔎 Rozšireno iskanje</a>\
+               <a class='side-link' href='{up}about.html'>ⓘ O metodě</a>\
+             </div>\
+             <div class='side-box' id='spotbox' style='display:none'><div class='side-h'>Slučajno slovo</div><div id='spotlight'></div></div>\
+           </aside>\
+           <main>{body}</main>\
+         </div>\
          <footer class='site-footer'>Mašinno generovane rekonstrukcije — ne oficialny standard bez prověrky. Dokazy: interslavic-dictionary.com, Wiktionary (CC BY-SA). <a href='{REPO_URL}'>Izvorny kod</a>.</footer>\
+         <script>{SEARCH_JS}</script>\
+         <script>{TOC_JS}</script>\
          </body></html>",
         title = esc(title)
     )
 }
-
 fn about_page(n: usize, norm_rate: f32, exact_rate: f32, top3: f32) -> String {
     let body = format!(
         "<article class='entry'>
@@ -1917,6 +1947,45 @@ a.chip:hover{background:#eaf3ff;border-color:var(--link);text-decoration:none}
 a.chip.xref{border-color:var(--link);color:var(--link);background:#eaf3ff}
 a.chip.xref::before{content:'→\00a0';opacity:.65}
 a.chip.xref:hover{background:var(--link);color:#fff}
+
+/* ===== V-next layout: sticky header search + sidebar + always-open sections ===== */
+.site-header{position:sticky;top:0;z-index:50;align-items:center;gap:.8rem 1rem;padding:.4rem 1rem}
+.brand{font-size:1.2rem;white-space:nowrap}
+.brand-sub{color:var(--muted)}
+.hsearch{position:relative;flex:1 1 300px;max-width:620px;display:flex;margin:0}
+.hsearch input{flex:1;min-width:0;padding:.4rem .6rem;font-size:1rem;border:1px solid var(--border);border-right:none;border-radius:2px 0 0 2px;background:#fff;color:var(--text)}
+.hsearch input:focus{outline:2px solid #a8c7ff;outline-offset:-1px}
+.hsearch-go{padding:0 .85rem;border:1px solid var(--link);background:var(--link);color:#fff;border-radius:0 2px 2px 0;cursor:pointer;font-size:1.05rem;line-height:1}
+.hsearch-go:hover{background:#447ff5}
+.dropdown{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-top:none;max-height:72vh;overflow-y:auto;z-index:60;box-shadow:0 8px 20px rgba(0,0,0,.14)}
+.dropdown .hit{display:block;padding:.35rem .6rem;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
+.dropdown .hit:hover{background:#eaf3ff}
+.dropdown .hit.more{text-align:center;font-weight:bold;color:var(--link);background:var(--th)}
+.nav{margin-left:auto;gap:.9rem}
+.layout{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:232px minmax(0,1fr);align-items:start}
+.sidebar{position:sticky;top:50px;align-self:start;max-height:calc(100vh - 50px);overflow-y:auto;padding:1rem .85rem;border-right:1px solid var(--line);font-size:.9rem}
+main{max-width:940px;margin:0;padding:1rem 1.9rem 2.6rem;border:none}
+.side-box{margin-bottom:1.15rem}
+.side-h{font-weight:bold;text-transform:uppercase;font-size:.7rem;letter-spacing:.05em;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:.2rem;margin-bottom:.35rem}
+.toc a{display:block;padding:.13rem 0;color:var(--link);line-height:1.3}
+.toc a.toc-h3{padding-left:.9rem;font-size:.88em}
+.side-link{display:block;width:100%;text-align:left;padding:.22rem 0;color:var(--link);background:none;border:none;cursor:pointer;font:inherit;text-decoration:none}
+.side-link:hover{text-decoration:underline}
+#spotlight .spotlight-word{font-family:Georgia,serif;font-size:1.15rem;display:block}
+.entry section{margin:1.3rem 0}
+.entry section>h2{font-family:Georgia,'Linux Libertine',serif;font-weight:normal;font-size:1.35rem;margin:.1em 0 .45em;border-bottom:1px solid var(--border);padding-bottom:.1em;scroll-margin-top:58px}
+.headword-block{margin:.2rem 0 .5rem}
+.headmeta{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-bottom:.3rem}
+.banner{margin:.5rem 0}
+.home-hero{border-bottom:1px solid var(--border);padding-bottom:.7rem;margin-bottom:1rem}
+.home-cols{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:1.5rem;align-items:start}
+.home-aside .side-box{border:1px solid var(--line);border-radius:2px;padding:.5rem .7rem}
+.search-page #page-results .hit{display:block;padding:.45rem .3rem;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
+.search-page #page-results .hit:hover{background:#eaf3ff}
+.search-page .hit .hp{color:var(--muted);margin:0 .5em;font-size:.9em}
+.search-page .hit .hg{color:var(--muted)}
+@media (max-width:900px){.layout{grid-template-columns:1fr}.sidebar{position:static;max-height:none;border-right:none;border-bottom:1px solid var(--line)}main{max-width:none;padding:1rem}.home-cols{grid-template-columns:1fr}.nav{width:100%;order:3}}
+
 "#;
 
 fn esc(v: &str) -> String {
