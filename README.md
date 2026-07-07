@@ -134,6 +134,14 @@ The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
 to a reconstruction it derives the official lemma with **46.68% exact / 52.74%
 normalized** accuracy.
 
+**Evidence ceiling, measured** (`cargo run --release -- evidence-eval`): the
+~22% *root-absent* miss bucket was hypothesized to be an extraction gap. It is
+not: only **3.4%** of root-absent misses (63 of 1,854) have the official root
+anywhere in the 46k-lemma Wiktionary cache under a gloss-matched lemma, and a
+conservative evidence augmentation (fill only languages the dictionary row
+doesn't cite) measures **+0.00pp exact, 0 fixed / 1 broke** — the bucket is a
+genuine evidence ceiling. Report: `target/eval/evidence-growth.md`.
+
 **Multi-word & aspect slices** (`cargo run --release -- multiword-eval`): the
 headline benchmark excludes all 1,837 multi-word official lemmas; this scores
 them separately — reflexive `X sę` (561 lemmas, the existing pipeline just never
@@ -348,6 +356,9 @@ cargo run --release -- derive-eval
 # Multi-word & aspect-pair benchmark: reflexive `X sę`, two-token collocations,
 # ipf/pf pair accuracy (slices the headline benchmark excludes):
 cargo run --release -- multiword-eval
+
+# Evidence-growth audit: root-absent recoverability + augmentation A/B:
+cargo run --release -- evidence-eval
 
 # Diagnostic-only oracle ladder (per-stage upper-bound headroom; reads the answer,
 # never feeds production):

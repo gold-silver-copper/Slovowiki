@@ -1251,6 +1251,264 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Evidence-growth audit + augmentation A/B (Track E / issue #4,
+/// `evidence-eval`).
+///
+/// `0-root-absent` misses (the official root is not among the dictionary's own
+/// cited cognates) are an EVIDENCE ceiling, not a rule ceiling. This command:
+///  1. measures the baseline root-absent rate,
+///  2. quantifies how much of it is *recoverable* — the official root exists in
+///     the committed Wiktionary lemma cache under a gloss-matched lemma,
+///  3. runs the honest A/B: augment each meaning's evidence with gloss-matched
+///     cache cognates for languages the dictionary row does NOT cite
+///     (conservative: augmentation only widens language coverage, it never
+///     competes with the dictionary's own citation for a language), and
+///     re-measures accuracy + root-absent rate with a paired sign test.
+///
+/// Leakage story: the cache is Wiktionary-derived (never saw the `isv` answer),
+/// matching uses only the English gloss + POS, and the answer is read only for
+/// scoring — same discipline as the headline benchmark.
+pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    use std::collections::{HashMap, HashSet};
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+    let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
+
+    // Gloss-token index over the cache, restricted to the 11 benchmark
+    // languages (the small lects have no column in the dictionary anyway).
+    const LANGS: &[&str] = &[
+        "ru", "uk", "be", "pl", "cs", "sk", "sl", "hr", "sr", "bg", "mk",
+    ];
+    let mut by_token: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, l) in corpus.entries.iter().enumerate() {
+        if !LANGS.contains(&l.lang.as_str()) || l.word.contains(' ') {
+            continue;
+        }
+        for t in crate::dump::gloss_tokens(&l.gloss) {
+            by_token.entry(t).or_default().push(i);
+        }
+    }
+
+    // Candidate cache cognates for a meaning: gloss-token overlap + same POS.
+    let candidates = |e: &OfficialEntry| -> Vec<usize> {
+        let mut seen: HashSet<usize> = HashSet::new();
+        for t in crate::dump::gloss_tokens(&e.english) {
+            if let Some(v) = by_token.get(&t) {
+                for &i in v {
+                    if corpus.entries[i].pos == e.pos.code() {
+                        seen.insert(i);
+                    }
+                }
+            }
+        }
+        let mut v: Vec<usize> = seen.into_iter().collect();
+        v.sort(); // deterministic
+        v
+    };
+
+    struct Pass {
+        n: usize,
+        exact: usize,
+        norm: usize,
+        root_absent: usize,
+        results: HashMap<String, bool>, // id -> normalized hit
+    }
+    let run_pass = |augment: bool| -> Pass {
+        let mut p = Pass {
+            n: 0,
+            exact: 0,
+            norm: 0,
+            root_absent: 0,
+            results: HashMap::new(),
+        };
+        for e in &entries {
+            let mut input = build_input(e);
+            if !input.forms.iter().any(|f| f.modern) {
+                continue;
+            }
+            if augment {
+                // Fill ONLY languages the dictionary row does not cite.
+                let cited: HashSet<&str> =
+                    input.forms.iter().map(|f| f.lang_code.as_str()).collect();
+                let mut add_cells: HashMap<String, String> = HashMap::new();
+                for i in candidates(e) {
+                    let l = &corpus.entries[i];
+                    if cited.contains(l.lang.as_str()) || add_cells.contains_key(&l.lang) {
+                        continue;
+                    }
+                    add_cells.insert(l.lang.clone(), l.word.clone());
+                }
+                if !add_cells.is_empty() {
+                    let extra = consensus::source_forms_from_cells(&add_cells, |code, form| {
+                        format!("https://en.wiktionary.org/wiki/{}#{}", form, code)
+                    });
+                    let extra = consensus::lemma_forms(extra, e.pos);
+                    input.forms.extend(extra);
+                }
+            }
+            p.n += 1;
+            let official_key = ortho::consonant_key(&ortho::to_standard(&e.isv.to_lowercase()));
+            let root_present = input
+                .forms
+                .iter()
+                .filter(|f| f.modern)
+                .any(|f| ortho::consonant_key(&f.norm.latin) == official_key);
+            let (cands, _) = crate::pipeline::generate(&input, proto.as_ref(), &cfg);
+            let pred = cands.first().map(|c| c.form.clone()).unwrap_or_default();
+            let ex = ortho::exact_match(&pred, &e.isv);
+            let nm = ortho::normalized_match(&pred, &e.isv);
+            p.exact += ex as usize;
+            p.norm += nm as usize;
+            if !nm && !root_present {
+                p.root_absent += 1;
+            }
+            p.results.insert(e.id.clone(), nm);
+        }
+        p
+    };
+
+    let base = run_pass(false);
+    // Recoverability: among baseline root-absent misses, how many have the
+    // official root in the cache under a gloss-matched lemma?
+    let mut recoverable = 0usize;
+    for e in &entries {
+        if base.results.get(&e.id).copied().unwrap_or(true) {
+            continue;
+        }
+        let input = build_input(e);
+        let official_key = ortho::consonant_key(&ortho::to_standard(&e.isv.to_lowercase()));
+        let root_present = input
+            .forms
+            .iter()
+            .filter(|f| f.modern)
+            .any(|f| ortho::consonant_key(&f.norm.latin) == official_key);
+        if root_present {
+            continue;
+        }
+        if candidates(e).iter().any(|&i| {
+            ortho::consonant_key(&crate::normalize::to_phonemic_latin(
+                &corpus.entries[i].lang,
+                &corpus.entries[i].word,
+            )) == official_key
+        }) {
+            recoverable += 1;
+        }
+    }
+    let aug = run_pass(true);
+    let (mut fixed, mut broke) = (0usize, 0usize);
+    for (id, nm) in &aug.results {
+        match (base.results.get(id).copied().unwrap_or(false), *nm) {
+            (false, true) => fixed += 1,
+            (true, false) => broke += 1,
+            _ => {}
+        }
+    }
+
+    let pct = |a: usize, b: usize| {
+        if b == 0 {
+            0.0
+        } else {
+            100.0 * a as f32 / b as f32
+        }
+    };
+    println!(
+        "Evidence growth (Track E) over {} meanings; cache: {} lemmas",
+        base.n, corpus.entry_count
+    );
+    println!(
+        "  baseline: exact {:.2}%  norm {:.2}%  root-absent misses {} ({:.1}% of meanings)",
+        pct(base.exact, base.n),
+        pct(base.norm, base.n),
+        base.root_absent,
+        pct(base.root_absent, base.n),
+    );
+    println!(
+        "  recoverable from the cache (gloss+POS matched, official root present): {} of {} root-absent ({:.1}%)",
+        recoverable,
+        base.root_absent,
+        pct(recoverable, base.root_absent),
+    );
+    println!(
+        "  augmented (fill uncited languages only): exact {:.2}% ({:+.2}pp)  norm {:.2}% ({:+.2}pp)  root-absent {} ({:.1}%)",
+        pct(aug.exact, aug.n),
+        pct(aug.exact, aug.n) - pct(base.exact, base.n),
+        pct(aug.norm, aug.n),
+        pct(aug.norm, aug.n) - pct(base.norm, base.n),
+        aug.root_absent,
+        pct(aug.root_absent, aug.n),
+    );
+    println!(
+        "  paired (normalized): fixed {} / broke {}  p = {:.4}",
+        fixed,
+        broke,
+        sign_test_p(fixed, broke)
+    );
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(
+        s,
+        "# Evidence growth vs the root-absent ceiling (evidence-eval)\n"
+    )?;
+    writeln!(
+        s,
+        "**Denominator:** {} benchmarkable meanings; the Wiktionary lemma cache holds {} lemmas. **Leakage story:** the cache never saw the `isv` answer; matching uses English gloss tokens + POS only; augmentation fills ONLY languages the dictionary row does not cite, so the dictionary's own evidence is never displaced.\n",
+        base.n, corpus.entry_count
+    )?;
+    writeln!(s, "| Measurement | value |")?;
+    writeln!(s, "|---|---:|")?;
+    writeln!(
+        s,
+        "| baseline root-absent misses | {} ({:.1}% of meanings) |",
+        base.root_absent,
+        pct(base.root_absent, base.n)
+    )?;
+    writeln!(
+        s,
+        "| recoverable from the cache (official root present under a gloss-matched lemma) | {} ({:.1}% of root-absent) |",
+        recoverable,
+        pct(recoverable, base.root_absent)
+    )?;
+    writeln!(
+        s,
+        "| root-absent after augmentation | {} ({:.1}%) |",
+        aug.root_absent,
+        pct(aug.root_absent, aug.n)
+    )?;
+    writeln!(
+        s,
+        "| accuracy: baseline → augmented (exact) | {:.2}% → {:.2}% ({:+.2}pp) |",
+        pct(base.exact, base.n),
+        pct(aug.exact, aug.n),
+        pct(aug.exact, aug.n) - pct(base.exact, base.n)
+    )?;
+    writeln!(
+        s,
+        "| accuracy: baseline → augmented (normalized) | {:.2}% → {:.2}% ({:+.2}pp) |",
+        pct(base.norm, base.n),
+        pct(aug.norm, aug.n),
+        pct(aug.norm, aug.n) - pct(base.norm, base.n)
+    )?;
+    writeln!(
+        s,
+        "| paired sign test (normalized) | fixed {} / broke {}, p = {:.4} |",
+        fixed,
+        broke,
+        sign_test_p(fixed, broke)
+    )?;
+    writeln!(
+        s,
+        "\nThe native uk/sr/bg/sl Wiktionary enrichment named in issue #4 is **data-blocked** (no per-language wiktextract dumps on disk; enrichment affects display only, not benchmark evidence) and is recorded as out of scope here."
+    )?;
+    std::fs::write(out_dir.join("evidence-growth.md"), s)?;
+    println!("Wrote {}", out_dir.join("evidence-growth.md").display());
+    Ok(())
+}
+
 /// Multi-word & aspect-pair benchmark (Track B / issue #2, `multiword-eval`).
 ///
 /// The headline benchmark excludes every multi-word official lemma
