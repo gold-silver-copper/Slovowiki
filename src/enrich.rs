@@ -108,6 +108,35 @@ fn key(lang: &str, word: &str) -> String {
     format!("{lang}:{}", norm_word(word))
 }
 
+/// Reverse index: `(lang, word)` → the site entry id whose cognate set contains
+/// that word. Lets an enrichment chip link to an *internal* dictionary page when
+/// the related/synonym term is itself a headword (else it links out to the native
+/// Wiktionary), turning the per-entry enrichment into a site-wide semantic graph.
+#[derive(Default)]
+pub struct Xref {
+    by_key: HashMap<String, usize>,
+}
+
+impl Xref {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register that `word` (in `lang`) is a cognate of entry `id`. First writer
+    /// wins, so a word maps to the first entry that claimed it.
+    pub fn insert(&mut self, lang: &str, word: &str, id: usize) {
+        self.by_key.entry(key(lang, word)).or_insert(id);
+    }
+
+    pub fn get(&self, lang: &str, word: &str) -> Option<usize> {
+        self.by_key.get(&key(lang, word)).copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_key.len()
+    }
+}
+
 /// The native-Wiktionary URL for a word (e.g. `https://ru.wiktionary.org/wiki/вода`).
 pub fn source_url(lang: &str, word: &str) -> String {
     format!(

@@ -368,6 +368,22 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }
     }
 
+    // Reverse index for intra-site cross-linking: every cognate member of every
+    // entry points back to that entry's page, so an enrichment chip (related /
+    // synonym / antonym term) that is itself a dictionary headword links to the
+    // internal page instead of out to Wiktionary — turning the per-entry
+    // enrichment into a site-wide semantic graph.
+    let mut xref = crate::enrich::Xref::new();
+    for p in &prepared {
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+    println!(
+        "Built {} cognate cross-reference keys for intra-site links.",
+        xref.len()
+    );
+
     // Second pass: render pages (with family links) + the search index.
     for (i, p) in prepared.iter().enumerate() {
         let family = family_block(i, &prepared, &families);
@@ -380,6 +396,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 .map(|(r, isv, en)| (*r, isv.as_str(), en.as_str())),
             &family,
             enrich.as_ref(),
+            Some(&xref),
         );
         std::fs::write(entry_dir.join(format!("{}.html", p.id)), html)?;
 
@@ -440,7 +457,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }
         id += 1;
         official_only += 1;
-        let html = official_only_page(isv, e, enrich.as_ref());
+        let html = official_only_page(isv, e, enrich.as_ref(), Some(&xref), id);
         std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
         let mut keys: Vec<(String, usize)> = Vec::new();
         for k in [fold.clone(), crate::orthography::ascii_skeleton(isv)] {
@@ -615,6 +632,7 @@ fn corpus_entry_page(
     official: Option<(usize, &str, &str)>,
     family: &str,
     enrich: Option<&crate::enrich::EnrichIndex>,
+    xref: Option<&crate::enrich::Xref>,
 ) -> String {
     let top = g.candidates.first().unwrap();
     let pos_code = g.set.pos.code();
@@ -716,7 +734,7 @@ fn corpus_entry_page(
         .map(|e| enrich_etymology_section(&enrich_members, e))
         .unwrap_or_default();
     let native_conn = enrich
-        .map(|e| enrich_connections_section(&enrich_members, e))
+        .map(|e| enrich_connections_section(&enrich_members, e, xref, id))
         .unwrap_or_default();
     let alternatives = alternatives_block(&g.candidates);
     let trace = trace_block(top);
@@ -754,6 +772,8 @@ fn official_only_page(
     isv: &str,
     e: &OfficialEntry,
     enrich: Option<&crate::enrich::EnrichIndex>,
+    xref: Option<&crate::enrich::Xref>,
+    id: usize,
 ) -> String {
     let input = build_input(e);
     let evidence = branch_evidence(&input);
@@ -768,7 +788,7 @@ fn official_only_page(
         .map(|ix| enrich_etymology_section(&enrich_members, ix))
         .unwrap_or_default();
     let native_conn = enrich
-        .map(|ix| enrich_connections_section(&enrich_members, ix))
+        .map(|ix| enrich_connections_section(&enrich_members, ix, xref, id))
         .unwrap_or_default();
     let mut cog = String::new();
     if !evidence.is_empty() {
@@ -934,6 +954,8 @@ fn enrich_etymology_section(
 fn enrich_connections_section(
     members: &[(String, String)],
     enrich: &crate::enrich::EnrichIndex,
+    xref: Option<&crate::enrich::Xref>,
+    self_id: usize,
 ) -> String {
     let mut blocks = String::new();
     for &lang in crate::enrich::ENRICH_LANGS {
@@ -970,11 +992,19 @@ fn enrich_connections_section(
             let cs: String = words
                 .iter()
                 .map(|w| {
-                    format!(
-                        "<a class='chip' href='{}'>{}</a>",
-                        esc(&crate::enrich::source_url(lang, w)),
-                        esc(w)
-                    )
+                    // Link internally when the term is itself a dictionary headword
+                    // (and not this very page); otherwise out to native Wiktionary.
+                    match xref.and_then(|x| x.get(lang, w)).filter(|&t| t != self_id) {
+                        Some(target) => format!(
+                            "<a class='chip xref' title='v slovniku' href='{target}.html'>{}</a>",
+                            esc(w)
+                        ),
+                        None => format!(
+                            "<a class='chip' href='{}'>{}</a>",
+                            esc(&crate::enrich::source_url(lang, w)),
+                            esc(w)
+                        ),
+                    }
                 })
                 .collect();
             format!("<div class='conn'><h5>{title}</h5><div class='chips'>{cs}</div></div>")
@@ -1884,6 +1914,9 @@ a.ext:hover{color:var(--link);text-decoration:none;border-color:var(--link)}
 .chips{display:flex;flex-wrap:wrap;gap:.3rem}
 a.chip{display:inline-block;background:var(--th);border:1px solid var(--line);border-radius:10px;padding:.05em .55em;font-size:.9em;color:var(--text)}
 a.chip:hover{background:#eaf3ff;border-color:var(--link);text-decoration:none}
+a.chip.xref{border-color:var(--link);color:var(--link);background:#eaf3ff}
+a.chip.xref::before{content:'→\00a0';opacity:.65}
+a.chip.xref:hover{background:var(--link);color:#fff}
 "#;
 
 fn esc(v: &str) -> String {
