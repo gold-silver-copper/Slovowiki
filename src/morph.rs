@@ -631,7 +631,8 @@ fn is_letter(c: char) -> bool {
 }
 
 /// A stem is grammatically soft when it ends in a hushing/soft consonant.
-fn stem_is_soft(stem: &str) -> bool {
+/// The crate's single definition of softness (derive.rs reuses it).
+pub(crate) fn stem_is_soft(stem: &str) -> bool {
     let last = stem.chars().last().unwrap_or(' ');
     matches!(
         last,
