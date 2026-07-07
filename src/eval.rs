@@ -95,6 +95,14 @@ fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
     if !path.exists() {
         return None;
     }
+    // Note (rejected experiment): augmenting the explicit-etymology map with
+    // Proto-Slavic ancestors parsed from the native RU/PL/CS Wiktionary prose
+    // (3,369 extra links) measured **−0.10pp exact** — the English etymology +
+    // fuzzy linker already saturate the *derivable* coverage, and the extra
+    // explicit links (which run first) override correct fuzzy links on meanings
+    // that were already right or aren't improvable. Coverage is not the
+    // bottleneck; the remaining error is editorial/evidence-gap (see the
+    // cluster-selection measurement). Left out.
     crate::dump::ProtoIndex::load(path).ok()
 }
 
