@@ -358,6 +358,54 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         });
     }
 
+    // Homograph / duplicate dedup. Several corpus sets can fold to the same
+    // official lemma: genuine homographs (`ja` = I / and / yes), redundant
+    // same-meaning sets (`jedin` ×N, all "one"), or a borrowing colliding with a
+    // native word (the French-borrowed *pisati* "piss" vs the native official
+    // *pisati* "write"). ~957 official headwords are affected. Each official lemma
+    // must be represented by exactly ONE set — the one whose gloss actually
+    // matches the official gloss (meaning, not form coincidence), tie-broken by
+    // the set's score. The losing sets keep their own page but lose the official
+    // badge, so no page ever headlines an official meaning it does not carry.
+    // Display-only: the leakage-free benchmark scores `generate_set` per official
+    // row directly and is completely untouched by this.
+    {
+        let rank = |p: &Prepared, en: &str| -> (usize, i32) {
+            let a = crate::dump::gloss_tokens(&p.g.set.gloss);
+            let b = crate::dump::gloss_tokens(en);
+            let overlap = a.iter().filter(|t| b.contains(t)).count();
+            (overlap, (p.g.score * 1000.0) as i32)
+        };
+        let mut best: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (i, p) in prepared.iter().enumerate() {
+            if let Some((_, isv, en)) = &p.matched {
+                let key = crate::orthography::to_standard(&isv.to_lowercase());
+                let win = match best.get(&key) {
+                    Some(&j) => rank(p, en) > rank(&prepared[j], en),
+                    None => true,
+                };
+                if win {
+                    best.insert(key, i);
+                }
+            }
+        }
+        let mut demoted = 0usize;
+        for i in 0..prepared.len() {
+            let Some((_, isv, _)) = prepared[i].matched.clone() else {
+                continue;
+            };
+            let key = crate::orthography::to_standard(&isv.to_lowercase());
+            if best.get(&key) != Some(&i) {
+                prepared[i].matched = None;
+                prepared[i].status = MatchStatus::NoOfficialEntry;
+                prepared[i].display = prepared[i].g.form().to_string();
+                demoted += 1;
+            }
+        }
+        println!("Deduped {demoted} homograph/duplicate official matches (one representative per lemma).");
+        official -= demoted;
+    }
+
     // Word families: entries whose ancestors share a Proto-Slavic stem
     // (*starъ/*starostь/*starьcь) or the same loan etymon (la magister →
     // majstor/maestro/magistr) cross-link each other.
