@@ -93,6 +93,8 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                 }
             }
             if e.pos_raw.starts_with("prep") && !isv.contains(' ') {
+                // The dictionary's case numbering: 2=gen 3=dat 4=akuz 5=instr
+                // 6=lok (instrumental is the FIFTH case in its scheme).
                 let cases: Vec<&'static str> = e
                     .addition
                     .chars()
@@ -100,16 +102,18 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                         '2' => Some("gen"),
                         '3' => Some("dat"),
                         '4' => Some("akuz"),
+                        '5' => Some("instr"),
                         '6' => Some("lok"),
-                        '7' => Some("instr"),
                         _ => None,
                     })
                     .collect();
                 if !cases.is_empty() {
-                    prep_cases
-                        .entry(forms::form_key(isv))
-                        .or_default()
-                        .extend(cases);
+                    let entry = prep_cases.entry(forms::form_key(isv)).or_default();
+                    for c in cases {
+                        if !entry.contains(&c) {
+                            entry.push(c);
+                        }
+                    }
                 }
             }
             sink.add(
@@ -437,6 +441,9 @@ const CASES6: [&str; 6] = ["nom", "akuz", "gen", "dat", "lok", "instr"];
 fn parse_feats(analyses: &[String]) -> Vec<Feat> {
     let mut out = Vec::new();
     for a in analyses {
+        // The pronoun tables write masc-or-neuter as "m./sr." — protect it
+        // from the '/'-alternative split.
+        let a = a.replace("m./sr.", "msr.");
         for part in a.split('/') {
             let mut case: Option<&'static str> = None;
             let mut number = ' ';
@@ -463,7 +470,7 @@ fn parse_feats(analyses: &[String]) -> Vec<Feat> {
                     "m" | "m.živ" | "m.než" => gender = 'm',
                     "ž" => gender = 'f',
                     "sr" => gender = 'n',
-                    "m./sr" => gender = 'b', // masc-or-neuter (pronoun tables)
+                    "msr" => gender = 'b', // masc-or-neuter (pronoun tables)
                     _ => {}
                 }
             }
@@ -762,10 +769,13 @@ pub const AGREEMENT_GOLD: &[&str] = &[
 pub const AGREEMENT_ERRORS: &[&str] = &[
     "Ja vidiš rěku.",           // person: ja + 2sg verb
     "Bez voda ne možemo žiti.", // government: bez + nominative
-    "On vidita rěku.",          // unknown form stays unknown (not agreement) — excluded below
     "Vidimo velikogo ženu.",    // gender: masc-anim acc adj + fem noun
     "K vodu idemo.",            // government: k + accusative
 ];
+
+/// A nonsense verb form: must stay `unknown` (tests unknown-handling, never
+/// an agreement flag).
+pub const UNKNOWN_PROBE: &str = "On vidita rěku.";
 
 pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     use std::fmt::Write as _;
@@ -787,18 +797,14 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 .count()
         })
         .sum();
-    // The third error sentence tests unknown-handling, not agreement.
     let error_hits: Vec<bool> = AGREEMENT_ERRORS
         .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != 2)
-        .map(|(_, s)| {
-            check_tokens(&index, &tokenize(s))
-                .iter()
-                .any(|r| r.agreement.is_some())
-        })
+        .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
         .collect();
     let errors_flagged = error_hits.iter().filter(|x| **x).count();
+    let probe_unknown = check_text(&index, UNKNOWN_PROBE)
+        .iter()
+        .any(|r| r.status == "unknown");
 
     println!(
         "checktext-eval: fixture {} tokens — {} known-lemma, {} known-form, {} generated, {} unknown, {} agreement flags",
@@ -810,10 +816,11 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         agree_flags,
     );
     println!(
-        "  agreement: gold sentences {} false flags / seeded errors {}/{} flagged",
+        "  agreement: gold sentences {} false flags / seeded errors {}/{} flagged / unknown-probe {}",
         gold_flags,
         errors_flagged,
-        error_hits.len()
+        error_hits.len(),
+        if probe_unknown { "ok" } else { "FAILED" }
     );
 
     std::fs::create_dir_all(out_dir)?;
@@ -842,6 +849,11 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         s,
         "| seeded errors flagged | **{errors_flagged} / {}** |",
         error_hits.len()
+    )?;
+    writeln!(
+        s,
+        "| nonsense probe stays unknown | **{}** |",
+        if probe_unknown { "yes" } else { "NO" }
     )?;
     writeln!(
         s,
@@ -953,16 +965,17 @@ mod tests {
                 "gold sentence falsely flagged: {s}"
             );
         }
-        for (i, s) in AGREEMENT_ERRORS.iter().enumerate() {
-            if i == 2 {
-                continue; // tests unknown-handling, not agreement
-            }
+        for s in AGREEMENT_ERRORS {
             let reps = check_text(&index, s);
             assert!(
                 reps.iter().any(|r| r.agreement.is_some()),
                 "seeded error NOT flagged: {s}"
             );
         }
+        // The nonsense probe stays unknown and never trips agreement.
+        let reps = check_text(&index, UNKNOWN_PROBE);
+        assert!(reps.iter().any(|r| r.status == "unknown"));
+        assert!(reps.iter().all(|r| r.agreement.is_none()));
     }
 
     #[test]

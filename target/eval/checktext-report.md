@@ -8,5 +8,6 @@
 | fixture agreement false alarms | **0** |
 | gold-sentence false alarms | **0** |
 | seeded errors flagged | **4 / 4** |
+| nonsense probe stays unknown | **yes** |
 
 Agreement checks are deliberately conservative: they fire only when NO combination of the neighbouring tokens' analyses is compatible, both tokens are verification-grade, and each token is POS-unambiguous. Gender is enforced in the singular only (ISV plural adjectives mark nom-animacy only).

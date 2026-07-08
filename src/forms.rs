@@ -118,12 +118,21 @@ pub fn clean_cell(cell: &str) -> String {
                 'ó' | 'ò' | 'ô' | 'œ' => 'o',
                 'ú' | 'ù' | 'û' => 'u',
                 'ý' => 'y',
+                // The inflector's internal intervocalic-j marker (dělaĵųći).
+                'ĵ' => 'j',
                 c => c,
             })
             .collect()
     };
     let squeeze = |x: String| -> String { x.split_whitespace().collect::<Vec<_>>().join(" ") };
     let cell = deaccent(cell);
+    // Double-citation convention "A (…), B (…)": clean each citation
+    // separately (the -aje- conjugation's passive participles ship this way).
+    if let Some(idx) = cell.find("), ") {
+        let first = clean_cell(&cell[..idx + 1]);
+        let rest = clean_cell(cell[idx + 2..].trim_start());
+        return format!("{first} / {rest}");
+    }
     let Some(i) = cell.find('(') else {
         return cell;
     };
@@ -381,6 +390,11 @@ impl RecordSink {
 /// svěžejši); seven lexical irregulars. Returns (comparative adjective,
 /// comparative adverb).
 pub fn comparative(adj: &str) -> Option<(String, String)> {
+    // Relational adjectives never gradate: -sky/-cky (russky, gręcky) would
+    // otherwise k-strip into garbage (russši).
+    if adj.ends_with("sky") || adj.ends_with("cky") {
+        return None;
+    }
     // The seven irregulars (steen adjectives page, verbatim).
     for (base, comp, adv) in [
         ("dobry", "lěpši", "lěpje"),
@@ -674,12 +688,12 @@ const TOJ_ENDINGS: &[(&str, &str)] = &[
     ("i", "nom.mn. m.živ."),
     ("e", "nom.mn. / akuz.mn."),
     ("ogo", "gen.jd. m./sr. / akuz.jd. m.živ."),
-    ("u", "akuz.jd. ž."),
+    ("ų", "akuz.jd. ž."),
     ("oj", "gen.jd. ž. / dat.jd. ž. / lok.jd. ž."),
     ("omu", "dat.jd. m./sr."),
     ("om", "lok.jd. m./sr."),
     ("ym", "instr.jd. m./sr. / dat.mn."),
-    ("oju", "instr.jd. ž."),
+    ("ojų", "instr.jd. ž."),
     ("yh", "gen.mn. / lok.mn. / akuz.mn. m.živ."),
     ("ymi", "instr.mn."),
 ];
@@ -697,7 +711,7 @@ const MOJ_ENDINGS: &[(&str, &str)] = &[
     ("emu", "dat.jd. m./sr."),
     ("em", "lok.jd. m./sr."),
     ("im", "instr.jd. m./sr. / dat.mn."),
-    ("eju", "instr.jd. ž."),
+    ("ejų", "instr.jd. ž."),
     ("ih", "gen.mn. / lok.mn. / akuz.mn. m.živ."),
     ("imi", "instr.mn."),
 ];
@@ -742,6 +756,46 @@ pub fn pronoun_numeral_records(
     }
     match pos {
         Pos::Pronoun => {
+            // -koli indefinites (ktokoli, čijkoli…) inflect INTERNALLY:
+            // kogokoli, čijegokoli — decline the head, re-suffix every form.
+            if let Some(head) = l.strip_suffix("koli") {
+                if !head.is_empty() {
+                    let mut inner = RecordSink::default();
+                    if pronoun_numeral_records(
+                        &mut inner,
+                        head,
+                        Pos::Pronoun,
+                        entry_id,
+                        status,
+                        gloss,
+                    ) {
+                        for r in inner.into_records() {
+                            if r.source != "inflection" {
+                                continue;
+                            }
+                            sink.add(
+                                &format!("{}koli", r.form),
+                                &r.analyses.join(" / "),
+                                l,
+                                entry_id,
+                                "pron",
+                                "inflection",
+                                status,
+                                None,
+                                gloss,
+                            );
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            // vsi / vse (the plural-only indefinites of veś) have no further
+            // paradigm of their own — lemma record only, never the adjectival
+            // fallback (which would invent *vsego-style soft-adjective forms).
+            if l == "vsi" || l == "vse" {
+                return false;
+            }
             // toj-class demonstratives.
             if matches!(l, "toj" | "tutoj" | "tamtoj" | "onoj" | "ov") {
                 let stem = l.strip_suffix("oj").unwrap_or(l);
@@ -842,7 +896,20 @@ pub fn pronoun_numeral_records(
                 );
                 for r in inner.into_records() {
                     if r.form == "jedny" {
-                        continue; // the masc.nom.sg is jedin, not *jedny
+                        // The masc.nom.sg is jedin, not *jedny — re-emit the
+                        // analyses on the real citation form.
+                        sink.add(
+                            "jedin",
+                            &r.analyses.join(" / "),
+                            l,
+                            entry_id,
+                            "num",
+                            "inflection",
+                            status,
+                            None,
+                            gloss,
+                        );
+                        continue;
                     }
                     sink.add(
                         &r.form,
@@ -877,7 +944,7 @@ pub fn pronoun_numeral_records(
             if l == "tri" || l == "četyri" {
                 let stem = l.strip_suffix('i').unwrap_or(l);
                 let forms: Vec<(String, &str)> =
-                    [("eh", "gen. / lok."), ("em", "dat."), ("emi", "instr.")]
+                    [("ěh", "gen. / lok."), ("ěm", "dat."), ("ěmi", "instr.")]
                         .iter()
                         .map(|(e, f)| (format!("{stem}{e}"), *f))
                         .collect();
@@ -1385,8 +1452,8 @@ mod tests {
         let recs = sink.into_records();
         let has = |form: &str| recs.iter().any(|r| r.form == form);
         for f in [
-            "togo", "tomu", "tym", "tyh", "tymi", "tu", "mojego", "mojemu", "mojų", "kogo", "komu",
-            "kym", "treh", "trem", "pęti", "pęťjų",
+            "togo", "tomu", "tym", "tyh", "tymi", "tų", "tojų", "mojego", "mojemu", "mojų",
+            "mojejų", "kogo", "komu", "kym", "trěh", "trěm", "pęti", "pęťjų",
         ] {
             assert!(has(f), "missing pronoun/numeral form {f}");
         }
