@@ -40,60 +40,7 @@ pub struct Derived {
     pub label: &'static str,
 }
 
-/// First palatalization at a suffix seam (RULE_SPEC §2: live before
-/// `-ny, -ka/-ko/-ok, -sky, -stvo, -ec, -ica, -ina, -išče, -nik`).
-fn palatalize_final(stem: &str) -> String {
-    let mut s = stem.to_string();
-    match s.chars().last() {
-        Some('k') => {
-            s.pop();
-            s.push('č');
-        }
-        Some('g') => {
-            s.pop();
-            s.push('ž');
-        }
-        Some('h') => {
-            s.pop();
-            s.push('š');
-        }
-        Some('c') => {
-            s.pop();
-            s.push('č');
-        }
-        _ => {}
-    }
-    s
-}
-
-/// Iotation of a stem-final consonant before a `-je-` suffix (RULE_SPEC §2
-/// Phase D): s→š, z→ž, t→ć, d→đ, st→šć, zd→žđ, k→č, g→ž, h→š, labials take
-/// bare j (lovjeńje), sonorants soften (děljeńje).
-fn iotate_final(stem: &str) -> String {
-    for (suf, rep) in [
-        ("st", "šć"),
-        ("zd", "žđ"),
-        ("s", "š"),
-        ("z", "ž"),
-        ("t", "ć"),
-        ("d", "đ"),
-        ("k", "č"),
-        ("g", "ž"),
-        ("h", "š"),
-        ("l", "lj"),
-        ("n", "nj"),
-        ("r", "rj"),
-        ("p", "pj"),
-        ("b", "bj"),
-        ("v", "vj"),
-        ("m", "mj"),
-    ] {
-        if let Some(head) = stem.strip_suffix(suf) {
-            return format!("{head}{rep}");
-        }
-    }
-    stem.to_string()
-}
+use crate::phono::{iotate_final, palatalize_final};
 
 /// A stem counts as soft for the O⇒E ending alternation (RULE_SPEC §3.4).
 /// One definition of softness for the whole crate: morph's.
@@ -315,44 +262,13 @@ fn naive_family(base: &str, pos: Pos) -> Vec<Derived> {
 /// Undo the first palatalization (for inverse base lookup). Returns the
 /// alternates to try INCLUDING the unchanged stem.
 fn inverse_palatalization(stem: &str) -> Vec<String> {
-    let mut v = vec![stem.to_string()];
-    for (soft, hards) in [("č", &["k", "c"][..]), ("ž", &["g"][..]), ("š", &["h"][..])] {
-        if let Some(head) = stem.strip_suffix(soft) {
-            for h in hards {
-                v.push(format!("{head}{h}"));
-            }
-        }
-    }
-    v
+    crate::phono::inverse_palatalization(stem)
 }
 
 /// Undo iotation (for inverse -jeńje lookup). Includes the unchanged stem so
 /// hushing-final stems (učiti → uč-) resolve too.
 fn inverse_iotation(t: &str) -> Vec<String> {
-    let mut v = vec![t.to_string()];
-    for (soft, hard) in [
-        ("šć", "st"),
-        ("žđ", "zd"),
-        ("š", "s"),
-        ("š", "h"),
-        ("ž", "z"),
-        ("ž", "g"),
-        ("ć", "t"),
-        ("đ", "d"),
-        ("č", "k"),
-        ("lj", "l"),
-        ("nj", "n"),
-        ("rj", "r"),
-        ("pj", "p"),
-        ("bj", "b"),
-        ("vj", "v"),
-        ("mj", "m"),
-    ] {
-        if let Some(head) = t.strip_suffix(soft) {
-            v.push(format!("{head}{hard}"));
-        }
-    }
-    v
+    crate::phono::inverse_iotation(t)
 }
 
 struct Pair {
