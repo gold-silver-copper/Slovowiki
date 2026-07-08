@@ -936,6 +936,12 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         if headword.is_empty() || headword.contains('!') {
             continue;
         }
+        // Sanitize the citation: generated forms can carry raw pipeline
+        // notation ("pleskati,*plěskati"), official ones government hints
+        // ("pozirati (na)") — neither belongs in a lookup key.
+        let Some(headword) = crate::forms::citation(&headword) else {
+            continue;
+        };
         let prob = (status == "generated").then(|| {
             calibration
                 .as_ref()
@@ -985,6 +991,14 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 None,
                 &gloss,
             );
+            crate::forms::pronoun_numeral_records(
+                &mut form_sink,
+                &headword,
+                pos,
+                p.id,
+                "official",
+                &gloss,
+            );
         }
     }
     for (oid, e) in &official_only_records {
@@ -994,6 +1008,10 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             if isv.is_empty() || isv.contains('#') || isv.contains('!') {
                 continue;
             }
+            let Some(clean) = crate::forms::citation(isv) else {
+                continue;
+            };
+            let isv = clean.as_str();
             lemma_sink.add(
                 isv,
                 "",
@@ -1025,6 +1043,14 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                     *oid,
                     "official-only",
                     None,
+                    &e.english,
+                );
+                crate::forms::pronoun_numeral_records(
+                    &mut form_sink,
+                    isv,
+                    e.pos,
+                    *oid,
+                    "official-only",
                     &e.english,
                 );
             }
@@ -1421,7 +1447,7 @@ fn official_only_page(
 fn search_page() -> String {
     let body = "<article class='entry search-page'>\
       <h1 class='firstHeading'>Iskanje</h1>\
-      <p class='muted'>Napiši v polje gore i pritisni <b>Enter</b>, ili filtruj statični indeks. Najdeno: <b id='rescount'>0</b> rezultatov.</p>\
+      <p class='muted'>Napiši v polje gore i pritisni <b>Enter</b>, ili filtruj statičny indeks. Najdeno: <b id='rescount'>0</b> rezultatov.</p>\
       <form class='filter-grid' onsubmit='return false'>\
         <label>Čęst rěči <select id='f-pos'><option value=''>vse</option><option value='noun'>imennik</option><option value='verb'>glagol</option><option value='adj'>pridavnik</option><option value='adv'>narěčje</option><option value='proper_noun'>vlastno imę</option><option value='num'>čislovnik</option></select></label>\
         <label>Stav <select id='f-status'><option value=''>vse</option><option value='O'>oficialne</option><option value='N'>samo generovane</option></select></label>\
@@ -1920,7 +1946,7 @@ fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
            <pre class='pipeline-diagram'>Wiktionary lemmaty → srodne grupy → praslovjanske pravila → kandidaty → uvěrjenost → wiki-strana</pre>
            <ol>
              <li><b>Izvlečenje lemmatov.</b> Iz Wiktionary sȯbiramy slovjanske lemmy — imenniky, infinitivy glagolov, pozitivne pridavniki i internacionalizmy — zajedno s etimologičnym korenjem.</li>
-             <li><b>Srodne grupy.</b> Lemmaty s tym že praslovjansky predkom ili s podobnym internacionalnym skeletom tvorę jednu grupu.</li>
+             <li><b>Srodne grupy.</b> Lemmaty s tym že praslovjanskym prědkom ili s podobnym internacionalnym skeletom tvorę jednu grupu.</li>
              <li><b>Rekonstrukcija.</b> Praslovjansky pravilny stroj davaje variantno-medžuslovjansku formu; medžuvětvovy konsensus iz modernyh językov davaje alternativy.</li>
              <li><b>Ocěna dokaza.</b> Uvěrjenost raste s čislom językov i s pokrytjem trěh větvi: vȯzhod, zapad, jug.</li>
              <li><b>Wiki-sloj.</b> Sajt dodavaje kategorije, portaly, backlinks, homografne strany, semantičny graf i statične indeksy.</li>
@@ -3824,13 +3850,13 @@ fn language_portal_page(lang: &str, rows: &[SiteEntryMeta], all: &[SiteEntryMeta
     strongest.sort_by(|a, b| b.score.total_cmp(&a.score));
     let name = crate::lang::lang_name(lang);
     let intro = format!(
-        "Portal za {}: strany zapisov, v ktoryh toj język davaje srodny dokaz. Unikatne slova pokazyvajųt korenje vidno samo v tom języku v našem korpusu; vseslovjanske slova imajųt dokaz iz vsěh trěh větvi.",
+        "Portal za {}: strany zapisov, v ktoryh toj język davaje srodny dokaz. Unikatne slova pokazyvajųt korenje vidno samo v tom języku v našem korpusu; vseslovjanske slova imajųt dokaz iz vsih trěh větvi.",
         name
     );
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>Portal: {}</h1><p>{}</p>{}\
          <h2 id='silne'>Najsilnějše dokazani zapisy</h2>{}\
-         <h2 id='vseslovjanske'>Slova s dokazom iz vsěh trěh větvi</h2>{}\
+         <h2 id='vseslovjanske'>Slova s dokazom iz vsih trěh větvi</h2>{}\
          <h2 id='unikatne'>Unikatne v tom portalu</h2>{}\
          <h2 id='vse'>Vse zapisy v portalu</h2>{}</article>",
         esc(&name),
@@ -4098,7 +4124,7 @@ fn featured_page(rows: &[SiteEntryMeta], build: &BuildMeta) -> String {
 }
 
 fn random_page() -> String {
-    let body = r#"<article class='entry'><h1 class='firstHeading'>Speciaľno:Slučajno</h1><p>Ta statična strana koristi lokalny <code>search.json</code> i izbere slučajnu stran zapisovu bez servera.</p><p id='random-target' class='notice'>Nakladajě sę…</p><script>document.addEventListener('DOMContentLoaded',function(){ensure().then(function(idx){if(!idx.length)return;var e=idx[Math.floor(Math.random()*idx.length)];var a='entry/'+e[0]+'.html';document.getElementById('random-target').innerHTML='<a href="'+a+'">'+e[1]+'</a> — '+e[2]+'<br><a href="'+a+'">Idi</a>';});});</script></article>"#;
+    let body = r#"<article class='entry'><h1 class='firstHeading'>Speciaľno:Slučajno</h1><p>Ta statična strana koristi lokalny <code>search.json</code> i izbere slučajnu stranu zapisa bez servera.</p><p id='random-target' class='notice'>Nakladajě sę…</p><script>document.addEventListener('DOMContentLoaded',function(){ensure().then(function(idx){if(!idx.length)return;var e=idx[Math.floor(Math.random()*idx.length)];var a='entry/'+e[0]+'.html';document.getElementById('random-target').innerHTML='<a href="'+a+'">'+e[1]+'</a> — '+e[2]+'<br><a href="'+a+'">Idi</a>';});});</script></article>"#;
     page("Speciaľno:Slučajno", body, 0)
 }
 
@@ -4310,7 +4336,7 @@ fn write_wiki_indexes(
         out_dir.join("all-pages.html"),
         simple_index_page(
             "Vse strany",
-            "Abecedny spis vsěh slovnikovyh stran zapisov. To je podobno do Speciaľno:VseStrany: prosty, statičny indeks bez JavaScript-trebovanja.",
+            "Abecedny spis vsih slovnikovyh stran zapisov. To je podobno do Speciaľno:VseStrany: prosty, statičny indeks bez JavaScript-trebovanja.",
             &sorted,
             0,
         ),
@@ -4904,17 +4930,25 @@ fn urlencode_q(s: &str) -> String {
 fn forms_js() -> String {
     const JS: &str = r#"
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function isvFold(s){s=s.toLowerCase().trim();const M={'ě':'e','ę':'e','ų':'u','å':'a','ȯ':'o','ė':'e','ĺ':'l','ľ':'l','ń':'n','ŕ':'r','ť':'t','ď':'d','ś':'s','ź':'z','ć':'č','đ':'dž'};let out='';for(const c of s){out+=(M[c]!==undefined)?M[c]:c;}return out;}
+function isvFold(s){s=s.toLowerCase().trim();const M=__FOLD_MAP__;let out='';for(const c of s){out+=(M[c]!==undefined)?M[c]:c;}return out;}
+let routerOk=null;
+async function routerSelftest(base){if(routerOk!==null)return routerOk;try{const j=await fetch(base+'api/router-selftest.json').then(r=>r.json());routerOk=j.shards===__SHARDS__&&j.samples.every(([form,key,shard])=>isvFold(form)===key&&fnv1a32(key)%__SHARDS__===shard);}catch(e){routerOk=false;}if(!routerOk){console.error('router selftest FAILED: JS fold/router drifted from the exporter');}return routerOk;}
 function fnv1a32(s){const b=new TextEncoder().encode(s);let h=0x811c9dc5>>>0;for(const x of b){h^=x;h=Math.imul(h,16777619)>>>0;}return h>>>0;}
 const shardCache={};
 async function isvShard(base,n){if(shardCache[n])return shardCache[n];shardCache[n]=fetch(base+'api/forms/'+n+'.json').then(r=>r.ok?r.json():{records:{}}).catch(()=>({records:{}}));return shardCache[n];}
-async function isvLookup(base,q){const key=isvFold(q);const shard=fnv1a32(key)%__SHARDS__;const j=await isvShard(base,shard);return{key:key,recs:(j.records&&j.records[key])||[]};}
+async function isvLookup(base,q){const ok=await routerSelftest(base);const key=isvFold(q);if(!ok){return{key:key,recs:[],selftestFailed:true};}const shard=fnv1a32(key)%__SHARDS__;const j=await isvShard(base,shard);return{key:key,recs:(j.records&&j.records[key])||[]};}
 function recHtml(base,rec){const[form,lemma,id,pos,analyses,source,status,prob,gloss]=rec;
  const st=status==='generated'?('<span class="pill">mašinova rekonstrukcija p='+(prob==null?'?':prob.toFixed(2))+'</span>'):('<span class="pill src-official">'+escHtml(status)+'</span>');
  const an=analyses.length?('<span class="muted">'+escHtml(analyses.join(', '))+'</span>'):'<span class="muted">(citatna forma)</span>';
  return '<li><b>'+escHtml(form)+'</b> — <a href="'+base+'entry/'+id+'.html">'+escHtml(lemma)+'</a> <span class="badge pos">'+escHtml(pos)+'</span> '+an+' '+st+' <span class="muted">'+escHtml(gloss)+'</span></li>';}
 "#;
+    let fold_map = crate::forms::FOLD_PAIRS
+        .iter()
+        .map(|(from, to)| format!("'{from}':'{to}'"))
+        .collect::<Vec<_>>()
+        .join(",");
     JS.replace("__SHARDS__", &crate::forms::SHARDS.to_string())
+        .replace("__FOLD_MAP__", &format!("{{{fold_map}}}"))
 }
 
 /// The reverse-lookup page for surface forms (issue #11 phase 2): folds the
@@ -4923,14 +4957,15 @@ fn forms_page() -> String {
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>Iskanje form</h1>\
          <p class='lede'>Vpiši kojukoli <b>fleksijnu formu</b> (ne tolika lemmu) — na priklad <span class='mention'>pomoćnogo</span>, <span class='mention'>ljudi</span>, <span class='mention'>piše</span> — i vidiš vse analizy: lemmu, padež/čislo/rod, i stranicu zapisa.</p>\
-         <p><input id='q' type='search' placeholder='forma…' style='min-width:16em'> <button onclick='go()'>Iskaj</button></p>\
+         <p><input id='formq' type='search' placeholder='forma…' style='min-width:16em' onkeydown='if(event.key===String.fromCharCode(69,110,116,101,114))go()'> <button onclick='go()'>Iskaj</button></p>\
          <div id='out'></div>\
          <p class='muted'>Iste dane služęt strojam: <code>api/forms/&lt;n&gt;.json</code> (indeks razděljeny na {} častij), <code>api/lemmas.json</code>, <code>api/meta.json</code>, <a href='api/agent-guide.md'>api/agent-guide.md</a>.</p>\
          <script>{}\
-async function go(){{const q=document.getElementById('q').value;if(!q)return;const r=await isvLookup('',q);const out=document.getElementById('out');\
+async function go(){{const q=document.getElementById('formq').value;if(!q)return;const r=await isvLookup('',q);const out=document.getElementById('out');\
+if(r.selftestFailed){{out.innerHTML='<p class=\"notice\">Samoprověrka routera ne prošla — klient sę ne shoduje s eksporterom (vidi konzolų). Iskanje je zaprěno da ne davaje krive rezultaty.</p>';return;}}\
 if(!r.recs.length){{out.innerHTML='<p>Ničto ne najdeno za ključ <b>'+escHtml(r.key)+'</b>. (Nepoznata forma ili mašinovo prědloženje bez zapisa.)</p>';return;}}\
 out.innerHTML='<p>Ključ: <b>'+escHtml(r.key)+'</b>, '+r.recs.length+' analiz:</p><ul>'+r.recs.map(x=>recHtml('',x)).join('')+'</ul>';}}\
-const p=new URLSearchParams(location.search).get('q');if(p){{document.getElementById('q').value=p;go();}}\
+const p=new URLSearchParams(location.search).get('q');if(p){{document.getElementById('formq').value=p;go();}}\
 </script></article>",
         crate::forms::SHARDS,
         forms_js(),
@@ -4946,7 +4981,7 @@ const p=new URLSearchParams(location.search).get('q');if(p){{document.getElement
 fn text_check_page() -> String {
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>Prověrka teksta</h1>\
-         <p class='lede'>Vstavi medžuslovjansky tekst — vsaky token bųde prověrjeny protiv slovnika i vsěh fleksijnyh form. Sinje = poznato, žėlta obvodka = mašinova rekonstrukcija, čŕveno = nepoznato, ⚠ = semantična past.</p>\
+         <p class='lede'>Vstavi medžuslovjansky tekst — vsaky token bųde prověrjeny v slovniku i v polnom indeksu form. Sinje = poznato, žėlta obvodka = mašinova rekonstrukcija, čŕveno = nepoznato, ⚠ = semantična past.</p>\
          <p><textarea id='t' rows='6' style='width:100%'></textarea></p>\
          <p><button onclick='checkText()'>Prověri</button> <span class='muted'>CLI-blizenec: <code>cargo run -- check-text tekst.txt --json</code> (dodatno davaje predloženja za nepoznate tokeny).</span></p>\
          <div id='out'></div>\
@@ -4961,8 +4996,8 @@ const nts=await getNotes();\
 const parts=[];let i=0;\
 while(i<toks.length){{\
  const tok=toks[i];\
- if(i+1<toks.length){{const bi=await isvLookup('',tok+' '+toks[i+1]);if(bi.recs.length){{parts.push(render(tok+' '+toks[i+1],bi.recs,nts,bi.key));i+=2;continue;}}}}\
- const r=await isvLookup('',tok);parts.push(render(tok,r.recs,nts,r.key));i+=1;\
+ if(i+1<toks.length){{const bi=await isvLookup('',tok+' '+toks[i+1]);if(bi.selftestFailed){{out.innerHTML='<p class=\"notice\">Samoprověrka routera ne prošla — prověrka je zaprěna (vidi konzolų).</p>';return;}}if(bi.recs.length){{parts.push(render(tok+' '+toks[i+1],bi.recs,nts,bi.key));i+=2;continue;}}}}\
+ const r=await isvLookup('',tok);if(r.selftestFailed){{out.innerHTML='<p class=\"notice\">Samoprověrka routera ne prošla — prověrka je zaprěna (vidi konzolų).</p>';return;}}parts.push(render(tok,r.recs,nts,r.key));i+=1;\
 }}\
 out.innerHTML='<p>'+parts.join(' ')+'</p><p class='+String.fromCharCode(39)+'muted'+String.fromCharCode(39)+'>Klikni slovo za polnu analizu.</p>';\
 }}\

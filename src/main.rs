@@ -169,6 +169,14 @@ enum Command {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
+    /// check-text benchmark: fixture classification + agreement gold/error
+    /// sets (issue #13).
+    ChecktextEval {
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "target/eval")]
+        out: PathBuf,
+    },
     /// Data-quality / ceiling audit: classify misses and cognate cohesion.
     Audit {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
@@ -281,6 +289,7 @@ fn main() -> Result<()> {
             json,
             official,
         } => check::run(&official, &file, json),
+        Command::ChecktextEval { official, out } => check::run_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),
         Command::SelectEval { official, out } => eval::run_select_eval(&official, &out),
