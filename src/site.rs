@@ -910,7 +910,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Some((_, isv, en)) => (isv.clone(), "official", en.clone()),
             None => (p.g.form().to_string(), "generated", p.g.set.gloss.clone()),
         };
-        if headword.is_empty() {
+        if headword.is_empty() || headword.contains('!') {
             continue;
         }
         let prob = (status == "generated").then(|| {
@@ -919,7 +919,16 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 .map(|c| c.probability(p.g.score))
                 .unwrap_or(p.g.score as f64)
         });
-        let pos = p.g.set.pos;
+        // A matched headword's paradigm must use the OFFICIAL part of speech —
+        // the form-only official match can cross POS, and a wrong-POS paradigm
+        // exported as verification-grade would be confidently wrong.
+        let pos = match &p.matched {
+            Some((_, isv, _)) => official_map
+                .get(&crate::orthography::to_standard(&isv.to_lowercase()))
+                .map(|(_, _, pos)| *pos)
+                .unwrap_or(p.g.set.pos),
+            None => p.g.set.pos,
+        };
         lemma_sink.add(
             &headword,
             "",
@@ -942,13 +951,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             prob,
             &gloss,
         );
-        if status == "official"
-            && seen_paradigm.insert(format!(
-                "{}|{}",
-                crate::forms::form_key(&headword),
-                pos.code()
-            ))
-        {
+        if status == "official" && seen_paradigm.insert(format!("{headword}|{}", pos.code())) {
             crate::forms::paradigm_records(
                 &mut form_sink,
                 &headword,
@@ -962,7 +965,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     }
     for (oid, e) in &official_only_records {
         let isv = e.isv.trim();
-        if isv.is_empty() || isv.contains('#') {
+        if isv.is_empty() || isv.contains('#') || isv.contains('!') {
             continue;
         }
         lemma_sink.add(
@@ -987,7 +990,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             None,
             &e.english,
         );
-        if seen_paradigm.insert(format!("{}|{}", crate::forms::form_key(isv), e.pos.code())) {
+        if seen_paradigm.insert(format!("{isv}|{}", e.pos.code())) {
             crate::forms::paradigm_records(
                 &mut form_sink,
                 isv,
@@ -1001,6 +1004,35 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     }
     let form_records = form_sink.into_records();
     let lemma_records = lemma_sink.into_records();
+    // Semantic-trap notes for the web text-checker (same file the CLI reads),
+    // re-keyed by folded form so the client looks up by key directly.
+    if let Ok(raw) = std::fs::read_to_string(crate::check::SEMANTIC_NOTES) {
+        if let Ok(parsed) = serde_json::from_str::<
+            std::collections::BTreeMap<String, crate::check::SemanticNote>,
+        >(&raw)
+        {
+            let mut js = String::from("{");
+            for (i, (k, v)) in parsed.iter().enumerate() {
+                if i > 0 {
+                    js.push(',');
+                }
+                let _ = write!(
+                    js,
+                    "{}:{{\"warning\":{},\"prefer\":[{}]}}",
+                    serde_json::to_string(&crate::forms::form_key(k))?,
+                    serde_json::to_string(&v.warning)?,
+                    v.prefer
+                        .iter()
+                        .map(|p| serde_json::to_string(p).unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+            js.push_str("}\n");
+            std::fs::create_dir_all(out_dir.join("api"))?;
+            std::fs::write(out_dir.join("api").join("notes.json"), js)?;
+        }
+    }
     let api_counts = crate::forms::write_api(
         out_dir,
         &form_records,
@@ -4785,13 +4817,16 @@ fn urlencode_q(s: &str) -> String {
 
 fn forms_js() -> String {
     const JS: &str = r#"
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function isvFold(s){s=s.toLowerCase().trim();const M={'ě':'e','ę':'e','ų':'u','å':'a','ȯ':'o','ė':'e','ĺ':'l','ľ':'l','ń':'n','ŕ':'r','ť':'t','ď':'d','ś':'s','ź':'z','ć':'č','đ':'dž'};let out='';for(const c of s){out+=(M[c]!==undefined)?M[c]:c;}return out;}
 function fnv1a32(s){const b=new TextEncoder().encode(s);let h=0x811c9dc5>>>0;for(const x of b){h^=x;h=Math.imul(h,16777619)>>>0;}return h>>>0;}
-async function isvLookup(base,q){const key=isvFold(q);const shard=fnv1a32(key)%__SHARDS__;const r=await fetch(base+'api/forms/'+shard+'.json');if(!r.ok)return{key:key,recs:[]};const j=await r.json();return{key:key,recs:(j.records&&j.records[key])||[]};}
+const shardCache={};
+async function isvShard(base,n){if(shardCache[n])return shardCache[n];shardCache[n]=fetch(base+'api/forms/'+n+'.json').then(r=>r.ok?r.json():{records:{}}).catch(()=>({records:{}}));return shardCache[n];}
+async function isvLookup(base,q){const key=isvFold(q);const shard=fnv1a32(key)%__SHARDS__;const j=await isvShard(base,shard);return{key:key,recs:(j.records&&j.records[key])||[]};}
 function recHtml(base,rec){const[form,lemma,id,pos,analyses,source,status,prob,gloss]=rec;
- const st=status==='generated'?('<span class="pill">mašinova rekonstrukcija p='+(prob==null?'?':prob.toFixed(2))+'</span>'):('<span class="pill src-official">'+status+'</span>');
- const an=analyses.length?('<span class="muted">'+analyses.join(', ')+'</span>'):'<span class="muted">(citatna forma)</span>';
- return '<li><b>'+form+'</b> — <a href="'+base+'entry/'+id+'.html">'+lemma+'</a> <span class="badge pos">'+pos+'</span> '+an+' '+st+' <span class="muted">'+gloss+'</span></li>';}
+ const st=status==='generated'?('<span class="pill">mašinova rekonstrukcija p='+(prob==null?'?':prob.toFixed(2))+'</span>'):('<span class="pill src-official">'+escHtml(status)+'</span>');
+ const an=analyses.length?('<span class="muted">'+escHtml(analyses.join(', '))+'</span>'):'<span class="muted">(citatna forma)</span>';
+ return '<li><b>'+escHtml(form)+'</b> — <a href="'+base+'entry/'+id+'.html">'+escHtml(lemma)+'</a> <span class="badge pos">'+escHtml(pos)+'</span> '+an+' '+st+' <span class="muted">'+escHtml(gloss)+'</span></li>';}
 "#;
     JS.replace("__SHARDS__", &crate::forms::SHARDS.to_string())
 }
@@ -4807,8 +4842,8 @@ fn forms_page() -> String {
          <p class='muted'>Iste dane služęt strojam: <code>api/forms/&lt;n&gt;.json</code> (indeks razděljeny na {} častij), <code>api/lemmas.json</code>, <code>api/meta.json</code>, <a href='api/agent-guide.md'>api/agent-guide.md</a>.</p>\
          <script>{}\
 async function go(){{const q=document.getElementById('q').value;if(!q)return;const r=await isvLookup('',q);const out=document.getElementById('out');\
-if(!r.recs.length){{out.innerHTML='<p>Ničto ne najdeno za ključ <b>'+r.key+'</b>. (Nepoznata forma ili mašinovo prědloženje bez zapisa.)</p>';return;}}\
-out.innerHTML='<p>Ključ: <b>'+r.key+'</b>, '+r.recs.length+' analiz:</p><ul>'+r.recs.map(x=>recHtml('',x)).join('')+'</ul>';}}\
+if(!r.recs.length){{out.innerHTML='<p>Ničto ne najdeno za ključ <b>'+escHtml(r.key)+'</b>. (Nepoznata forma ili mašinovo prědloženje bez zapisa.)</p>';return;}}\
+out.innerHTML='<p>Ključ: <b>'+escHtml(r.key)+'</b>, '+r.recs.length+' analiz:</p><ul>'+r.recs.map(x=>recHtml('',x)).join('')+'</ul>';}}\
 const p=new URLSearchParams(location.search).get('q');if(p){{document.getElementById('q').value=p;go();}}\
 </script></article>",
         crate::forms::SHARDS,
@@ -4817,34 +4852,42 @@ const p=new URLSearchParams(location.search).get('q');if(p){{document.getElement
     page("Iskanje form — medžuslovjansky", &body, 0)
 }
 
-/// Client-side text verification (issue #11 phase 3, static twin of the
-/// `check-text` CLI): tokenizes pasted text, batch-fetches the needed shards,
-/// classifies every token.
+/// Client-side text verification (issue #11 phase 3): the static twin of the
+/// `check-text` CLI. Same tokenizer contract (internal hyphens kept, general
+/// two-token lookup so reflexive `sę` verbs and multi-word official lemmas
+/// resolve), same semantic-trap notes (fetched from `api/notes.json`); the
+/// CLI additionally offers nearest-lemma suggestions for unknown tokens.
 fn text_check_page() -> String {
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>Prověrka teksta</h1>\
-         <p class='lede'>Vstavi medžuslovjansky tekst — vsaky token bųde prověrjeny protiv slovnika i vsěh fleksijnyh form. Zeleno = poznato, žėlto = mašinova rekonstrukcija, čŕveno = nepoznato.</p>\
+         <p class='lede'>Vstavi medžuslovjansky tekst — vsaky token bųde prověrjeny protiv slovnika i vsěh fleksijnyh form. Sinje = poznato, žėlta obvodka = mašinova rekonstrukcija, čŕveno = nepoznato, ⚠ = semantična past.</p>\
          <p><textarea id='t' rows='6' style='width:100%'></textarea></p>\
-         <p><button onclick='checkText()'>Prověri</button> <span class='muted'>Ta stranica je vpolno statična; identičny CLI: <code>cargo run -- check-text tekst.txt --json</code>.</span></p>\
+         <p><button onclick='checkText()'>Prověri</button> <span class='muted'>CLI-blizenec: <code>cargo run -- check-text tekst.txt --json</code> (dodatno daje predloženja za nepoznate tokeny).</span></p>\
          <div id='out'></div>\
          <script>{}\
+let notes=null;\
+async function getNotes(){{if(notes)return notes;notes=fetch('api/notes.json').then(r=>r.ok?r.json():{{}}).catch(()=>({{}}));return notes;}}\
 async function checkText(){{\
-const text=document.getElementById('t').value;const toks=text.match(/\\p{{L}}+/gu)||[];\
+const text=document.getElementById('t').value;\
+const toks=text.match(/\\p{{L}}+(?:-\\p{{L}}+)*/gu)||[];\
 const out=document.getElementById('out');out.innerHTML='<p>Prověrjanje…</p>';\
+const nts=await getNotes();\
 const parts=[];let i=0;\
 while(i<toks.length){{\
- let tok=toks[i];let key=isvFold(tok);let disp=tok;let step=1;\
- if(i+1<toks.length&&isvFold(toks[i+1])==='se'){{const bi=await isvLookup('',tok+' se');if(bi.recs.length){{parts.push(render(tok+' '+toks[i+1],bi.recs));i+=2;continue;}}}}\
- const r=await isvLookup('',tok);parts.push(render(disp,r.recs));i+=step;\
+ const tok=toks[i];\
+ if(i+1<toks.length){{const bi=await isvLookup('',tok+' '+toks[i+1]);if(bi.recs.length){{parts.push(render(tok+' '+toks[i+1],bi.recs,nts,bi.key));i+=2;continue;}}}}\
+ const r=await isvLookup('',tok);parts.push(render(tok,r.recs,nts,r.key));i+=1;\
 }}\
-out.innerHTML='<p>'+parts.join(' ')+'</p><p class='+String.fromCharCode(39)+'muted'+String.fromCharCode(39)+'>Klikni slovo za analizu.</p>';\
+out.innerHTML='<p>'+parts.join(' ')+'</p><p class='+String.fromCharCode(39)+'muted'+String.fromCharCode(39)+'>Klikni slovo za polnu analizu.</p>';\
 }}\
-function render(tok,recs){{\
- if(!recs.length)return '<a class=\"chip redlink\" href=\"forms.html?q='+encodeURIComponent(tok)+'\" title=\"nepoznato\">'+tok+'</a>';\
+function render(tok,recs,nts,key){{\
+ const note=nts&&nts[key];\
+ if(!recs.length)return '<a class=\"chip redlink\" href=\"forms.html?q='+encodeURIComponent(tok)+'\" title=\"nepoznato\">'+escHtml(tok)+'</a>';\
  const gen=recs.every(r=>r[6]==='generated');\
- const cls=gen?'chip':'chip xref';\
- const ttl=gen?('mašinova rekonstrukcija p='+(recs[0][7]==null?'?':recs[0][7].toFixed(2))):recs.map(r=>r[1]+' ('+(r[4].join(', ')||'lemma')+')').slice(0,4).join('; ');\
- return '<a class=\"'+cls+'\" href=\"forms.html?q='+encodeURIComponent(tok)+'\" title=\"'+ttl.replace(/\"/g,'&quot;')+'\"'+(gen?' style=\"border-color:#c90\"':'')+'>'+tok+'</a>';\
+ let ttl=gen?('mašinova rekonstrukcija p='+(recs[0][7]==null?'?':recs[0][7].toFixed(2))):recs.map(r=>r[1]+' ('+(r[4].join(', ')||'lemma')+')').slice(0,4).join('; ');\
+ if(note)ttl='⚠ '+note.warning+(note.prefer&&note.prefer.length?' Prefer: '+note.prefer.join(', ')+'.':'')+' — '+ttl;\
+ const style=gen?' style=\"border-color:#c90\"':(note?' style=\"border-color:#c33\"':'');\
+ return '<a class=\"chip xref\" href=\"forms.html?q='+encodeURIComponent(tok)+'\" title=\"'+escHtml(ttl)+'\"'+style+'>'+(note?'⚠':'')+escHtml(tok)+'</a>';\
 }}\
 </script></article>",
         forms_js(),

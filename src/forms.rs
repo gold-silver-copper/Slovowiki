@@ -561,8 +561,10 @@ License: {LICENSE}.
 ## Writing workflow
 
 1. Prefer official lemmas (`api/lemmas.json`, filter by `status`).
-2. Verify every token of your draft against the form index (reflexive verbs
-   are two-token: look up `myti se`-style bigrams before unigrams).
+2. Verify every token of your draft against the form index. Two-token keys
+   exist for reflexive verbs (`myti se`) AND two-word official lemmas
+   (`adamovo jablȯko`): try the space-joined bigram of adjacent tokens
+   before falling back to unigrams.
 3. Check the `gloss` — do not assume a cognate's meaning from your own Slavic
    language (see the semantic notes the check-text tool applies).
 4. For unknown tokens, `cargo run -- check-text` suggests nearest known forms.

@@ -424,12 +424,15 @@ cargo run --release -- check-text tekst.txt --json   # for agents
 ```
 
 classifies every token (known-lemma / known-form / generated / unknown with
-nearest-lemma suggestions, reflexive `X sę` bigrams handled) and applies the
-curated false-friend notes in `data/semantic-notes.json` (each note anchored
-to the official gloss). Guarantees, all CI-tested: round-trip (every rendered
-table cell appears in the records), self-verification (official lemmas and
-paradigm cells resolve as known; garbage resolves as unknown), determinism
-(no timestamps in `api/`).
+nearest-lemma suggestions; two-token keys — reflexive `X sę` verbs and
+two-word official lemmas — resolve via a general bigram lookup) and applies
+the curated false-friend notes in `data/semantic-notes.json` (each note
+anchored to the official gloss; the web twin reads the same notes from
+`api/notes.json`). CI-tested: round-trip (rendered table cells appear in the
+records — unit-scale per POS) and self-verification (sampled official lemmas
+and paradigm cells resolve as known; garbage as unknown). Determinism is
+by construction (no timestamps in `api/`, BTreeMap ordering) and was
+verified by hashing two consecutive exports.
 
 ## Website
 

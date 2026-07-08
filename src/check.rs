@@ -7,8 +7,10 @@
 //!
 //! `known-lemma` / `known-form` / `generated` (carries p) / `unknown` (with
 //! nearest-lemma suggestions) — plus curated semantic-trap warnings from
-//! `data/semantic-notes.json`. Reflexive lemmas are two-token, so a token
-//! followed by `sę`/`se` is looked up as a bigram first.
+//! `data/semantic-notes.json`. Two-token keys (reflexive `X sę` verbs and
+//! two-word official lemmas) are found by a general bigram lookup; only
+//! 3+-token phrases are out of tokenized reach (their lemma records still
+//! exist in the index for direct key lookup).
 //!
 //! CLI-first and self-contained: no site build required, deterministic output,
 //! `--json` for agents.
@@ -51,6 +53,8 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
         if isv.is_empty() || isv.contains('#') || isv.contains('!') {
             continue;
         }
+        // Two-token lemmas (reflexive verbs AND collocations) are reachable
+        // via the general bigram lookup; only 3+-token phrases stay lemma-only.
         let single = !isv.contains(' ') || isv.ends_with(" sę");
         sink.add(
             isv,
@@ -68,7 +72,7 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                 e.pos,
                 Pos::Noun | Pos::ProperNoun | Pos::Adjective | Pos::Verb
             )
-            && seen.insert(format!("{}|{}", forms::form_key(isv), e.pos.code()))
+            && seen.insert(format!("{isv}|{}", e.pos.code()))
         {
             forms::paradigm_records(&mut sink, isv, e.pos, 0, "official", None, &e.english);
         }
@@ -184,21 +188,25 @@ pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
             i += 1;
             continue;
         }
-        // Reflexive bigram first: `myti sę` / folded `myti se`.
+        // Two-token lookup first: reflexive verbs (`myti sę` → key `myti se`)
+        // and multi-word official lemmas (`adamovo jablȯko`) are indexed under
+        // a single space-joined key.
         let mut consumed = 1;
+        let mut matched_key = key.clone();
         let mut recs: Option<&Vec<FormRecord>> = None;
         if let Some(next) = tokens.get(i + 1) {
-            if forms::form_key(next) == "se" {
-                let bigram = format!("{key} se");
-                if let Some(r) = index.by_key.get(&bigram) {
-                    recs = Some(r);
-                    consumed = 2;
-                }
+            let bigram = format!("{key} {}", forms::form_key(next));
+            if let Some(r) = index.by_key.get(&bigram) {
+                recs = Some(r);
+                matched_key = bigram;
+                consumed = 2;
             }
         }
         let recs = recs.or_else(|| index.by_key.get(&key));
+        // Display echoes the SOURCE spelling so JSON consumers can locate the
+        // original text span.
         let display = if consumed == 2 {
-            format!("{tok} sę")
+            format!("{tok} {}", tokens[i + 1])
         } else {
             tok.clone()
         };
@@ -235,7 +243,7 @@ pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
                 } else {
                     "known-form"
                 };
-                let note = index.notes.get(&key);
+                let note = index.notes.get(&matched_key);
                 TokenReport {
                     token: display,
                     status,
