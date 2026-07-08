@@ -396,6 +396,9 @@ cargo run --release -- evidence-eval
 # Inflection validation: blank-cell census + RULE_SPEC §3 grammar invariants:
 cargo run --release -- inflect-eval
 
+# check-text benchmark: fixture classification + agreement gold/error sets:
+cargo run --release -- checktext-eval
+
 # Diagnostic-only oracle ladder (per-stage upper-bound headroom; reads the answer,
 # never feeds production):
 cargo run --release -- oracle
@@ -422,10 +425,13 @@ Every `export` also writes a **static, deterministic lexical API** under
 `site/api/` (issue #11) — one `FormRecord` pipeline feeds both the website's
 inflection tables and the machine-readable artifacts, so they cannot drift:
 
-- `api/forms/<n>.json` — the **sharded form index** (~384k analysis records:
-  every official lemma + its full paradigm, byform variants split, syncretic
-  cells merged). Shard routing: `n = fnv1a32(key) % 1024` over the folded key
-  (`to_standard` lowercase) — mirrored in the site's client-side JS.
+- `api/forms/<n>.json` — the **sharded form index** (schema 2, ~517k analysis
+  records: every official lemma + full paradigm, **declined participles,
+  comparatives/superlatives with adverbs, pronoun & numeral paradigms** from
+  the STEEN-G tables, byform variants split, syncretic cells merged). Shard
+  routing: `n = fnv1a32(key) % 2048` over the folded key — mirrored in the
+  site's client-side JS, which verifies itself against
+  `api/router-selftest.json` before trusting lookups.
 - `api/lemmas.json` — every headword with status (`official` /
   `official-only` / `generated`) and, for generated lemmas, the calibrated
   probability. Generated lemmas deliberately have **no inflection records**:
@@ -445,8 +451,12 @@ cargo run --release -- check-text tekst.txt --json   # for agents
 ```
 
 classifies every token (known-lemma / known-form / generated / unknown with
-nearest-lemma suggestions; two-token keys — reflexive `X sę` verbs and
-two-word official lemmas — resolve via a general bigram lookup) and applies
+nearest-lemma suggestions; multi-word official lemmas resolve via trigram →
+bigram lookup), runs **conservative grammar-agreement checks** (adjacent
+adjective–noun case/number/gender — gender in the singular only, preposition
+government parsed from the dictionary's own `(+N)` annotations, pronoun–verb
+person/number; a warning fires only when NO combination of analyses is
+compatible, never across punctuation) and applies
 the curated false-friend notes in `data/semantic-notes.json` (each note
 anchored to the official gloss; the web twin reads the same notes from
 `api/notes.json`). CI-tested: round-trip (rendered table cells appear in the

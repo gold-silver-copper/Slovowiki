@@ -40,6 +40,12 @@ pub struct Index {
     /// All lemma keys, for nearest-suggestion search.
     pub lemma_keys: Vec<(String, String)>, // (key, display lemma)
     pub notes: BTreeMap<String, SemanticNote>,
+    /// Noun lemma key → dictionary gender (m/f/n), for agreement checking.
+    pub noun_gender: HashMap<String, char>,
+    /// Preposition key → the cases it governs, parsed from the dictionary's
+    /// own `(+N)` additions (2=gen, 3=dat, 4=akuz, 6=lok, 7=instr), plus the
+    /// hand-listed closed-class supplement (v, s, k, o, ob).
+    pub prep_cases: HashMap<String, Vec<&'static str>>,
 }
 
 /// Build the verification index from the official dictionary (lemmas + full
@@ -49,6 +55,19 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
     let mut sink = RecordSink::default();
     forms::closed_class_records(&mut sink);
     let mut seen: HashSet<String> = HashSet::new();
+    let mut noun_gender: HashMap<String, char> = HashMap::new();
+    let mut prep_cases: HashMap<String, Vec<&'static str>> = HashMap::new();
+    // The closed-class supplement's government (STEEN-G): the dictionary rows
+    // below carry their own (+N) annotations.
+    for (p, cases) in [
+        ("v", vec!["akuz", "lok"]),
+        ("s", vec!["gen", "instr"]),
+        ("k", vec!["dat"]),
+        ("o", vec!["akuz", "lok"]),
+        ("ob", vec!["akuz", "lok"]),
+    ] {
+        prep_cases.insert(p.to_string(), cases);
+    }
     for e in entries {
         // ~230 rows list byform variants in one cell ("iměti, imati",
         // "srědnji, srědny") — each variant is its own lemma.
@@ -60,6 +79,39 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
             // via the general bigram lookup; only 3+-token phrases stay
             // lemma-only.
             let single = !isv.contains(' ') || isv.ends_with(" sę");
+            if e.pos == Pos::Noun {
+                if let Some(g) = e.noun_traits.gender {
+                    let c = match g {
+                        crate::model::Gender::Masculine => 'm',
+                        crate::model::Gender::Feminine => 'f',
+                        crate::model::Gender::Neuter => 'n',
+                        _ => ' ',
+                    };
+                    if c != ' ' {
+                        noun_gender.entry(forms::form_key(isv)).or_insert(c);
+                    }
+                }
+            }
+            if e.pos_raw.starts_with("prep") && !isv.contains(' ') {
+                let cases: Vec<&'static str> = e
+                    .addition
+                    .chars()
+                    .filter_map(|c| match c {
+                        '2' => Some("gen"),
+                        '3' => Some("dat"),
+                        '4' => Some("akuz"),
+                        '6' => Some("lok"),
+                        '7' => Some("instr"),
+                        _ => None,
+                    })
+                    .collect();
+                if !cases.is_empty() {
+                    prep_cases
+                        .entry(forms::form_key(isv))
+                        .or_default()
+                        .extend(cases);
+                }
+            }
             sink.add(
                 isv,
                 "",
@@ -88,6 +140,12 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                     None,
                     &e.english,
                 );
+            }
+            if single
+                && matches!(e.pos, Pos::Pronoun | Pos::Numeral)
+                && seen.insert(format!("{isv}|{}", e.pos.code()))
+            {
+                forms::pronoun_numeral_records(&mut sink, isv, e.pos, 0, "official", &e.english);
             }
         }
     }
@@ -145,6 +203,8 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
         by_key,
         lemma_keys,
         notes,
+        noun_gender,
+        prep_cases,
     }
 }
 
@@ -165,6 +225,9 @@ pub struct TokenReport {
     /// Curated semantic-trap warning, if any.
     pub warning: Option<String>,
     pub prefer: Vec<String>,
+    /// Grammar-agreement warning (issue #13 §3): set when NO combination of
+    /// this token's analyses is compatible with its neighbour.
+    pub agreement: Option<String>,
 }
 
 /// Tokenize: maximal runs of letters (flavored letters are alphabetic).
@@ -192,8 +255,60 @@ pub fn tokenize(text: &str) -> Vec<String> {
     out
 }
 
+/// Tokenize AND record punctuation breaks: `breaks[i]` is true when token i
+/// is separated from its predecessor by anything beyond whitespace (comma,
+/// period, table cell, …) — agreement never crosses such a break.
+pub fn tokenize_with_breaks(text: &str) -> (Vec<String>, Vec<bool>) {
+    let mut tokens: Vec<String> = Vec::new();
+    let mut breaks: Vec<bool> = Vec::new();
+    let mut cur = String::new();
+    let mut pending_break = true; // text start counts as a break
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_alphabetic() {
+            cur.push(c);
+        } else if c == '-'
+            && !cur.is_empty()
+            && chars.peek().map(|n| n.is_alphabetic()).unwrap_or(false)
+        {
+            cur.push('-');
+        } else {
+            if !cur.is_empty() {
+                tokens.push(std::mem::take(&mut cur));
+                breaks.push(pending_break);
+                pending_break = false;
+            }
+            if !c.is_whitespace() {
+                pending_break = true;
+            }
+        }
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+        breaks.push(pending_break);
+    }
+    (tokens, breaks)
+}
+
+/// Verify a full text: tokenization with punctuation breaks, so agreement
+/// checks only apply within a phrase.
+pub fn check_text(index: &Index, text: &str) -> Vec<TokenReport> {
+    let (tokens, breaks) = tokenize_with_breaks(text);
+    check_tokens_impl(index, &tokens, Some(&breaks))
+}
+
 pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
+    check_tokens_impl(index, tokens, None)
+}
+
+fn check_tokens_impl(
+    index: &Index,
+    tokens: &[String],
+    breaks: Option<&[bool]>,
+) -> Vec<TokenReport> {
     let mut reports = Vec::new();
+    let mut grammar: Vec<TokenGrammar> = Vec::new();
+    let mut report_breaks: Vec<bool> = Vec::new();
     let mut i = 0usize;
     while i < tokens.len() {
         let tok = &tokens[i];
@@ -202,27 +317,36 @@ pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
             i += 1;
             continue;
         }
-        // Two-token lookup first: reflexive verbs (`myti sę` → key `myti se`)
-        // and multi-word official lemmas (`adamovo jablȯko`) are indexed under
-        // a single space-joined key.
+        // Longest match first: trigram (3-token official lemmas), then bigram
+        // (reflexive verbs, two-word lemmas), then the single token.
         let mut consumed = 1;
         let mut matched_key = key.clone();
         let mut recs: Option<&Vec<FormRecord>> = None;
-        if let Some(next) = tokens.get(i + 1) {
-            let bigram = format!("{key} {}", forms::form_key(next));
-            if let Some(r) = index.by_key.get(&bigram) {
+        if let (Some(n1), Some(n2)) = (tokens.get(i + 1), tokens.get(i + 2)) {
+            let trigram = format!("{key} {} {}", forms::form_key(n1), forms::form_key(n2));
+            if let Some(r) = index.by_key.get(&trigram) {
                 recs = Some(r);
-                matched_key = bigram;
-                consumed = 2;
+                matched_key = trigram;
+                consumed = 3;
+            }
+        }
+        if recs.is_none() {
+            if let Some(next) = tokens.get(i + 1) {
+                let bigram = format!("{key} {}", forms::form_key(next));
+                if let Some(r) = index.by_key.get(&bigram) {
+                    recs = Some(r);
+                    matched_key = bigram;
+                    consumed = 2;
+                }
             }
         }
         let recs = recs.or_else(|| index.by_key.get(&key));
         // Display echoes the SOURCE spelling so JSON consumers can locate the
         // original text span.
-        let display = if consumed == 2 {
-            format!("{tok} {}", tokens[i + 1])
-        } else {
-            tok.clone()
+        let display = match consumed {
+            3 => format!("{tok} {} {}", tokens[i + 1], tokens[i + 2]),
+            2 => format!("{tok} {}", tokens[i + 1]),
+            _ => tok.clone(),
         };
 
         let report = match recs {
@@ -268,6 +392,7 @@ pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
                     suggestions: Vec::new(),
                     warning: note.map(|n| n.warning.clone()),
                     prefer: note.map(|n| n.prefer.clone()).unwrap_or_default(),
+                    agreement: None,
                 }
             }
             None => TokenReport {
@@ -280,12 +405,244 @@ pub fn check_tokens(index: &Index, tokens: &[String]) -> Vec<TokenReport> {
                 suggestions: suggest(index, &key),
                 warning: None,
                 prefer: Vec::new(),
+                agreement: None,
             },
         };
+        grammar.push(match recs {
+            Some(rs) => token_grammar(index, rs, &matched_key),
+            None => token_grammar(index, &[], &matched_key),
+        });
+        report_breaks.push(breaks.map(|b| b[i]).unwrap_or(false));
         reports.push(report);
         i += consumed;
     }
+    agreement_pass(index, &grammar, &report_breaks, &mut reports);
     reports
+}
+
+/// One parsed analysis: case, number ('j'=sg 'm'=pl), gender ('m','f','n',
+/// ' '=unspecified), verb person+number ("3mn"), and degree/participle
+/// prefixes are ignored for agreement.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Feat {
+    case: &'static str,
+    number: char,
+    gender: char,
+}
+
+const CASES6: [&str; 6] = ["nom", "akuz", "gen", "dat", "lok", "instr"];
+
+/// Parse the compact analysis strings ("gen.jd.", "komp. akuz.mn. m.živ.",
+/// "gen.jd. ž. / dat.jd. ž.") into feature tuples.
+fn parse_feats(analyses: &[String]) -> Vec<Feat> {
+    let mut out = Vec::new();
+    for a in analyses {
+        for part in a.split('/') {
+            let mut case: Option<&'static str> = None;
+            let mut number = ' ';
+            let mut gender = ' ';
+            for tok in part.split_whitespace() {
+                let t = tok.trim_end_matches('.');
+                if let Some((c, n)) = t.split_once('.') {
+                    if let Some(cc) = CASES6.iter().find(|x| **x == c) {
+                        case = Some(cc);
+                        number = match n {
+                            "jd" => 'j',
+                            "mn" => 'm',
+                            _ => ' ',
+                        };
+                        continue;
+                    }
+                }
+                // Bare case (numeral tables: "gen.")
+                if let Some(cc) = CASES6.iter().find(|x| **x == t) {
+                    case = Some(cc);
+                    continue;
+                }
+                match t {
+                    "m" | "m.živ" | "m.než" => gender = 'm',
+                    "ž" => gender = 'f',
+                    "sr" => gender = 'n',
+                    "m./sr" => gender = 'b', // masc-or-neuter (pronoun tables)
+                    _ => {}
+                }
+            }
+            if let Some(c) = case {
+                out.push(Feat {
+                    case: c,
+                    number,
+                    gender,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Verb present-tense person+number analyses ("prez.3mn." → ('3','m')).
+fn parse_prez(analyses: &[String]) -> Vec<(char, char)> {
+    let mut out = Vec::new();
+    for a in analyses {
+        if let Some(rest) = a.strip_prefix("prez.") {
+            let mut ch = rest.chars();
+            if let (Some(p), Some(n)) = (ch.next(), ch.next()) {
+                let n = match n {
+                    'j' => 'j',
+                    'm' => 'm',
+                    _ => ' ',
+                };
+                out.push((p, n));
+            }
+        }
+    }
+    out
+}
+
+/// Token-level grammar info extracted for the agreement pass.
+struct TokenGrammar {
+    /// Adjectival analyses (carry a gender column).
+    adj: Vec<Feat>,
+    /// Nominal analyses (no gender column) + the lemma's dictionary gender.
+    noun: Vec<Feat>,
+    noun_gender: char,
+    prez: Vec<(char, char)>,
+    /// Preposition government (cases), when the token is a known preposition.
+    prep: Option<Vec<&'static str>>,
+    /// Personal-pronoun subject (person, number), e.g. ja → ('1','j').
+    subject: Option<(char, char)>,
+    official: bool,
+    /// Every record is the given POS — the ambiguity gates for the
+    /// conservative agreement checks ('malo' is adj AND adverb: skipped).
+    pure_adj: bool,
+    pure_noun: bool,
+    pure_verb: bool,
+}
+
+fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> TokenGrammar {
+    let mut adj: Vec<Feat> = Vec::new();
+    let mut noun: Vec<Feat> = Vec::new();
+    let mut prez: Vec<(char, char)> = Vec::new();
+    let mut noun_gender = ' ';
+    let mut official = false;
+    let pure = |p: &str| !recs.is_empty() && recs.iter().all(|r| r.pos == p);
+    let (pure_adj, pure_noun, pure_verb) = (pure("adj"), pure("noun"), pure("verb"));
+    for r in recs {
+        if r.status != "generated" {
+            official = true;
+        }
+        let feats = parse_feats(&r.analyses);
+        match r.pos {
+            "adj" => adj.extend(feats),
+            "noun" => {
+                noun.extend(feats);
+                if noun_gender == ' ' {
+                    if let Some(g) = index.noun_gender.get(&forms::form_key(&r.lemma)) {
+                        noun_gender = *g;
+                    }
+                }
+            }
+            "verb" => prez.extend(parse_prez(&r.analyses)),
+            _ => {}
+        }
+    }
+    let prep = index.prep_cases.get(matched_key).cloned();
+    let subject = match matched_key {
+        "ja" => Some(('1', 'j')),
+        "ty" => Some(('2', 'j')),
+        "my" => Some(('1', 'm')),
+        "vy" => Some(('2', 'm')),
+        "on" | "ona" | "ono" => Some(('3', 'j')),
+        "oni" | "one" => Some(('3', 'm')),
+        _ => None,
+    };
+    TokenGrammar {
+        adj,
+        noun,
+        noun_gender,
+        prez,
+        prep,
+        subject,
+        official,
+        pure_adj,
+        pure_noun,
+        pure_verb,
+    }
+}
+
+/// The conservative agreement pass (issue #13 §3): a warning fires ONLY when
+/// no combination of the two tokens' analyses is compatible, both tokens are
+/// verification-grade, and each is unambiguously the expected part of speech.
+fn agreement_pass(
+    index: &Index,
+    grammar: &[TokenGrammar],
+    breaks: &[bool],
+    reports: &mut [TokenReport],
+) {
+    let _ = index;
+    for i in 0..reports.len().saturating_sub(1) {
+        let (a, b) = (&grammar[i], &grammar[i + 1]);
+        if !a.official || !b.official {
+            continue;
+        }
+        // Agreement never crosses punctuation (lists, table cells, clause
+        // boundaries): "pomoćnogo, ljudi" is an enumeration, not a phrase.
+        if breaks.get(i + 1).copied().unwrap_or(false) {
+            continue;
+        }
+        // Preposition government: prep + unambiguous noun.
+        if let Some(cases) = &a.prep {
+            if b.pure_noun && !b.noun.is_empty() {
+                let ok = b.noun.iter().any(|f| cases.contains(&f.case));
+                if !ok {
+                    reports[i + 1].agreement = Some(format!(
+                        "predlog '{}' vlada padežami [{}], ale '{}' ne imaje ni jednogo takogo padeža",
+                        reports[i].token,
+                        cases.join(", "),
+                        reports[i + 1].token
+                    ));
+                }
+                continue;
+            }
+        }
+        // Adjective + noun agreement (adjacent, both POS-unambiguous). Gender
+        // is only distinctive in the SINGULAR — ISV plural adjectives mark
+        // only nom-animacy, so plural pairs check case+number alone (and the
+        // dictionary genders pluralia like `ljudi` idiosyncratically anyway).
+        if a.pure_adj && !a.adj.is_empty() && b.pure_noun && !b.noun.is_empty() {
+            let ok = a.adj.iter().any(|fa| {
+                b.noun.iter().any(|fn_| {
+                    fa.case == fn_.case
+                        && (fa.number == fn_.number || fa.number == ' ' || fn_.number == ' ')
+                        && (fn_.number == 'm'
+                            || b.noun_gender == ' '
+                            || fa.gender == ' '
+                            || fa.gender == b.noun_gender
+                            || (fa.gender == 'b' && matches!(b.noun_gender, 'm' | 'n')))
+                })
+            });
+            if !ok {
+                reports[i].agreement = Some(format!(
+                    "'{}' ne sųglašaje sę s '{}' v padežu/čislu/rodu (ni jedna kombinacija analiz ne je sųměstna)",
+                    reports[i].token,
+                    reports[i + 1].token
+                ));
+            }
+            continue;
+        }
+        // Personal pronoun + present-tense verb: person/number.
+        if let Some((p, n)) = a.subject {
+            if b.pure_verb && !b.prez.is_empty() {
+                let ok = b.prez.iter().any(|(vp, vn)| *vp == p && *vn == n);
+                if !ok {
+                    reports[i + 1].agreement = Some(format!(
+                        "glagol '{}' ne sųglašaje sę s podmetom '{}' v osobě/čislu",
+                        reports[i + 1].token,
+                        reports[i].token
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// Nearest known lemmas for an unknown token: same first letter, folded edit
@@ -318,8 +675,7 @@ pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
     let entries = official::load(official_path)?;
     let index = build_index(&entries, Some(Path::new("data/novel-words.tsv")));
     let text = std::fs::read_to_string(text_path)?;
-    let tokens = tokenize(&text);
-    let reports = check_tokens(&index, &tokens);
+    let reports = check_text(&index, &text);
 
     if json {
         let mut s = String::from("[\n");
@@ -367,6 +723,9 @@ pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
             }
             _ => {}
         }
+        if let Some(w) = &r.agreement {
+            println!("  ⚠ {:<20} {}", r.token, w);
+        }
         if let Some(w) = &r.warning {
             println!(
                 "  ! {:<20} {}{}",
@@ -381,6 +740,115 @@ pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
         }
     }
     let _ = json_escape("");
+    Ok(())
+}
+
+/// The check-text benchmark (issue #13, `checktext-eval`): classification
+/// counts on the committed fixture (all-correct Interslavic → must be fully
+/// known with zero agreement flags), plus the agreement gold/error sets.
+/// Report: target/eval/checktext-report.md.
+pub const FIXTURE: &str = "data/checktext-fixture.txt";
+
+/// Grammatically correct sentences: zero agreement warnings expected.
+pub const AGREEMENT_GOLD: &[&str] = &[
+    "Toj dobry člověk čitaje najlěpšu knigu.",
+    "Ja vidžų velikų rěku bez mosta.",
+    "My pijemo čistu vodu s prijateljami.",
+    "Ona pisala oba pisma za pęť minut.",
+    "Dobri ljudi pomagajųt vsim dětam.",
+];
+
+/// Each sentence seeds exactly one agreement error that MUST be flagged.
+pub const AGREEMENT_ERRORS: &[&str] = &[
+    "Ja vidiš rěku.",           // person: ja + 2sg verb
+    "Bez voda ne možemo žiti.", // government: bez + nominative
+    "On vidita rěku.",          // unknown form stays unknown (not agreement) — excluded below
+    "Vidimo velikogo ženu.",    // gender: masc-anim acc adj + fem noun
+    "K vodu idemo.",            // government: k + accusative
+];
+
+pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    use std::fmt::Write as _;
+    let entries = official::load(official_path)?;
+    let index = build_index(&entries, Some(Path::new("data/novel-words.tsv")));
+
+    let text = std::fs::read_to_string(FIXTURE)?;
+    let reps = check_text(&index, &text);
+    let count = |st: &str| reps.iter().filter(|r| r.status == st).count();
+    let unknown = count("unknown");
+    let agree_flags = reps.iter().filter(|r| r.agreement.is_some()).count();
+
+    let gold_flags: usize = AGREEMENT_GOLD
+        .iter()
+        .map(|s| {
+            check_tokens(&index, &tokenize(s))
+                .iter()
+                .filter(|r| r.agreement.is_some())
+                .count()
+        })
+        .sum();
+    // The third error sentence tests unknown-handling, not agreement.
+    let error_hits: Vec<bool> = AGREEMENT_ERRORS
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 2)
+        .map(|(_, s)| {
+            check_tokens(&index, &tokenize(s))
+                .iter()
+                .any(|r| r.agreement.is_some())
+        })
+        .collect();
+    let errors_flagged = error_hits.iter().filter(|x| **x).count();
+
+    println!(
+        "checktext-eval: fixture {} tokens — {} known-lemma, {} known-form, {} generated, {} unknown, {} agreement flags",
+        reps.len(),
+        count("known-lemma"),
+        count("known-form"),
+        count("generated"),
+        unknown,
+        agree_flags,
+    );
+    println!(
+        "  agreement: gold sentences {} false flags / seeded errors {}/{} flagged",
+        gold_flags,
+        errors_flagged,
+        error_hits.len()
+    );
+
+    std::fs::create_dir_all(out_dir)?;
+    let mut s = String::new();
+    writeln!(s, "# check-text benchmark (checktext-eval)\n")?;
+    writeln!(
+        s,
+        "**Denominators:** the committed all-correct fixture `{FIXTURE}` ({} tokens), {} gold sentences (agreement false-alarm set) and {} seeded-error sentences. **Leakage story:** the fixture and sentence sets are hand-written against the official vocabulary; the checker never sees expected labels.\n",
+        reps.len(),
+        AGREEMENT_GOLD.len(),
+        error_hits.len(),
+    )?;
+    writeln!(s, "| Measurement | value |")?;
+    writeln!(s, "|---|---:|")?;
+    writeln!(
+        s,
+        "| fixture classification | {} known-lemma / {} known-form / {} generated / **{} unknown** |",
+        count("known-lemma"),
+        count("known-form"),
+        count("generated"),
+        unknown
+    )?;
+    writeln!(s, "| fixture agreement false alarms | **{agree_flags}** |")?;
+    writeln!(s, "| gold-sentence false alarms | **{gold_flags}** |")?;
+    writeln!(
+        s,
+        "| seeded errors flagged | **{errors_flagged} / {}** |",
+        error_hits.len()
+    )?;
+    writeln!(
+        s,
+        "\nAgreement checks are deliberately conservative: they fire only when NO combination of the neighbouring tokens' analyses is compatible, both tokens are verification-grade, and each token is POS-unambiguous. Gender is enforced in the singular only (ISV plural adjectives mark nom-animacy only)."
+    )?;
+    std::fs::write(out_dir.join("checktext-report.md"), s)?;
+    println!("Wrote {}", out_dir.join("checktext-report.md").display());
     Ok(())
 }
 
@@ -453,6 +921,68 @@ mod tests {
         let reps = check_tokens(&index, &tokenize("xqzvw grblfk"));
         assert!(reps.iter().all(|r| r.status == "unknown"));
         assert_eq!(reps.len(), 2);
+    }
+
+    #[test]
+    fn fixture_and_agreement_benchmark_hold() {
+        // The acceptance criteria of issue #13, enforced in CI: the committed
+        // all-correct fixture stays fully known with zero agreement false
+        // alarms, the gold sentences stay clean, and every seeded error is
+        // flagged. If a change legitimately shifts these numbers, update the
+        // fixture/report — that is the change-detector working.
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(&entries, None);
+        let text = std::fs::read_to_string(FIXTURE).expect("fixture");
+        let reps = check_text(&index, &text);
+        let unknown: Vec<&str> = reps
+            .iter()
+            .filter(|r| r.status == "unknown")
+            .map(|r| r.token.as_str())
+            .collect();
+        assert!(unknown.is_empty(), "fixture unknowns: {unknown:?}");
+        let flags: Vec<&TokenReport> = reps.iter().filter(|r| r.agreement.is_some()).collect();
+        assert!(
+            flags.is_empty(),
+            "fixture agreement false alarms: {:?}",
+            flags.iter().map(|r| &r.token).collect::<Vec<_>>()
+        );
+        for s in AGREEMENT_GOLD {
+            let reps = check_text(&index, s);
+            assert!(
+                reps.iter().all(|r| r.agreement.is_none()),
+                "gold sentence falsely flagged: {s}"
+            );
+        }
+        for (i, s) in AGREEMENT_ERRORS.iter().enumerate() {
+            if i == 2 {
+                continue; // tests unknown-handling, not agreement
+            }
+            let reps = check_text(&index, s);
+            assert!(
+                reps.iter().any(|r| r.agreement.is_some()),
+                "seeded error NOT flagged: {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn feature_parsing_and_compatibility() {
+        let adj = parse_feats(&["nom.mn. m.živ.".to_string()]);
+        assert_eq!(adj.len(), 1, "{adj:?}");
+        assert_eq!(
+            (adj[0].case, adj[0].number, adj[0].gender),
+            ("nom", 'm', 'm')
+        );
+        let noun = parse_feats(&["nom.mn.".to_string(), "gen.jd.".to_string()]);
+        assert_eq!(noun.len(), 2, "{noun:?}");
+        assert_eq!(
+            (noun[0].case, noun[0].number, noun[0].gender),
+            ("nom", 'm', ' ')
+        );
+        let multi = parse_feats(&["gen.jd. ž. / dat.jd. ž.".to_string()]);
+        assert_eq!(multi.len(), 2, "{multi:?}");
+        let prez = parse_prez(&["prez.3mn.".to_string()]);
+        assert_eq!(prez, vec![('3', 'm')]);
     }
 
     #[test]

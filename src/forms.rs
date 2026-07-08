@@ -27,10 +27,33 @@ use std::path::Path;
 
 /// Shard count for the form index. Changing it is a schema break: bump
 /// [`SCHEMA_VERSION`] and regenerate `api/agent-guide.md`.
-pub const SHARDS: u32 = 1024;
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SHARDS: u32 = 2048;
+pub const SCHEMA_VERSION: u32 = 2;
 pub const LICENSE: &str =
     "CC BY-SA 4.0 (derives from Wiktionary and interslavic-dictionary.com; see /about.html)";
+
+/// The flavored→standard fold pairs, THE single source for the client-side
+/// JavaScript fold (site.rs generates the JS map from this constant) and
+/// asserted against `orthography::to_standard` by a unit test — the wire
+/// format cannot drift between the three copies.
+pub const FOLD_PAIRS: &[(char, &str)] = &[
+    ('ě', "e"),
+    ('ę', "e"),
+    ('ų', "u"),
+    ('å', "a"),
+    ('ȯ', "o"),
+    ('ė', "e"),
+    ('ĺ', "l"),
+    ('ľ', "l"),
+    ('ń', "n"),
+    ('ŕ', "r"),
+    ('ť', "t"),
+    ('ď', "d"),
+    ('ś', "s"),
+    ('ź', "z"),
+    ('ć', "č"),
+    ('đ', "dž"),
+];
 
 /// 32-bit FNV-1a over the UTF-8 bytes — mirrored in the site's JavaScript
 /// (`Math.imul`-based); both sides route `key → shard` identically.
@@ -352,6 +375,128 @@ impl RecordSink {
     }
 }
 
+/// The synthetic comparative of an adjective (STEEN-G Stupnjevanje):
+/// -ky/-eky/-oky → -ši (kratki→kratši, daleky→dalši, vysoky→vysši); otherwise
+/// stem + -ějši (-ejši after soft/palatalized: blagy→blažejši, svěži→
+/// svěžejši); seven lexical irregulars. Returns (comparative adjective,
+/// comparative adverb).
+pub fn comparative(adj: &str) -> Option<(String, String)> {
+    // The seven irregulars (steen adjectives page, verbatim).
+    for (base, comp, adv) in [
+        ("dobry", "lěpši", "lěpje"),
+        ("zly", "gorši", "gorje"),
+        ("veliky", "večši", "veče"),
+        ("maly", "menši", "menje"),
+        ("blagy", "unši", "unje"),
+        ("legky", "legši", "legše"),
+        ("mękky", "mękši", "mękše"),
+    ] {
+        if adj == base {
+            return Some((comp.to_string(), adv.to_string()));
+        }
+    }
+    let stem = adj.strip_suffix(['y', 'i'])?;
+    if stem.chars().count() < 2 {
+        return None;
+    }
+    // -ky / -eky / -oky class: -ši on the truncated root, adverb by iotation.
+    for suf in ["ok", "ek", "k"] {
+        if let Some(root) = stem.strip_suffix(suf) {
+            if root.chars().count() >= 2 {
+                let comp = format!("{root}ši");
+                let adv = format!("{}e", iotate_comp(root));
+                return Some((comp, adv));
+            }
+            return None;
+        }
+    }
+    // Regular: palatalize k/g/h, soft stems take -ejši.
+    let (pal, soft) = palatalize_comp(stem);
+    let (adj_suf, adv_suf) = if soft {
+        ("ejši", "eje")
+    } else {
+        ("ějši", "ěje")
+    };
+    Some((format!("{pal}{adj_suf}"), format!("{pal}{adv_suf}")))
+}
+
+fn palatalize_comp(stem: &str) -> (String, bool) {
+    let mut s = stem.to_string();
+    let soft = match s.chars().last() {
+        Some('k') => {
+            s.pop();
+            s.push('č');
+            true
+        }
+        Some('g') => {
+            s.pop();
+            s.push('ž');
+            true
+        }
+        Some('h') => {
+            s.pop();
+            s.push('š');
+            true
+        }
+        Some('š' | 'ž' | 'č' | 'c' | 'j') => true,
+        _ => false,
+    };
+    (s, soft)
+}
+
+/// Iotation for -ki-class comparative adverbs (dalek→dalje, vysok→vyše,
+/// blizk→bliže — the k is already stripped by the caller).
+fn iotate_comp(root: &str) -> String {
+    for (suf, rep) in [
+        ("s", "š"),
+        ("z", "ž"),
+        ("t", "ć"),
+        ("d", "đ"),
+        ("l", "lj"),
+        ("n", "nj"),
+        ("r", "rj"),
+    ] {
+        if let Some(head) = root.strip_suffix(suf) {
+            return format!("{head}{rep}");
+        }
+    }
+    root.to_string()
+}
+
+/// Decline an adjective-shaped lemma into the sink with a feature prefix
+/// (used for adjectives themselves, their comparatives/superlatives,
+/// declinable participles, and adjectivally-declined pronouns).
+#[allow(clippy::too_many_arguments)]
+fn adj_paradigm(
+    sink: &mut RecordSink,
+    adj: &str,
+    feat_prefix: &str,
+    lemma: &str,
+    entry_id: usize,
+    pos: &'static str,
+    status: &'static str,
+    probability: Option<f64>,
+    gloss: &str,
+) {
+    for (nf, num) in NUMBERS {
+        for (cf, case) in CASES {
+            for (gf, g, a) in ADJ_COLS {
+                sink.add(
+                    &adj_cell(adj, case, num, g, a),
+                    &format!("{feat_prefix}{cf}.{nf}. {gf}"),
+                    lemma,
+                    entry_id,
+                    pos,
+                    "inflection",
+                    status,
+                    probability,
+                    gloss,
+                );
+            }
+        }
+    }
+}
+
 /// Collect the full paradigm of one lemma into the sink. `reflexive` verbs
 /// (`X sę`) are inflected on the bare stem with the particle re-applied, so
 /// their keys are two-token (`myti se`) and `check-text`'s bigram lookup finds
@@ -391,21 +536,46 @@ pub fn paradigm_records(
             }
         }
         Pos::Adjective => {
-            for (nf, num) in NUMBERS {
-                for (cf, case) in CASES {
-                    for (gf, g, a) in ADJ_COLS {
-                        sink.add(
-                            &adj_cell(bare, case, num, g, a),
-                            &format!("{cf}.{nf}. {gf}"),
-                            lemma,
-                            entry_id,
-                            "adj",
-                            "inflection",
-                            status,
-                            probability,
-                            gloss,
-                        );
-                    }
+            adj_paradigm(
+                sink,
+                bare,
+                "",
+                lemma,
+                entry_id,
+                "adj",
+                status,
+                probability,
+                gloss,
+            );
+            // Degrees of comparison (issue #13 §1): comparative and superlative
+            // are soft adjectives — declined in full — plus their adverbs.
+            if let Some((comp, comp_adv)) = comparative(bare) {
+                for (deg, adj_form, adv_form) in [
+                    ("komp. ", comp.clone(), comp_adv.clone()),
+                    ("superl. ", format!("naj{comp}"), format!("naj{comp_adv}")),
+                ] {
+                    adj_paradigm(
+                        sink,
+                        &adj_form,
+                        deg,
+                        lemma,
+                        entry_id,
+                        "adj",
+                        status,
+                        probability,
+                        gloss,
+                    );
+                    sink.add(
+                        &adv_form,
+                        &format!("{}prisl.", deg),
+                        lemma,
+                        entry_id,
+                        "adv",
+                        "inflection",
+                        status,
+                        probability,
+                        gloss,
+                    );
                 }
             }
         }
@@ -456,10 +626,293 @@ pub fn paradigm_records(
             for (feat, f) in &cells.nonfinite {
                 add(f, format!("{feat}."));
             }
+            // Declinable participles (issue #13 §1): the passive participles
+            // and the active present participle decline like adjectives; the
+            // first cell variant is the masc.sg citation. The past active
+            // (-vši) is used adverbially and stays lemma-only.
+            for (feat, f) in &cells.nonfinite {
+                if !matches!(*feat, "part.pas.proš" | "part.pas.tep" | "part.akt.tep") {
+                    continue;
+                }
+                let citation = f.split('/').next().unwrap_or("").trim();
+                if citation.is_empty()
+                    || citation == "—"
+                    || citation.contains(' ')
+                    || !citation.ends_with(['y', 'i'])
+                {
+                    continue;
+                }
+                adj_paradigm(
+                    sink,
+                    citation,
+                    &format!("{feat}. "),
+                    lemma,
+                    entry_id,
+                    "adj",
+                    status,
+                    probability,
+                    gloss,
+                );
+            }
         }
         _ => {}
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pronoun & numeral paradigms (issue #13 §1) — hand-grounded in the STEEN-G
+// tables (steen.free.fr/interslavic/pronouns.html, numerals.html), which the
+// regular inflector does not cover.
+// ---------------------------------------------------------------------------
+
+/// toj-class demonstratives (toj, tutoj, tamtoj, onoj, ov — "declined like
+/// toj"). Endings attach to the stem (toj→t, ov→ov); the lemma itself is the
+/// masc.nom.sg.
+const TOJ_ENDINGS: &[(&str, &str)] = &[
+    ("o", "nom.jd. sr. / akuz.jd. sr."),
+    ("a", "nom.jd. ž."),
+    ("i", "nom.mn. m.živ."),
+    ("e", "nom.mn. / akuz.mn."),
+    ("ogo", "gen.jd. m./sr. / akuz.jd. m.živ."),
+    ("u", "akuz.jd. ž."),
+    ("oj", "gen.jd. ž. / dat.jd. ž. / lok.jd. ž."),
+    ("omu", "dat.jd. m./sr."),
+    ("om", "lok.jd. m./sr."),
+    ("ym", "instr.jd. m./sr. / dat.mn."),
+    ("oju", "instr.jd. ž."),
+    ("yh", "gen.mn. / lok.mn. / akuz.mn. m.živ."),
+    ("ymi", "instr.mn."),
+];
+
+/// moj-class (moj, tvoj, svoj, koj, čij, naš, vaš and their ni-/ně-/vse-
+/// prefixed derivatives): soft pronominal declension, endings attach to the
+/// full lemma (moj→mojego, naš→našego, čij→čijego).
+const MOJ_ENDINGS: &[(&str, &str)] = &[
+    ("a", "nom.jd. ž."),
+    ("e", "nom.jd. sr. / akuz.jd. sr. / nom.mn."),
+    ("i", "nom.mn. m.živ."),
+    ("ego", "gen.jd. m./sr. / akuz.jd. m.živ."),
+    ("ų", "akuz.jd. ž."),
+    ("ej", "gen.jd. ž. / dat.jd. ž. / lok.jd. ž."),
+    ("emu", "dat.jd. m./sr."),
+    ("em", "lok.jd. m./sr."),
+    ("im", "instr.jd. m./sr. / dat.mn."),
+    ("eju", "instr.jd. ž."),
+    ("ih", "gen.mn. / lok.mn. / akuz.mn. m.živ."),
+    ("imi", "instr.mn."),
+];
+
+fn add_lemma_forms(
+    sink: &mut RecordSink,
+    forms: &[(String, &str)],
+    lemma: &str,
+    entry_id: usize,
+    pos: &'static str,
+    status: &'static str,
+    gloss: &str,
+) {
+    for (form, feats) in forms {
+        sink.add(
+            form,
+            feats,
+            lemma,
+            entry_id,
+            pos,
+            "inflection",
+            status,
+            None,
+            gloss,
+        );
+    }
+}
+
+/// Paradigms for closed-class pronouns and numerals. Returns true when the
+/// lemma was recognized and its paradigm emitted.
+pub fn pronoun_numeral_records(
+    sink: &mut RecordSink,
+    lemma: &str,
+    pos: Pos,
+    entry_id: usize,
+    status: &'static str,
+    gloss: &str,
+) -> bool {
+    let l = lemma.trim();
+    if l.is_empty() || l.contains(' ') {
+        return false;
+    }
+    match pos {
+        Pos::Pronoun => {
+            // toj-class demonstratives.
+            if matches!(l, "toj" | "tutoj" | "tamtoj" | "onoj" | "ov") {
+                let stem = l.strip_suffix("oj").unwrap_or(l);
+                let forms: Vec<(String, &str)> = TOJ_ENDINGS
+                    .iter()
+                    .map(|(e, f)| (format!("{stem}{e}"), *f))
+                    .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "pron", status, gloss);
+                return true;
+            }
+            // kto / čto and their regular derivatives (nikto, něčto, vsekto…).
+            if let Some(head) = l.strip_suffix("kto") {
+                let forms: Vec<(String, &str)> = [
+                    ("kogo", "gen.jd. / akuz.jd."),
+                    ("komu", "dat.jd."),
+                    ("kym", "instr.jd."),
+                    ("kom", "lok.jd."),
+                ]
+                .iter()
+                .map(|(e, f)| (format!("{head}{e}"), *f))
+                .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "pron", status, gloss);
+                return true;
+            }
+            if let Some(head) = l.strip_suffix("čto").or_else(|| l.strip_suffix("što")) {
+                let forms: Vec<(String, &str)> = [
+                    ("čego", "gen.jd."),
+                    ("čemu", "dat.jd."),
+                    ("čim", "instr.jd."),
+                    ("čem", "lok.jd."),
+                ]
+                .iter()
+                .map(|(e, f)| (format!("{head}{e}"), *f))
+                .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "pron", status, gloss);
+                return true;
+            }
+            // veś "all, whole" (steen: ves/vsa/vse; vsih/vsim/vsimi).
+            if l == "veś" || l == "ves" {
+                let forms: Vec<(String, &str)> = [
+                    ("vse", "nom.jd. sr. / akuz.jd. sr. / nom.mn."),
+                    ("vsa", "nom.jd. ž."),
+                    ("vsi", "nom.mn. m.živ."),
+                    ("vsego", "gen.jd. m./sr. / akuz.jd. m.živ."),
+                    ("vsu", "akuz.jd. ž."),
+                    ("vsej", "gen.jd. ž. / dat.jd. ž. / lok.jd. ž."),
+                    ("vsemu", "dat.jd. m./sr."),
+                    ("vsem", "lok.jd. m./sr."),
+                    ("vsim", "instr.jd. m./sr. / dat.mn."),
+                    ("vseju", "instr.jd. ž."),
+                    ("vsih", "gen.mn. / lok.mn. / akuz.mn. m.živ."),
+                    ("vsimi", "instr.mn."),
+                ]
+                .iter()
+                .map(|(e, f)| (e.to_string(), *f))
+                .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "pron", status, gloss);
+                return true;
+            }
+            // moj-class possessives/interrogatives (incl. ni-/ně-/vse- derived).
+            if l.ends_with("oj") && l != "obydvoj" || l.ends_with("čij") || l == "naš" || l == "vaš"
+            {
+                let forms: Vec<(String, &str)> = MOJ_ENDINGS
+                    .iter()
+                    .map(|(e, f)| (format!("{l}{e}"), *f))
+                    .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "pron", status, gloss);
+                return true;
+            }
+            // Adjectivally-shaped pronouns (ktory, kaky, vsaky, samy, iny…)
+            // decline like ordinary adjectives.
+            if l.ends_with(['y', 'i']) && l.chars().count() >= 3 {
+                let mut inner = RecordSink::default();
+                adj_paradigm(&mut inner, l, "", l, entry_id, "pron", status, None, gloss);
+                for r in inner.into_records() {
+                    sink.add(
+                        &r.form,
+                        &r.analyses.join(" / "),
+                        l,
+                        entry_id,
+                        "pron",
+                        "inflection",
+                        status,
+                        None,
+                        gloss,
+                    );
+                }
+                return true;
+            }
+            false
+        }
+        Pos::Numeral => {
+            // jedin: "declined like an adjective *jedny" except masc.nom.sg.
+            if l == "jedin" {
+                let mut inner = RecordSink::default();
+                adj_paradigm(
+                    &mut inner, "jedny", "", l, entry_id, "num", status, None, gloss,
+                );
+                for r in inner.into_records() {
+                    if r.form == "jedny" {
+                        continue; // the masc.nom.sg is jedin, not *jedny
+                    }
+                    sink.add(
+                        &r.form,
+                        &r.analyses.join(" / "),
+                        l,
+                        entry_id,
+                        "num",
+                        "inflection",
+                        status,
+                        None,
+                        gloss,
+                    );
+                }
+                return true;
+            }
+            // Dual remnants 2–4 (steen numerals table; oba/obydva like dva).
+            for (base, stem) in [("dva", "dv"), ("oba", "ob"), ("obydva", "obydv")] {
+                if l == base {
+                    let forms: Vec<(String, &str)> = [
+                        ("ě", "nom. ž. / akuz. ž."),
+                        ("oh", "gen. / lok."),
+                        ("om", "dat."),
+                        ("oma", "instr."),
+                    ]
+                    .iter()
+                    .map(|(e, f)| (format!("{stem}{e}"), *f))
+                    .collect();
+                    add_lemma_forms(sink, &forms, l, entry_id, "num", status, gloss);
+                    return true;
+                }
+            }
+            if l == "tri" || l == "četyri" {
+                let stem = l.strip_suffix('i').unwrap_or(l);
+                let forms: Vec<(String, &str)> =
+                    [("eh", "gen. / lok."), ("em", "dat."), ("emi", "instr.")]
+                        .iter()
+                        .map(|(e, f)| (format!("{stem}{e}"), *f))
+                        .collect();
+                add_lemma_forms(sink, &forms, l, entry_id, "num", status, gloss);
+                return true;
+            }
+            // 5+ decline like kosť: gen/dat/loc -i, instr -jų.
+            if let Some(stem) = l.strip_suffix('ť') {
+                if stem.chars().count() >= 2 {
+                    let forms: Vec<(String, &str)> = vec![
+                        (format!("{stem}ti"), "gen. / dat. / lok."),
+                        (format!("{l}jų"), "instr."),
+                    ];
+                    add_lemma_forms(sink, &forms, l, entry_id, "num", status, gloss);
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+/// Canonical samples for the router self-test: cover every fold pair, the
+/// multibyte/FNV path, two-token keys and plain ASCII.
+pub const ROUTER_SELFTEST_SAMPLES: &[&str] = &[
+    "voda",
+    "Pomoćnogo",
+    "råzumě",
+    "dělajųt",
+    "myti sę",
+    "ĺľńŕťďśźćđ",
+    "ęųåȯė",
+    "xyzzy",
+];
 
 /// Core closed-class function words that are normative Interslavic (STEEN-G
 /// grammar: prepositions and demonstratives) but absent from the dictionary
@@ -483,6 +936,9 @@ pub fn closed_class_records(sink: &mut RecordSink) {
         let pos: &'static str = pos;
         sink.add(w, "", w, 0, pos, "lemma", "grammar", None, gloss);
     }
+    // The supplement's demonstrative gets its full STEEN-G paradigm too (ta,
+    // togo, tomu, tyh… are among the most frequent tokens in real text).
+    pronoun_numeral_records(sink, "toj", Pos::Pronoun, 0, "grammar", "that");
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +1085,28 @@ pub fn write_api(
     std::fs::write(api.join("agent-guide.md"), agent_guide)?;
     bytes += agent_guide.len();
 
+    // Router self-test (issue #13 §2): canonical (form → key → shard) samples.
+    // The client JS fetches this at load in forms.html/text-check.html and
+    // refuses to run if its own fold/router disagrees — a silent mirror drift
+    // becomes a visible error instead of wrong lookups.
+    let mut st = format!("{{\"schema_version\":{SCHEMA_VERSION},\"shards\":{SHARDS},\"samples\":[");
+    for (i, sample) in ROUTER_SELFTEST_SAMPLES.iter().enumerate() {
+        if i > 0 {
+            st.push(',');
+        }
+        let key = form_key(sample);
+        let _ = write!(
+            st,
+            "[{},{},{}]",
+            json_str(sample),
+            json_str(&key),
+            shard_of(&key)
+        );
+    }
+    st.push_str("]}\n");
+    bytes += st.len();
+    std::fs::write(api.join("router-selftest.json"), st)?;
+
     let meta = format!(
         "{{\n  \"schema_version\": {SCHEMA_VERSION},\n  \"git\": {},\n  \"license\": {},\n  \"shards\": {SHARDS},\n  \"router\": \"fnv1a32(utf8(key)) % shards; key = to_standard(lowercase(form)) — see agent-guide.md for the fold table\",\n  \"form_records\": {},\n  \"distinct_keys\": {},\n  \"lemmas\": {},\n  \"total_bytes\": {},\n  \"largest_shard_bytes\": {},\n  \"files\": {{\n    \"forms\": \"api/forms/<n>.json\",\n    \"lemmas\": \"api/lemmas.json\",\n    \"guide\": \"api/agent-guide.md\"\n  }}\n}}\n",
         json_str(git),
@@ -693,6 +1171,30 @@ License: {LICENSE}.
 - Machine-proposed derivatives (the site's "Slovotvorstvo" chips) are NOT in
   this index — a missing key means "unknown to Slovowiki", not "wrong".
 
+## Coverage (schema 2)
+
+The index now includes, beyond noun/adjective/verb paradigms: **declined
+participles** (passive and active-present, adjectival paradigms under the verb
+lemma, features prefixed `part.…`), **comparatives and superlatives**
+(declined, `komp.`/`superl.` prefixes, plus their adverbs), **pronoun and
+numeral paradigms** (toj-class, moj-class, kto/čto, veś, jedin, dva/tri/
+četyri, i-stem numerals — STEEN-G tables), and **3-token official lemmas**
+(try trigram → bigram → unigram when verifying).
+
+## Self-test
+
+Fetch `api/router-selftest.json` and verify your fold + router reproduce the
+listed (form → key → shard) samples before trusting lookups — the site's own
+client refuses to run when this check fails.
+
+## Agreement warnings (check-text)
+
+`check-text --json` reports may carry an `agreement` field: a conservative
+grammar check (adjacent adjective–noun case/number/gender, preposition
+government from the dictionary's own `(+N)` annotations, pronoun–verb
+person/number) that fires only when NO combination of the tokens' analyses is
+compatible and both tokens are POS-unambiguous verification-grade words.
+
 ## Writing workflow
 
 1. Prefer official lemmas (`api/lemmas.json`, filter by `status`).
@@ -711,6 +1213,208 @@ License: {LICENSE}.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fold_pairs_match_to_standard() {
+        // FOLD_PAIRS is the single source for the client-side JS fold; it must
+        // agree with orthography::to_standard char-for-char, and cover every
+        // char to_standard changes (lowercase alphabet).
+        for (from, to) in FOLD_PAIRS {
+            assert_eq!(
+                &ortho::to_standard(&from.to_string()),
+                to,
+                "fold pair {from} drifted from to_standard"
+            );
+        }
+        for c in "abcdefghijklmnoprstuvyzčšžěęųåȯėĺľńŕťďśźćđ".chars() {
+            let folded = ortho::to_standard(&c.to_string());
+            if folded != c.to_string() {
+                assert!(
+                    FOLD_PAIRS.iter().any(|(f, _)| *f == c),
+                    "to_standard changes '{c}' but FOLD_PAIRS misses it"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn router_selftest_samples_are_frozen() {
+        // These exact values ship in api/router-selftest.json and the client
+        // JS refuses to run if it disagrees — changing them is a schema break.
+        let expected: &[(&str, &str)] = &[
+            ("voda", "voda"),
+            ("Pomoćnogo", "pomočnogo"),
+            ("myti sę", "myti se"),
+        ];
+        for (form, key) in expected {
+            assert_eq!(&form_key(form), key);
+            assert!(shard_of(key) < SHARDS);
+        }
+        assert_eq!(
+            SHARDS, 2048,
+            "SHARDS is wire format: bump SCHEMA_VERSION too"
+        );
+        assert_eq!(SCHEMA_VERSION, 2);
+    }
+
+    #[test]
+    fn record_serialization_is_deterministic() {
+        // Two independent sink runs over the same inputs serialize identically
+        // (BTreeMap ordering, no timestamps) — the determinism guarantee at
+        // unit scale.
+        let build = || {
+            let mut sink = RecordSink::default();
+            paradigm_records(
+                &mut sink,
+                "žena",
+                Pos::Noun,
+                Some(crate::model::Gender::Feminine),
+                1,
+                "official",
+                None,
+                "woman",
+            );
+            paradigm_records(
+                &mut sink,
+                "dělati",
+                Pos::Verb,
+                None,
+                2,
+                "official",
+                None,
+                "do",
+            );
+            pronoun_numeral_records(&mut sink, "toj", Pos::Pronoun, 3, "official", "that");
+            sink.into_records()
+                .iter()
+                .map(record_json)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_eq!(build(), build());
+    }
+
+    #[test]
+    fn golden_paradigms_per_declension_class() {
+        // Complete oblique paradigms pinned per declension class, so an
+        // inflector bump produces a reviewable diff (extracted from the
+        // interslavic 0.3.2 output).
+        let f = crate::model::Gender::Feminine;
+        let n = crate::model::Gender::Neuter;
+        let cell = |w: &str, c, num, g| noun_cell_g(w, c, num, Some(g));
+        // Hard feminine a-stem.
+        assert_eq!(cell("žena", IsvCase::Gen, IsvNumber::Singular, f), "ženy");
+        assert_eq!(cell("žena", IsvCase::Dat, IsvNumber::Singular, f), "ženě");
+        assert_eq!(cell("žena", IsvCase::Acc, IsvNumber::Singular, f), "ženų");
+        assert_eq!(cell("žena", IsvCase::Ins, IsvNumber::Singular, f), "ženojų");
+        assert_eq!(cell("žena", IsvCase::Gen, IsvNumber::Plural, f), "žen");
+        assert_eq!(cell("žena", IsvCase::Ins, IsvNumber::Plural, f), "ženami");
+        // Feminine i-stem.
+        assert_eq!(cell("kosť", IsvCase::Gen, IsvNumber::Singular, f), "kosti");
+        assert_eq!(cell("kosť", IsvCase::Ins, IsvNumber::Singular, f), "kosťjų");
+        assert_eq!(cell("kosť", IsvCase::Gen, IsvNumber::Plural, f), "kostij");
+        // Soft neuter.
+        assert_eq!(cell("morje", IsvCase::Gen, IsvNumber::Singular, n), "morja");
+        assert_eq!(
+            cell("morje", IsvCase::Ins, IsvNumber::Singular, n),
+            "morjem"
+        );
+        assert_eq!(cell("morje", IsvCase::Gen, IsvNumber::Plural, n), "morej");
+        // Adjective hard/soft.
+        assert_eq!(
+            adj_cell(
+                "dobry",
+                IsvCase::Gen,
+                IsvNumber::Singular,
+                IsvGender::Masculine,
+                IsvAnimacy::Inanimate
+            ),
+            "dobrogo"
+        );
+        assert_eq!(
+            adj_cell(
+                "svěži",
+                IsvCase::Gen,
+                IsvNumber::Singular,
+                IsvGender::Masculine,
+                IsvAnimacy::Inanimate
+            ),
+            "svěžego"
+        );
+        // Verb classes: -ati and -iti presents.
+        let d = verb_cells("dělati", false).unwrap();
+        assert_eq!(d.present[2], "dělaje");
+        assert_eq!(d.present[5], "dělajųt");
+        let p = verb_cells("prositi", false).unwrap();
+        assert_eq!(p.present[2], "prosi");
+        assert_eq!(p.present[5], "prosęt");
+    }
+
+    #[test]
+    fn comparatives_follow_steen() {
+        assert_eq!(
+            comparative("novy"),
+            Some(("novějši".to_string(), "nověje".to_string()))
+        );
+        assert_eq!(
+            comparative("blagy"),
+            Some(("unši".to_string(), "unje".to_string()))
+        );
+        assert_eq!(
+            comparative("kratky"),
+            Some(("kratši".to_string(), "kraće".to_string()))
+        );
+        assert_eq!(
+            comparative("vysoky"),
+            Some(("vysši".to_string(), "vyše".to_string()))
+        );
+        assert_eq!(
+            comparative("dobry"),
+            Some(("lěpši".to_string(), "lěpje".to_string()))
+        );
+    }
+
+    #[test]
+    fn pronoun_paradigms_follow_steen() {
+        let mut sink = RecordSink::default();
+        pronoun_numeral_records(&mut sink, "toj", Pos::Pronoun, 1, "official", "that");
+        pronoun_numeral_records(&mut sink, "moj", Pos::Pronoun, 2, "official", "my");
+        pronoun_numeral_records(&mut sink, "kto", Pos::Pronoun, 3, "official", "who");
+        pronoun_numeral_records(&mut sink, "tri", Pos::Numeral, 4, "official", "three");
+        pronoun_numeral_records(&mut sink, "pęť", Pos::Numeral, 5, "official", "five");
+        let recs = sink.into_records();
+        let has = |form: &str| recs.iter().any(|r| r.form == form);
+        for f in [
+            "togo", "tomu", "tym", "tyh", "tymi", "tu", "mojego", "mojemu", "mojų", "kogo", "komu",
+            "kym", "treh", "trem", "pęti", "pęťjų",
+        ] {
+            assert!(has(f), "missing pronoun/numeral form {f}");
+        }
+    }
+
+    #[test]
+    fn adversarial_negatives_stay_out_of_keys() {
+        // Near-miss garbage must never appear as forms (index growth must not
+        // make the checker permissive).
+        let mut sink = RecordSink::default();
+        paradigm_records(
+            &mut sink,
+            "voda",
+            Pos::Noun,
+            Some(crate::model::Gender::Feminine),
+            1,
+            "official",
+            None,
+            "water",
+        );
+        let recs = sink.into_records();
+        for garbage in ["vodys", "vodaa", "vodm", "voda-", "(voda)"] {
+            assert!(
+                !recs.iter().any(|r| r.form == garbage || r.key == garbage),
+                "garbage form {garbage} leaked into the records"
+            );
+        }
+    }
 
     #[test]
     fn router_is_stable() {
