@@ -17,7 +17,7 @@
 | adj nom.sg.m = citation form | 2773/2773 | 100.0% |
 | adj nom.sg.n ends -o/-e | 2773/2773 | 100.0% |
 | masc/neut gen.sg ends -a | 3889/3897 | 99.8% |
-| noun nom.sg = citation form | 7789/7793 | 99.9% |
+| noun nom.sg = citation form | 7791/7793 | 100.0% |
 | suppletive plurals (§3.1, from the inflector) | 4/4 | 100.0% |
 
 ## Blank-cell sample
@@ -25,8 +25,6 @@
 
 ## Invariant-failure sample
 
-- adadžo: nom.sg → adadže
-- bandžo: nom.sg → bandže
 - dur: gen.sg → dur
 - jojo: gen.sg → jojo
 - kakao: gen.sg → kakao
