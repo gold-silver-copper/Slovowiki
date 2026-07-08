@@ -659,7 +659,6 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         };
         let meta = meta_by_id.get(&p.id).expect("generated entry meta");
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
-        let entry_card = entry_infobox(meta);
         let wiki_bottom = entry_wiki_blocks(
             meta,
             backlinks.get(&p.id).map(Vec::as_slice).unwrap_or(&[]),
@@ -680,7 +679,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             &synonyms,
             &derivation,
             &wiki_top,
-            &entry_card,
+            meta,
             &wiki_bottom,
         );
         std::fs::write(entry_dir.join(format!("{}.html", p.id)), html)?;
@@ -743,7 +742,6 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         let deriv = derivation_block(isv, e.pos, &isv_to_id, true);
         let meta = meta_by_id.get(oid).expect("official-only entry meta");
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
-        let entry_card = entry_infobox(meta);
         let wiki_bottom = entry_wiki_blocks(
             meta,
             backlinks.get(oid).map(Vec::as_slice).unwrap_or(&[]),
@@ -760,7 +758,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             &syn,
             &deriv,
             &wiki_top,
-            &entry_card,
+            meta,
             &wiki_bottom,
         );
         std::fs::write(entry_dir.join(format!("{oid}.html")), html)?;
@@ -1022,10 +1020,10 @@ fn family_block<T: FamilyEntry>(
         return String::new();
     }
     format!(
-        "<section><h2 id='rodina'>Rodina slov</h2>\
+        "<div class='formation-family'><h3>Etimologična rodina</h3>\
            <p class='muted'>Slova iz toj že etimologičnoj rodiny ({label}):</p>\
            <ul class='compact-list'>{items}</ul>\
-         </section>"
+         </div>"
     )
 }
 
@@ -1040,7 +1038,7 @@ fn corpus_entry_page(
     synonyms: &str,
     derivation: &str,
     wiki_top: &str,
-    entry_card: &str,
+    meta: &SiteEntryMeta,
     wiki_bottom: &str,
 ) -> String {
     let top = g.candidates.first().unwrap();
@@ -1050,13 +1048,6 @@ fn corpus_entry_page(
     let headword = official
         .map(|(_, isv, _)| isv.to_string())
         .unwrap_or_else(|| top.form.clone());
-    let coverage = format!(
-        "<span class='reliability {}'>uvěrjenost: {}</span> <span class='muted'>({} językov, {} větvi)</span>",
-        conf_class(g.confidence),
-        g.confidence.label(),
-        g.n_langs,
-        g.n_branches
-    );
     let recon_line = if headword != top.form {
         format!(
             "<p class='def'><b>Rekonstrukcija generatora:</b> <span class='mention'>{}</span></p>",
@@ -1073,24 +1064,6 @@ fn corpus_entry_page(
         Some((_, _, en)) if !en.trim().is_empty() => truncate(en, 140),
         _ => truncate(&g.set.gloss, 140),
     };
-    let headline = format!(
-        "<div class='headword-block'>
-           <div class='headmeta'>
-             <span class='badge pos'>{}</span>
-             <span class='pill {}'>{}</span>
-             {coverage}
-             {}
-           </div>
-           <p class='def'><b>Smysl:</b> {}</p>
-           {recon_line}
-         </div>",
-        esc(&pos_heading(g.set.pos.code())),
-        source_class(top.source),
-        esc(top.source.label()),
-        status_pill(status),
-        esc(&gloss),
-    );
-
     let official_note = match official {
         Some((1, isv, _)) => {
             if crate::orthography::exact_match(&top.form, isv) {
@@ -1104,19 +1077,29 @@ fn corpus_entry_page(
         }
         None => "Forma je generovana iz srodnyh slov; ne v oficialnom slovniku.".to_string(),
     };
-    let banner = format!(
-        "<div class='banner {}'><b>Podpŕto {} językami v {} slovjanskyh větvah.</b> {}</div>",
-        match g.confidence {
-            Confidence::High => "ok",
-            Confidence::Medium => "warn",
-            Confidence::Low => "info",
-        },
-        g.n_langs,
-        g.n_branches,
-        official_note,
-    );
-
     let inflection = inflection_table(&headword, pos_code);
+    let mut info_rows = String::new();
+    let _ = write!(info_rows, "<tr><th>Smysl</th><td>{}</td></tr>", esc(&gloss));
+    if !recon_line.is_empty() {
+        let _ = write!(
+            info_rows,
+            "<tr><th>Rekonstrukcija</th><td><span class='mention'>{}</span></td></tr>",
+            esc(&top.form)
+        );
+    }
+    let _ = write!(
+        info_rows,
+        "<tr><th>Izvor formy</th><td><span class='pill {}'>{}</span> {}</td></tr>",
+        source_class(top.source),
+        esc(top.source.label()),
+        status_pill(status)
+    );
+    let _ = write!(
+        info_rows,
+        "<tr><th>Opomba</th><td>{}</td></tr>",
+        official_note
+    );
+    let entry_card = entry_infobox(meta, &info_rows);
     let cognates = cognate_block(g, enrich);
     let enrich_members: Vec<(String, String)> = g
         .set
@@ -1129,6 +1112,7 @@ fn corpus_entry_page(
         .map(|e| enrich_connections_section(&enrich_members, e, xref, id))
         .unwrap_or_default();
     let alternatives = alternatives_block(&g.candidates);
+    let word_formation = word_formation_block(derivation, family);
     let trace = trace_block(top);
     let foot = if official.is_some() {
         "Oficialne slovo; rekonstrukcija i dokazy mašinno generovane (Wiktionary, CC BY-SA)."
@@ -1141,11 +1125,10 @@ fn corpus_entry_page(
            <div class='entry-grid'>\
              <div class='entry-main'>\
                <h1 class='page-title firstHeading'>{headword}</h1>\
-               {banner}{headline}\
+               {etymology}{native_conn}\
                <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
-               {synonyms}{derivation}\
+               {synonyms}{word_formation}\
                <section><h2 id='cognaty'>Srodne slova — {nlangs} językov</h2>{cognates}</section>\
-               {etymology}{native_conn}{family}\
                <section><h2 id='sled'>Sled pravil</h2>{trace}</section>\
                {wiki_bottom}\
                <p class='foot'>{foot}</p>\
@@ -1170,7 +1153,7 @@ fn official_only_page(
     synonyms: &str,
     derivation: &str,
     wiki_top: &str,
-    entry_card: &str,
+    meta: &SiteEntryMeta,
     wiki_bottom: &str,
 ) -> String {
     let input = build_input(e);
@@ -1202,19 +1185,24 @@ fn official_only_page(
         cog.push_str("<p class='muted'>Bez slovjanskogo srodnogo dokaza v slovniku.</p>");
     }
     let inflection = inflection_table(isv, e.pos.code());
+    let mut info_rows = String::new();
+    let _ = write!(
+        info_rows,
+        "<tr><th>Smysl</th><td>{}</td></tr><tr><th>Opomba</th><td>Generator ješče ne izvodi tu formu iz srodnogo dokaza.</td></tr>",
+        esc(&e.english)
+    );
+    let entry_card = entry_infobox(meta, &info_rows);
+    let word_formation = word_formation_block(derivation, "");
     let body = format!(
         "<article class='entry entry-with-rail'>\
            {wiki_top}\
            <div class='entry-grid'>\
              <div class='entry-main'>\
                <h1 class='page-title firstHeading'>{isv}</h1>\
-               <div class='banner info'><b>Oficialne slovo.</b> Generator ješče ne izvodi jego iz srodnogo dokaza (redky korenj, mnogoslovny izraz ili redakcijny izbor).</div>\
-               <div class='headword-block'><div class='headmeta'><span class='badge pos'>{pos}</span> <span class='pill src-official'>oficialny slovnik</span></div>\
-                 <p class='def'><b>Smysl:</b> {en}</p></div>\
-               {synonyms}{derivation}\
-               <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
-               <section><h2 id='cognaty'>Slovjanski dokaz</h2>{cog}</section>\
                {etymology}{native_conn}\
+               <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}</section>\
+               {synonyms}{word_formation}\
+               <section><h2 id='cognaty'>Srodne slova</h2>{cog}</section>\
                {wiki_bottom}\
                <p class='foot'>Oficialne slovo: interslavic-dictionary.com. Prěgibanje mašinno generovano.</p>\
              </div>\
@@ -1222,8 +1210,6 @@ fn official_only_page(
            </div>\
          </article>",
         isv = esc(isv),
-        pos = esc(&pos_heading(e.pos.code())),
-        en = esc(&e.english),
     );
     page(&format!("{isv} — medžuslovjansky"), &body, 1)
 }
@@ -1318,38 +1304,59 @@ fn derivation_block(
     if fam.is_empty() {
         return String::new();
     }
-    let mut chips = String::new();
+    let mut rows = String::new();
+    let mut linked = 0usize;
+    let mut proposed = 0usize;
     for d in &fam {
         let key = crate::orthography::to_standard(&d.form.to_lowercase());
-        match isv_to_id.get(&key) {
+        let (form, status) = match isv_to_id.get(&key) {
             Some(id) => {
-                let _ = write!(
-                    chips,
-                    "<a class='chip xref' href='{id}.html' title='{}'>{}</a>",
-                    esc(d.label),
-                    esc(&d.form)
-                );
+                linked += 1;
+                (
+                    format!(
+                        "<a href='{id}.html'><span class='mention'>{}</span></a>",
+                        esc(&d.form)
+                    ),
+                    "strana na sajtě".to_string(),
+                )
             }
             None => {
-                let _ = write!(
-                    chips,
-                    "<span class='chip redlink' title='{} — mašinovo prědloženje, ne v slovniku'>{}<sup>?</sup></span>",
-                    esc(d.label),
-                    esc(&d.form)
-                );
+                proposed += 1;
+                (
+                    format!("<span class='mention'>{}</span>", esc(&d.form)),
+                    "mašinovy kandidat".to_string(),
+                )
             }
-        }
+        };
+        let _ = write!(
+            rows,
+            "<tr><td>{form}</td><td>{}</td><td>{}</td><td class='muted'>{}</td></tr>",
+            esc(&pos_code_label(d.pos.code())),
+            esc(d.label),
+            esc(&status)
+        );
     }
     let base_note = if attested_base {
-        ""
+        String::new()
     } else {
-        " <b>Baza je mašinova rekonstrukcija</b> (ne oficialna lemma), tako i odvodženja sųt hypotetične."
+        " <b>Baza je mašinova rekonstrukcija</b> (ne oficialna lemma), zato odvodženja sų hypotetične.".to_string()
     };
     format!(
-        "<section><h2 id='slovotvorstvo'>Slovotvorstvo</h2><div class='chips'>{chips}</div>\
-         <p class='muted'>Pravilne odvodženja (palatalizacija prěd sufiksami, jotacija prěd -ńje, O⇒E po mękkyh). \
-         Sinje = stranica na sajtě; <sup>?</sup> = pravilno tvorjeny kandidat bez zapisa v slovniku.{base_note}</p></section>"
+        "<div class='formation-derived'><h3>Pravilne odvodženja</h3>\
+         <table class='wikitable compact-table formation-table'><thead><tr><th>Forma</th><th>Čęst rěči</th><th>Obrazec</th><th>Stav</th></tr></thead><tbody>{rows}</tbody></table>\
+         <p class='muted'>Pokazano {} tvorjenyh form: {} imajų stranicu, {} sų samo pravilno tvorjeni kandidaty. Pravila vključaų palatalizaciju prěd sufiksami, jotaciju prěd -ńje i O⇒E po mękkyh.{base_note}</p></div>",
+        fam.len(),
+        linked,
+        proposed
     )
+}
+
+fn word_formation_block(derivation: &str, family: &str) -> String {
+    if derivation.trim().is_empty() && family.trim().is_empty() {
+        String::new()
+    } else {
+        format!("<section><h2 id='slovotvorstvo'>Slovotvorstvo</h2>{derivation}{family}</section>")
+    }
 }
 
 /// The cognate set: every attesting Slavic lemma, grouped by branch.
@@ -2449,12 +2456,11 @@ pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     let mut by_pos: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new(); // (cells, blank)
                                                                               // Invariants: (checked, passed) per rule.
     let mut inv: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
-    let mut check =
-        |inv: &mut BTreeMap<&'static str, (usize, usize)>, rule: &'static str, ok: bool| {
-            let e = inv.entry(rule).or_default();
-            e.0 += 1;
-            e.1 += ok as usize;
-        };
+    let check = |inv: &mut BTreeMap<&'static str, (usize, usize)>, rule: &'static str, ok: bool| {
+        let e = inv.entry(rule).or_default();
+        e.0 += 1;
+        e.1 += ok as usize;
+    };
     let mut fail_sample: Vec<String> = Vec::new();
     let mut blank_sample: Vec<String> = Vec::new();
 
@@ -4245,7 +4251,7 @@ fn entry_tabs(m: &SiteEntryMeta) -> String {
     )
 }
 
-fn entry_infobox(m: &SiteEntryMeta) -> String {
+fn entry_infobox(m: &SiteEntryMeta, extra_rows: &str) -> String {
     let root = ancestor_slug(m)
         .map(|sl| format!("<a href='../root/{sl}.html'>{}</a>", esc(&m.ancestor)))
         .unwrap_or_else(|| {
@@ -4259,7 +4265,7 @@ fn entry_infobox(m: &SiteEntryMeta) -> String {
         "<aside class='entry-infobox'><table class='wikitable compact-table'><caption>{}</caption>\
          <tr><th>Čęst rěči</th><td>{}</td></tr><tr><th>Stav</th><td>{}</td></tr>\
          <tr><th>Kvaliteta</th><td>{}</td></tr><tr><th>Dokaz</th><td>{} jęz. / {} vět.</td></tr>\
-         <tr><th>Tip</th><td>{}</td></tr><tr><th>Predok</th><td>{}</td></tr><tr><th>ID</th><td>{}</td></tr></table></aside>",
+         <tr><th>Tip</th><td>{}</td></tr><tr><th>Predok</th><td>{}</td></tr>{extra_rows}<tr><th>ID</th><td>{}</td></tr></table></aside>",
         esc(&m.title),
         esc(&pos_code_label(&m.pos)),
         if m.official_lemma.is_some() { "oficialno povezano" } else { "generovano" },
