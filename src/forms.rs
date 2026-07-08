@@ -449,63 +449,23 @@ pub fn comparative(adj: &str) -> Option<(String, String)> {
         if let Some(root) = stem.strip_suffix(suf) {
             if root.chars().count() >= 3 {
                 let comp = format!("{root}ši");
-                let adv = format!("{}e", iotate_comp(root));
+                let adv = format!("{}e", crate::phono::iotate_final(root));
                 return Some((comp, adv));
             }
             break;
         }
     }
-    // Regular: palatalize k/g/h, soft stems take -ejši.
-    let (pal, soft) = palatalize_comp(stem);
+    // Regular: palatalize the seam (phono's shared table, incl. c→č), then
+    // the FULL softness predicate decides -ejši vs -ějši — the old local
+    // copy's soft set missed ń/ľ/ŕ/ć/đ and the digraphs (issue #15).
+    let pal = crate::phono::palatalize_final(stem);
+    let soft = crate::phono::is_soft(&pal);
     let (adj_suf, adv_suf) = if soft {
         ("ejši", "eje")
     } else {
         ("ějši", "ěje")
     };
     Some((format!("{pal}{adj_suf}"), format!("{pal}{adv_suf}")))
-}
-
-fn palatalize_comp(stem: &str) -> (String, bool) {
-    let mut s = stem.to_string();
-    let soft = match s.chars().last() {
-        Some('k') => {
-            s.pop();
-            s.push('č');
-            true
-        }
-        Some('g') => {
-            s.pop();
-            s.push('ž');
-            true
-        }
-        Some('h') => {
-            s.pop();
-            s.push('š');
-            true
-        }
-        Some('š' | 'ž' | 'č' | 'c' | 'j') => true,
-        _ => false,
-    };
-    (s, soft)
-}
-
-/// Iotation for -ki-class comparative adverbs (dalek→dalje, vysok→vyše,
-/// blizk→bliže — the k is already stripped by the caller).
-fn iotate_comp(root: &str) -> String {
-    for (suf, rep) in [
-        ("s", "š"),
-        ("z", "ž"),
-        ("t", "ć"),
-        ("d", "đ"),
-        ("l", "lj"),
-        ("n", "nj"),
-        ("r", "rj"),
-    ] {
-        if let Some(head) = root.strip_suffix(suf) {
-            return format!("{head}{rep}");
-        }
-    }
-    root.to_string()
 }
 
 /// Decline an adjective-shaped lemma into the sink with a feature prefix
@@ -1534,6 +1494,25 @@ mod tests {
         assert_eq!(
             comparative("dobry"),
             Some(("lěpši".to_string(), "lěpje".to_string()))
+        );
+        // Issue #15 regressions: full iotation table for k-class adverbs
+        // (labials take j, h→š, st→šć) and the full softness set for the
+        // -ejši/-ějši choice (đ-final stems are soft).
+        assert_eq!(
+            comparative("glųboky"),
+            Some(("glųbši".to_string(), "glųbje".to_string()))
+        );
+        assert_eq!(
+            comparative("krěhky"),
+            Some(("krěhši".to_string(), "krěše".to_string()))
+        );
+        assert_eq!(
+            comparative("žestoky"),
+            Some(("žestši".to_string(), "žešće".to_string()))
+        );
+        assert_eq!(
+            comparative("ryđi"),
+            Some(("ryđejši".to_string(), "ryđeje".to_string()))
         );
     }
 
