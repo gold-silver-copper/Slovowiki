@@ -986,7 +986,8 @@ participles** (passive and active-present, adjectival paradigms under the verb
 lemma, features prefixed `part.…`), **comparatives and superlatives**
 (declined, `komp.`/`superl.` prefixes, plus their adverbs), **pronoun and
 numeral paradigms** (toj-class, moj-class, kto/čto, veś, jedin, dva/tri/
-četyri, i-stem numerals — STEEN-G tables), and **3-token official lemmas**
+četyri, i-stem numerals — from the interslavic crate's declension), and
+**3-token official lemmas**
 (try trigram → bigram → unigram when verifying).
 
 ## Self-test
