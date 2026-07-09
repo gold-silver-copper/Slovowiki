@@ -40,7 +40,7 @@ mod russian_translit;
 mod site;
 mod thesaurus;
 
-const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl";
+pub const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl";
 const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
 const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 const DEFAULT_OVERRIDES: &str = "data/overrides.toml";
@@ -114,6 +114,15 @@ enum Command {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
         #[arg(long, default_value = DEFAULT_ENRICH_CACHE)]
+        out: PathBuf,
+    },
+    /// Auditable raw-lemma coverage report (issue #35): what datasets fed the raw
+    /// Slavic path, how many words were included, and how many excluded and why.
+    /// Reads the raw cache + its extraction tally, replicates the export dedup to
+    /// split kept lemmas into rendered-raw vs deduped, and measures the native
+    /// ru/pl/cs enrichment join. Writes target/eval/raw-coverage.{md,json}.
+    Coverage {
+        #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
     /// Explain the generator's output for one word or gloss (manual spot-check).
@@ -298,6 +307,7 @@ fn main() -> Result<()> {
             );
             enrich::extract(&dir, &wanted, &out)
         }
+        Command::Coverage { out } => site::run_coverage(&out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::CorpusEval { official, out } => eval::run_corpus_eval(&official, &out),

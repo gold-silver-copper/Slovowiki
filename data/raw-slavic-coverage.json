@@ -1,0 +1,29 @@
+{
+  "source": "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl",
+  "lines_scanned": 10667129,
+  "slavic_pages_seen": 1010091,
+  "kept": 306739,
+  "dropped_redirect_no_senses": 0,
+  "dropped_multiword": 36132,
+  "dropped_non_content_pos": 79074,
+  "dropped_no_real_gloss": 588146,
+  "kept_by_lang": {
+    "be": 4652,
+    "bg": 15493,
+    "cs": 33555,
+    "csb": 2328,
+    "cu": 3198,
+    "dsb": 1354,
+    "hsb": 807,
+    "mk": 39652,
+    "orv": 560,
+    "pl": 65185,
+    "ru": 49198,
+    "rue": 201,
+    "sh": 52138,
+    "sk": 7312,
+    "sl": 3959,
+    "szl": 2012,
+    "uk": 25135
+  }
+}
