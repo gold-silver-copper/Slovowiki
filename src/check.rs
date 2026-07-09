@@ -57,16 +57,28 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
     let mut seen: HashSet<String> = HashSet::new();
     let mut noun_gender: HashMap<String, char> = HashMap::new();
     let mut prep_cases: HashMap<String, Vec<&'static str>> = HashMap::new();
-    // The closed-class supplement's government (STEEN-G): the dictionary rows
-    // below carry their own (+N) annotations.
-    for (p, cases) in [
-        ("v", vec!["akuz", "lok"]),
-        ("s", vec!["gen", "instr"]),
-        ("k", vec!["dat"]),
-        ("o", vec!["akuz", "lok"]),
-        ("ob", vec!["akuz", "lok"]),
-    ] {
-        prep_cases.insert(p.to_string(), cases);
+    // Preposition government now comes from the interslavic crate's curated
+    // table (issue #12), which is built from the same official dictionary and
+    // encodes the (+5)=instrumental convention centrally. Fold each flavored
+    // key to the index's standard-orthography key convention and translate the
+    // crate's Case to the local labels.
+    let case_label = |c: interslavic::Case| -> &'static str {
+        match c {
+            interslavic::Case::Gen => "gen",
+            interslavic::Case::Dat => "dat",
+            interslavic::Case::Acc => "akuz",
+            interslavic::Case::Ins => "instr",
+            interslavic::Case::Loc => "lok",
+            interslavic::Case::Nom => "nom",
+        }
+    };
+    for (prep, cases) in interslavic::prepositions::PREPOSITIONS {
+        let entry = prep_cases.entry(forms::form_key(prep)).or_default();
+        for c in cases.iter().map(|c| case_label(*c)) {
+            if !entry.contains(&c) {
+                entry.push(c);
+            }
+        }
     }
     for e in entries {
         // ~230 rows list byform variants in one cell ("iměti, imati",
@@ -95,30 +107,6 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                     };
                     if c != ' ' {
                         noun_gender.entry(forms::form_key(isv)).or_insert(c);
-                    }
-                }
-            }
-            if e.pos_raw.starts_with("prep") && !isv.contains(' ') {
-                // The dictionary's case numbering: 2=gen 3=dat 4=akuz 5=instr
-                // 6=lok (instrumental is the FIFTH case in its scheme).
-                let cases: Vec<&'static str> = e
-                    .addition
-                    .chars()
-                    .filter_map(|c| match c {
-                        '2' => Some("gen"),
-                        '3' => Some("dat"),
-                        '4' => Some("akuz"),
-                        '5' => Some("instr"),
-                        '6' => Some("lok"),
-                        _ => None,
-                    })
-                    .collect();
-                if !cases.is_empty() {
-                    let entry = prep_cases.entry(forms::form_key(isv)).or_default();
-                    for c in cases {
-                        if !entry.contains(&c) {
-                            entry.push(c);
-                        }
                     }
                 }
             }

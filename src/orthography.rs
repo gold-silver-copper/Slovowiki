@@ -8,43 +8,16 @@
 //! aggressive ASCII skeleton used to align cognates and to compute the
 //! "normalized" match metric.
 
-/// Fold the flavored/scientific alphabet down to the *standard* Interslavic
-/// alphabet. This is the officially defined "loss of flavor" mapping and is the
-/// basis of the normalized match metric: two spellings that only differ in
-/// etymological flavor collapse to the same standard string.
-pub fn to_standard(word: &str) -> String {
-    let mut out = String::with_capacity(word.len());
-    for ch in word.chars() {
-        match ch {
-            'ě' => out.push('e'),
-            'ę' => out.push('e'),
-            'ų' => out.push('u'),
-            'å' => out.push('a'),
-            'ȯ' => out.push('o'),
-            'ė' => out.push('e'),
-            // §1.3: the soft-consonant etymological letters simply drop their
-            // diacritic in the standard alphabet (ĺ→l, ń→n, …), while ć/đ become
-            // č/dž.
-            'ĺ' => out.push('l'),
-            'ľ' => out.push('l'),
-            'ń' => out.push('n'),
-            'ŕ' => out.push('r'),
-            'ť' => out.push('t'),
-            'ď' => out.push('d'),
-            'ś' => out.push('s'),
-            'ź' => out.push('z'),
-            'ć' => out.push('č'),
-            'đ' => out.push_str("dž"),
-            'Ě' => out.push('E'),
-            'Ę' => out.push('E'),
-            'Ų' => out.push('U'),
-            'Å' => out.push('A'),
-            'Ȯ' => out.push('O'),
-            other => out.push(other),
-        }
-    }
-    out
-}
+/// The flavored→standard fold (`ě→e`, `ć→č`, `đ→dž`, …) now comes from the
+/// interslavic crate (issue #11); re-exported here so the many local call sites
+/// keep compiling. The crate's fold is byte-identical to the previous local one
+/// on lowercase input (every call here lowercases first). Its stability posture
+/// is best-effort, so Slovowiki exact-pins the crate and freezes the fold's
+/// wire-format outputs (`router_selftest_samples_are_frozen`, `router_is_stable`,
+/// the shipped `router-selftest.json`): a crate-side change to this best-effort
+/// fold surfaces as a test failure at pin-bump time, never as a silently
+/// repartitioned index.
+pub use interslavic::orthography::to_standard;
 
 /// Aggressive ASCII skeleton: strip *all* diacritics and fold the phonemically
 /// close consonant classes together. Used to align cognates across languages
