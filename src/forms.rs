@@ -32,28 +32,12 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub const LICENSE: &str =
     "CC BY-SA 4.0 (derives from Wiktionary and interslavic-dictionary.com; see /about.html)";
 
-/// The flavored→standard fold pairs, THE single source for the client-side
-/// JavaScript fold (site.rs generates the JS map from this constant) and
-/// asserted against `orthography::to_standard` by a unit test — the wire
-/// format cannot drift between the three copies.
-pub const FOLD_PAIRS: &[(char, &str)] = &[
-    ('ě', "e"),
-    ('ę', "e"),
-    ('ų', "u"),
-    ('å', "a"),
-    ('ȯ', "o"),
-    ('ė', "e"),
-    ('ĺ', "l"),
-    ('ľ', "l"),
-    ('ń', "n"),
-    ('ŕ', "r"),
-    ('ť', "t"),
-    ('ď', "d"),
-    ('ś', "s"),
-    ('ź', "z"),
-    ('ć', "č"),
-    ('đ', "dž"),
-];
+/// The flavored→standard fold pairs (issue #11): re-exported from the
+/// interslavic crate, still THE single source for the client-side JavaScript
+/// fold (site.rs builds the JS map from this constant) and pinned by the
+/// router-selftest — the wire format cannot drift between the Rust key path,
+/// the JS mirror, and the crate without a frozen test catching it.
+pub use interslavic::orthography::FOLD_PAIRS;
 
 /// 32-bit FNV-1a over the UTF-8 bytes — mirrored in the site's JavaScript
 /// (`Math.imul`-based); both sides route `key → shard` identically.
