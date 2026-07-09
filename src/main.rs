@@ -50,7 +50,7 @@ pub const DEFAULT_LEMMA_CACHE: &str = "data/slavic-lemmas.cache.json";
 /// `DEFAULT_LEMMA_CACHE`: this is the evidence-free extraction and must never be
 /// read by the benchmark path.
 pub const DEFAULT_RAW_LEMMA_CACHE: &str = "data/raw-slavic-lemmas.cache.json";
-const DEFAULT_ENRICH_CACHE: &str = "data/wiktionary-enrich.cache.json";
+const DEFAULT_ENRICH_CACHE: &str = "data/wiktionary-enrich";
 const DEFAULT_WIKI_DIR: &str = "/Users/kisaczka/Desktop/code/wikidata";
 const DEFAULT_THESAURUS: &str = "data/isv-thesaurus.json";
 

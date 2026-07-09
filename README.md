@@ -34,7 +34,7 @@ Two kinds of etymological group are collected:
 - `cargo run -- extract-lemmas` — stream the dump once → `data/slavic-lemmas.cache.json`
   (~47k lemmas: ~25k inherited + ~22k borrowings, across 15+ Slavic lects incl. OCS).
 - `cargo run -- extract-enrich` — stream the **native Russian / Polish / Czech
-  Wiktionary** dumps once → `data/wiktionary-enrich.cache.json` (~53k cognate
+  Wiktionary** dumps once → `data/wiktionary-enrich/` (16 JSON shards; ~112k
   entries with native etymology, extra senses, and related/synonym/antonym links).
 
 ## Native-Wiktionary enrichment (RU / PL / CS)
@@ -352,7 +352,7 @@ data/
   RULE_SPEC.md            authoritative Proto-Slavic → Interslavic rule spec
   proto-slavic.cache.json Proto-Slavic reconstructions (built by extract-proto)
   slavic-lemmas.cache.json every inherited + borrowed Slavic lemma (built by extract-lemmas)
-  wiktionary-enrich.cache.json native RU/PL/CS etymology/senses/links (built by extract-enrich)
+  wiktionary-enrich/          native RU/PL/CS etymology/senses/links, 16 JSON shards (built by extract-enrich)
   novel-words.tsv         novel-vocabulary proposals with calibrated probability + bucket
   score-calibration.json  the isotonic calibrator (refit by every `evaluate` run)
   semantic-notes.json     curated false-friend warnings (applied by check-text)

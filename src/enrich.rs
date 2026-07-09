@@ -86,11 +86,20 @@ impl EnrichEntry {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnrichCache {
-    pub source: String,
-    pub entry_count: usize,
-    pub entries: Vec<EnrichEntry>,
+/// The enrichment cache is written as `ENRICH_SHARDS` JSON files under a
+/// directory (`data/wiktionary-enrich/<n>.json`), each a sorted array of
+/// [`EnrichEntry`], routed by `fnv1a32("{lang}:{norm}") % ENRICH_SHARDS` (the same
+/// FNV-1a the forms API uses). It is sharded — not one file — because the full
+/// cache exceeds GitHub's 100 MB per-blob limit; each shard stays well under it
+/// (~9 MB) and plain JSON avoids a compression dependency. Sharding is
+/// deterministic and additive: an entry's key always lands in the same shard, so
+/// re-running `extract-enrich` rewrites each shard byte-identically and existing
+/// entries never move shards.
+pub const ENRICH_SHARDS: u32 = 16;
+
+/// The shard a `(lang, word)` enrichment entry belongs to.
+fn shard_of(lang: &str, word: &str) -> u32 {
+    crate::forms::fnv1a32(&key(lang, word)) % ENRICH_SHARDS
 }
 
 /// Loaded enrichment cache with an O(1) `(lang, word)` lookup.
@@ -100,15 +109,26 @@ pub struct EnrichIndex {
 }
 
 impl EnrichIndex {
-    pub fn load(path: &Path) -> Result<Self> {
-        let bytes = crate::dump::read_maybe_gz(path)
-            .with_context(|| format!("open enrich cache {}", path.display()))?;
-        let mut cache: EnrichCache =
-            serde_json::from_slice(&bytes).context("parse enrich cache")?;
+    /// Load every shard file `dir/<n>.json` (n in `0..ENRICH_SHARDS`) and build
+    /// the combined `(lang, word)` index. Errors if a shard is missing, so a
+    /// checkout without the cache degrades gracefully via the caller's `.ok()`.
+    pub fn load(dir: &Path) -> Result<Self> {
+        use std::io::Read;
+        let mut entries: Vec<EnrichEntry> = Vec::new();
+        for n in 0..ENRICH_SHARDS {
+            let shard = dir.join(format!("{n}.json"));
+            let mut json = String::new();
+            File::open(&shard)
+                .with_context(|| format!("open enrich shard {}", shard.display()))?
+                .read_to_string(&mut json)?;
+            let mut part: Vec<EnrichEntry> = serde_json::from_str(&json)
+                .with_context(|| format!("parse enrich shard {}", shard.display()))?;
+            entries.append(&mut part);
+        }
         // Drop the handful of strings where wiktextract leaked unparsed wiki markup
         // (`[[">*melko< / [[span>#…|span>]]]]`, `''…''`, stray tags) so no page shows
         // garbage. A bare `<` is kept — it is legit descent notation ("*ognь < …").
-        for e in &mut cache.entries {
+        for e in &mut entries {
             e.etymology.retain(|s| !looks_like_markup(s));
             e.senses.retain(|s| !looks_like_markup(s));
             e.related.retain(|s| !looks_like_markup(s));
@@ -120,13 +140,10 @@ impl EnrichIndex {
                 .retain(|q| !looks_like_markup(&q.text) && !looks_like_markup(&q.source));
         }
         let mut by_key = HashMap::new();
-        for (i, e) in cache.entries.iter().enumerate() {
+        for (i, e) in entries.iter().enumerate() {
             by_key.entry(key(&e.lang, &e.word)).or_insert(i);
         }
-        Ok(EnrichIndex {
-            entries: cache.entries,
-            by_key,
-        })
+        Ok(EnrichIndex { entries, by_key })
     }
 
     pub fn get(&self, lang: &str, word: &str) -> Option<&EnrichEntry> {
@@ -302,17 +319,31 @@ pub fn extract(dir: &Path, wanted: &HashMap<String, HashSet<String>>, out: &Path
     entries.sort_by(|a, b| {
         (a.lang.as_str(), a.word.as_str()).cmp(&(b.lang.as_str(), b.word.as_str()))
     });
-    let cache = EnrichCache {
-        source: "per-edition wiktextract (ru/pl/cs Wiktionary)".to_string(),
-        entry_count: entries.len(),
-        entries,
-    };
-    crate::dump::write_gz(out, &serde_json::to_vec(&cache)?)?;
+    write_shards(out, &entries)?;
     eprintln!(
-        "Wrote {} enrichment entries to {}",
-        cache.entry_count,
+        "Wrote {} enrichment entries to {} across {ENRICH_SHARDS} shards",
+        entries.len(),
         out.display()
     );
+    Ok(())
+}
+
+/// Write `entries` (already sorted by `(lang, word)`) as `ENRICH_SHARDS` JSON
+/// files under `dir` — `dir/<n>.json`, each a JSON array of the entries routed to
+/// that shard. The directory is rebuilt from scratch so stale shards never linger.
+/// Deterministic: shard assignment is a pure hash of the key and each shard keeps
+/// the global sort order, so re-running is byte-identical.
+fn write_shards(dir: &Path, entries: &[EnrichEntry]) -> Result<()> {
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir)
+        .with_context(|| format!("create enrich shard dir {}", dir.display()))?;
+    let mut buckets: Vec<Vec<&EnrichEntry>> = vec![Vec::new(); ENRICH_SHARDS as usize];
+    for e in entries {
+        buckets[shard_of(&e.lang, &e.word) as usize].push(e);
+    }
+    for (n, bucket) in buckets.iter().enumerate() {
+        std::fs::write(dir.join(format!("{n}.json")), serde_json::to_string(bucket)?)?;
+    }
     Ok(())
 }
 
