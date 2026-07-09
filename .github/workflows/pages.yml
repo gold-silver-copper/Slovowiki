@@ -22,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # data/wiktionary-enrich.cache.json is stored via Git LFS (>100 MB);
+          # the export reads it for native RU/PL/CS cards, so pull the real file.
+          lfs: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build static site
