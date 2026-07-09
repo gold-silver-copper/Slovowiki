@@ -12,7 +12,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
@@ -201,6 +201,66 @@ impl RawSlavicCorpus {
     /// Atomic gzip write (tmp file + rename), mirroring [`extract_lemmas`]'s save.
     pub fn save(&self, path: &Path) -> Result<()> {
         write_gz(path, &serde_json::to_vec(self)?)?;
+        Ok(())
+    }
+}
+
+/// Companion filename written next to the raw cache holding the extraction
+/// coverage tally (issue #35). Deterministic; committed for auditability.
+pub const RAW_COVERAGE_FILE: &str = "raw-slavic-coverage.json";
+
+/// Transparent, auditable coverage of the RAW extraction pass: over the
+/// Slavic-language pages [`extract_raw_slavic`] sees in the English Wiktextract
+/// dump, how many were KEPT as raw lemmas and how many were DROPPED, broken down
+/// by reason. Written alongside the cache; small, so it stays plain JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RawCoverageStats {
+    /// The dump path this tally was produced from.
+    pub source: String,
+    /// Total lines streamed from the dump.
+    pub lines_scanned: u64,
+    /// Slavic-language pages examined: marker-matched lines whose top-level
+    /// `lang_code` is actually a RAW Slavic code (the coverage denominator).
+    pub slavic_pages_seen: u64,
+    /// Pages kept as raw lemmas (equals the cache length).
+    pub kept: u64,
+    /// Dropped: a redirect-like page with no `senses` (nothing to define).
+    pub dropped_redirect_no_senses: u64,
+    /// Dropped: multi-token headword (contains a space) or empty.
+    pub dropped_multiword: u64,
+    /// Dropped: not a content part of speech (proper noun, particle, etc.).
+    pub dropped_non_content_pos: u64,
+    /// Dropped: only form-of / inflection senses — no real gloss.
+    pub dropped_no_real_gloss: u64,
+    /// Kept lemmas per Slavic language code (BTreeMap → deterministic order).
+    pub kept_by_lang: BTreeMap<String, u64>,
+}
+
+impl RawCoverageStats {
+    pub fn load(path: &Path) -> Result<Self> {
+        let bytes = read_maybe_gz(path)
+            .with_context(|| format!("open raw coverage stats {}", path.display()))?;
+        serde_json::from_slice(&bytes).context("parse raw coverage stats")
+    }
+
+    /// The sum of every drop bucket — must reconcile with
+    /// `slavic_pages_seen - kept`.
+    pub fn dropped_total(&self) -> u64 {
+        self.dropped_redirect_no_senses
+            + self.dropped_multiword
+            + self.dropped_non_content_pos
+            + self.dropped_no_real_gloss
+    }
+
+    /// Plain pretty JSON written atomically (tmp + rename). Tiny and
+    /// human-auditable, so it is committed uncompressed.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 }
@@ -530,6 +590,12 @@ pub fn extract_raw_slavic(dump: &Path, out: &Path) -> Result<()> {
         .collect();
 
     let mut lemmas: Vec<RawSlavicLemma> = Vec::new();
+    // Auditable drop-reason tally over the Slavic pages seen (issue #35). The
+    // KEPT set (and thus `lemmas`) is unchanged, so the cache stays byte-identical.
+    let mut stats = RawCoverageStats {
+        source: dump.display().to_string(),
+        ..Default::default()
+    };
     let mut line_count: u64 = 0;
     for line in reader.lines() {
         let line = line?;
@@ -541,56 +607,118 @@ pub fn extract_raw_slavic(dump: &Path, out: &Path) -> Result<()> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        if let Some(lemma) = raw_slavic_from_value(&value) {
-            lemmas.push(lemma);
-            if lemmas.len().is_multiple_of(20000) {
-                eprintln!(
-                    "  collected {} raw Slavic lemmas after {} lines",
-                    lemmas.len(),
-                    line_count
-                );
+        match classify_raw_slavic(&value) {
+            // Prefilter over-match (nested Slavic mention): not a Slavic page.
+            RawOutcome::NotSlavic => {}
+            RawOutcome::Kept(lemma) => {
+                stats.slavic_pages_seen += 1;
+                stats.kept += 1;
+                *stats.kept_by_lang.entry(lemma.lang.clone()).or_default() += 1;
+                lemmas.push(lemma);
+                if lemmas.len().is_multiple_of(20000) {
+                    eprintln!(
+                        "  collected {} raw Slavic lemmas after {} lines",
+                        lemmas.len(),
+                        line_count
+                    );
+                }
+            }
+            RawOutcome::DropRedirect => {
+                stats.slavic_pages_seen += 1;
+                stats.dropped_redirect_no_senses += 1;
+            }
+            RawOutcome::DropMultiword => {
+                stats.slavic_pages_seen += 1;
+                stats.dropped_multiword += 1;
+            }
+            RawOutcome::DropNonContentPos => {
+                stats.slavic_pages_seen += 1;
+                stats.dropped_non_content_pos += 1;
+            }
+            RawOutcome::DropNoRealGloss => {
+                stats.slavic_pages_seen += 1;
+                stats.dropped_no_real_gloss += 1;
             }
         }
     }
+    stats.lines_scanned = line_count;
 
     let corpus = RawSlavicCorpus { lemmas };
     corpus.save(out)?;
+    let cov_path = out.with_file_name(RAW_COVERAGE_FILE);
+    stats.save(&cov_path)?;
     println!(
         "wrote {} ({} raw Slavic lemmas from {} lines)",
         out.display(),
         corpus.lemmas.len(),
         line_count
     );
+    println!(
+        "wrote {} (coverage: {} slavic pages seen; {} kept; dropped {} redirect / {} multiword / {} non-content-pos / {} no-gloss)",
+        cov_path.display(),
+        stats.slavic_pages_seen,
+        stats.kept,
+        stats.dropped_redirect_no_senses,
+        stats.dropped_multiword,
+        stats.dropped_non_content_pos,
+        stats.dropped_no_real_gloss,
+    );
     Ok(())
 }
 
-/// Apply the RAW gate to one Wiktextract page, returning a [`RawSlavicLemma`] when
-/// it is a single-token Slavic content lemma with at least one real gloss.
-fn raw_slavic_from_value(value: &Value) -> Option<RawSlavicLemma> {
+/// How the RAW gate classifies one Wiktextract page, for coverage reporting
+/// (issue #35). Every classification but [`RawOutcome::NotSlavic`] counts toward
+/// the coverage denominator; [`RawOutcome::Kept`] carries the produced lemma.
+enum RawOutcome {
+    /// A single-token Slavic content lemma with ≥1 real gloss — kept.
+    Kept(RawSlavicLemma),
+    /// Top-level language is not a RAW Slavic code (the substring prefilter can
+    /// match a nested mention) — not a Slavic page, excluded from the denominator.
+    NotSlavic,
+    /// Dropped: redirect-like page with no `senses`.
+    DropRedirect,
+    /// Dropped: multi-token or empty headword.
+    DropMultiword,
+    /// Dropped: not a content part of speech.
+    DropNonContentPos,
+    /// Dropped: only form-of senses; no real gloss.
+    DropNoRealGloss,
+}
+
+/// Apply the RAW gate to one Wiktextract page, classifying it for the coverage
+/// tally. The KEPT branch is byte-for-byte the same lemma the old gate produced
+/// (the accept condition is an unordered conjunction, so the cache is unchanged);
+/// the drop branches only add auditable reason buckets.
+fn classify_raw_slavic(value: &Value) -> RawOutcome {
     // Top-level language must be one of the Slavic codes.
-    let lang = value.get("lang_code").and_then(Value::as_str)?;
-    if !RAW_SLAVIC_LANGS.contains(&lang) {
-        return None;
-    }
-    // Real lemma page: a `word` plus non-empty `senses` (skips redirect rows).
-    let word = value.get("word").and_then(Value::as_str)?.trim().to_string();
-    let senses = value.get("senses").and_then(Value::as_array)?;
-    if senses.is_empty() {
-        return None;
-    }
+    let lang = match value.get("lang_code").and_then(Value::as_str) {
+        Some(l) if RAW_SLAVIC_LANGS.contains(&l) => l,
+        _ => return RawOutcome::NotSlavic,
+    };
+    let word = value
+        .get("word")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    // Real lemma page: non-empty `senses` (skips redirect rows / word-less pages).
+    let senses = match value.get("senses").and_then(Value::as_array) {
+        Some(s) if !s.is_empty() => s,
+        _ => return RawOutcome::DropRedirect,
+    };
     // Single token: non-empty and no space.
     if word.is_empty() || word.contains(' ') {
-        return None;
+        return RawOutcome::DropMultiword;
     }
     // Quality gate: content POS only (drop proper nouns/particles/etc.).
     let raw_pos = value.get("pos").and_then(Value::as_str).unwrap_or("");
     if !matches!(raw_pos, "noun" | "verb" | "adj" | "adv") {
-        return None;
+        return RawOutcome::DropNonContentPos;
     }
     // Quality gate: at least one real (non-form-of) gloss.
     let glosses = real_glosses(senses, 4);
     if glosses.is_empty() {
-        return None;
+        return RawOutcome::DropNoRealGloss;
     }
     // Etymology: the English dump uses the SINGULAR `etymology_text`. Informational.
     let etymology_text = value
@@ -605,7 +733,7 @@ fn raw_slavic_from_value(value: &Value) -> Option<RawSlavicLemma> {
     } else {
         String::new()
     };
-    Some(RawSlavicLemma {
+    RawOutcome::Kept(RawSlavicLemma {
         word,
         lang: lang.to_string(),
         pos: raw_pos.to_string(),
@@ -614,6 +742,15 @@ fn raw_slavic_from_value(value: &Value) -> Option<RawSlavicLemma> {
         proto,
         etymon,
     })
+}
+
+/// Apply the RAW gate to one page, returning the kept [`RawSlavicLemma`] when it
+/// is a single-token Slavic content lemma with at least one real gloss.
+fn raw_slavic_from_value(value: &Value) -> Option<RawSlavicLemma> {
+    match classify_raw_slavic(value) {
+        RawOutcome::Kept(lemma) => Some(lemma),
+        _ => None,
+    }
 }
 
 /// Collect up to `cap` distinct real English glosses, skipping form-of /
@@ -1068,5 +1205,64 @@ mod tests {
                                            "tags": ["form-of"],
                                            "form_of": [{"word": "пластинка"}]}]});
         assert!(raw_slavic_from_value(&only_form).is_none());
+    }
+
+    #[test]
+    fn raw_slavic_classify_reasons() {
+        use serde_json::json;
+        // Kept.
+        let kept = json!({"word": "вода", "lang_code": "ru", "pos": "noun",
+                          "senses": [{"glosses": ["water"]}]});
+        assert!(matches!(classify_raw_slavic(&kept), RawOutcome::Kept(_)));
+        // Non-Slavic language -> excluded from the coverage denominator.
+        let en = json!({"word": "water", "lang_code": "en", "pos": "noun",
+                        "senses": [{"glosses": ["water"]}]});
+        assert!(matches!(classify_raw_slavic(&en), RawOutcome::NotSlavic));
+        // Redirect: no senses.
+        let redirect = json!({"word": "foo", "lang_code": "ru", "pos": "noun"});
+        assert!(matches!(
+            classify_raw_slavic(&redirect),
+            RawOutcome::DropRedirect
+        ));
+        // Multiword.
+        let phrase = json!({"word": "по мере", "lang_code": "ru", "pos": "adv",
+                            "senses": [{"glosses": ["gradually"]}]});
+        assert!(matches!(
+            classify_raw_slavic(&phrase),
+            RawOutcome::DropMultiword
+        ));
+        // Non-content POS (proper noun).
+        let name = json!({"word": "Москва", "lang_code": "ru", "pos": "name",
+                          "senses": [{"glosses": ["Moscow"]}]});
+        assert!(matches!(
+            classify_raw_slavic(&name),
+            RawOutcome::DropNonContentPos
+        ));
+        // No real gloss (only a form-of sense).
+        let only_form = json!({"word": "води", "lang_code": "ru", "pos": "noun",
+                               "senses": [{"glosses": ["genitive singular of вода"],
+                                           "tags": ["form-of"],
+                                           "form_of": [{"word": "вода"}]}]});
+        assert!(matches!(
+            classify_raw_slavic(&only_form),
+            RawOutcome::DropNoRealGloss
+        ));
+    }
+
+    #[test]
+    fn raw_coverage_stats_reconcile() {
+        let mut s = RawCoverageStats {
+            slavic_pages_seen: 10,
+            kept: 6,
+            dropped_redirect_no_senses: 1,
+            dropped_multiword: 1,
+            dropped_non_content_pos: 1,
+            dropped_no_real_gloss: 1,
+            ..Default::default()
+        };
+        assert_eq!(s.dropped_total(), 4);
+        assert_eq!(s.kept + s.dropped_total(), s.slavic_pages_seen);
+        s.kept_by_lang.insert("ru".into(), 6);
+        assert_eq!(s.kept_by_lang.values().sum::<u64>(), s.kept);
     }
 }

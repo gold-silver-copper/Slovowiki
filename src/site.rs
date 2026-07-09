@@ -1341,12 +1341,652 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     )?;
     std::fs::write(out_dir.join("metrics.html"), metrics_page())?;
 
+    // Dataset-coverage page (issue #35): documents which Slavic-Wiktionary datasets
+    // feed the site and the inclusion/exclusion counts. The extraction tally is the
+    // deterministic companion `extract-raw-slavic` wrote; the raw render/dedup split
+    // is this export's own count, so the page reconciles with `search.json`.
+    let raw_cov_stats = crate::dump::RawCoverageStats::load(
+        &Path::new(crate::DEFAULT_RAW_LEMMA_CACHE).with_file_name(crate::dump::RAW_COVERAGE_FILE),
+    )
+    .ok();
+    let cov_section = datasets_coverage_section(
+        raw_cov_stats.as_ref(),
+        raw_rendered,
+        raw_deduped,
+        n,
+        official_only,
+    );
+    std::fs::write(out_dir.join("datasets.html"), datasets_page(&cov_section))?;
+
     let panics = INFLECTION_PANICS.load(std::sync::atomic::Ordering::Relaxed);
     println!(
         "wrote {n} cognate-word pages + {official_only} official-only pages ({high} high / {med} medium / {low} low confidence; {official} match an official ISV form){}",
         if panics > 0 { format!("; {panics} inflection cells blank") } else { String::new() }
     );
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Raw-lemma coverage reporting (issue #35)
+//
+// A transparent, auditable account of the RAW Slavic-Wiktionary datasets: which
+// data went in, how many words were included, and how many were excluded and
+// why. It stitches together three views:
+//   1. EXTRACTION coverage — the drop-reason tally `extract-raw-slavic` wrote to
+//      `data/raw-slavic-coverage.json` (Slavic pages seen → kept / dropped-by-reason).
+//   2. SITE coverage — of the kept lemmas, how many `export` renders as raw-only
+//      pages vs dedups against an official/generated headword. This *replicates*
+//      the export dedup (same `build_sets`/`generate_set`, homograph + same-concept
+//      suppression, xref + display-headword fold), so the `rendered-raw` number
+//      must reconcile with the export's actual `R`-status page count.
+//   3. NATIVE JOIN — the fraction of raw lemmas that gain native ru/pl/cs
+//      enrichment (an `EnrichIndex` hit), by language.
+// The report never reads the benchmark path; it only touches the raw corpus and
+// the (display-only) site index, keeping the raw path benchmark-isolated.
+// ---------------------------------------------------------------------------
+
+/// One raw lemma's fate under the export dedup (site coverage view).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RawFate {
+    Rendered,
+    Deduped,
+}
+
+/// Minimal replica of `export_corpus`'s per-set state, enough to rebuild the
+/// display-headword fold set (`isv_to_id`) and cognate cross-reference (`xref`)
+/// that the raw dedup consults. Kept in lock-step with `export_corpus`.
+struct CovPrepared {
+    id: usize,
+    g: crate::corpus::GeneratedWord,
+    display: String,
+    matched: Option<(usize, String, String)>,
+    suppressed: bool,
+}
+
+/// Build the folded-headword index (`isv_to_id`) and cognate cross-reference
+/// (`xref`) exactly as `export_corpus` does, so a raw lemma is judged
+/// "already covered" identically. Returns them plus the generated/official
+/// headword counts used for the reconciliation lines.
+fn build_corpus_render_index(
+    corpus: &crate::dump::LemmaCorpus,
+    official_entries: &[OfficialEntry],
+) -> (
+    crate::enrich::Xref,
+    std::collections::HashMap<String, usize>,
+    usize, // generated pages (non-suppressed)
+    usize, // official-only pages
+) {
+    let cfg = ConsensusConfig::production();
+    let sets = crate::corpus::build_sets(corpus);
+
+    // Folded official ISV lemma → (isv, english), first-wins on homograph — the
+    // authoritative-match lookup (mirrors export's richer `official_map`; only the
+    // isv+english fields drive `matched`).
+    let mut official_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for e in official_entries {
+        let isv = e.isv.trim();
+        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
+            continue;
+        }
+        official_map
+            .entry(crate::orthography::to_standard(&isv.to_lowercase()))
+            .or_insert_with(|| (isv.to_string(), e.english.clone()));
+    }
+
+    // First pass: generate every set (same as export).
+    let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut prepared: Vec<CovPrepared> = Vec::new();
+    let mut id = 0usize;
+    for set in sets {
+        let g = crate::corpus::generate_set(set, &cfg);
+        let form = g.form().to_string();
+        if form.is_empty() {
+            continue;
+        }
+        id += 1;
+        let matched: Option<(usize, String, String)> =
+            g.candidates.iter().take(5).enumerate().find_map(|(i, c)| {
+                official_map
+                    .get(&crate::orthography::to_standard(&c.form.to_lowercase()))
+                    .map(|(isv, en)| (i + 1, isv.clone(), en.clone()))
+            });
+        for c in g.candidates.iter().take(5) {
+            covered.insert(crate::orthography::to_standard(&c.form.to_lowercase()));
+        }
+        let display = matched
+            .as_ref()
+            .map(|(_, isv, _)| isv.clone())
+            .unwrap_or_else(|| form.clone());
+        prepared.push(CovPrepared {
+            id,
+            g,
+            display,
+            matched,
+            suppressed: false,
+        });
+    }
+
+    // Homograph / duplicate dedup: one representative per official lemma.
+    {
+        let rank = |p: &CovPrepared, en: &str| -> (usize, i32) {
+            let a = crate::dump::gloss_tokens(&p.g.set.gloss);
+            let b = crate::dump::gloss_tokens(en);
+            let overlap = a.iter().filter(|t| b.contains(t)).count();
+            (overlap, (p.g.score * 1000.0) as i32)
+        };
+        let mut best: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (i, p) in prepared.iter().enumerate() {
+            if let Some((_, isv, en)) = &p.matched {
+                let key = crate::orthography::to_standard(&isv.to_lowercase());
+                let win = match best.get(&key) {
+                    Some(&j) => rank(p, en) > rank(&prepared[j], en),
+                    None => true,
+                };
+                if win {
+                    best.insert(key, i);
+                }
+            }
+        }
+        for (i, p) in prepared.iter_mut().enumerate() {
+            let Some((_, isv, _)) = p.matched.clone() else {
+                continue;
+            };
+            let key = crate::orthography::to_standard(&isv.to_lowercase());
+            if best.get(&key) != Some(&i) {
+                p.matched = None;
+                p.display = p.g.form().to_string();
+            }
+        }
+    }
+
+    // Same-concept suppression: collapse duplicate pages sharing a folded form and
+    // a gloss token with a stronger set.
+    {
+        let gloss_of = |p: &CovPrepared| -> Vec<String> {
+            match &p.matched {
+                Some((_, _, en)) => crate::dump::gloss_tokens(en),
+                None => crate::dump::gloss_tokens(&p.g.set.gloss),
+            }
+        };
+        let rank = |p: &CovPrepared| (p.matched.is_some(), (p.g.score * 1000.0) as i32);
+        let mut by_form: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, p) in prepared.iter().enumerate() {
+            by_form
+                .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
+                .or_default()
+                .push(i);
+        }
+        for (_f, mut group) in by_form {
+            if group.len() < 2 {
+                continue;
+            }
+            group.sort_by(|&a, &b| rank(&prepared[b]).cmp(&rank(&prepared[a])));
+            let mut kept: Vec<Vec<String>> = Vec::new();
+            for &i in &group {
+                let gl = gloss_of(&prepared[i]);
+                if !gl.is_empty() && kept.iter().any(|k| gl.iter().any(|t| k.contains(t))) {
+                    prepared[i].suppressed = true;
+                } else {
+                    kept.push(gl);
+                }
+            }
+        }
+    }
+
+    // Display headword → id (first-wins over non-suppressed pages), and the
+    // cognate cross-reference: every member word of every surviving set.
+    let mut isv_to_id: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut xref = crate::enrich::Xref::new();
+    let generated_pages = prepared.iter().filter(|p| !p.suppressed).count();
+    for p in &prepared {
+        if p.suppressed {
+            continue;
+        }
+        isv_to_id
+            .entry(crate::orthography::to_standard(&p.display.to_lowercase()))
+            .or_insert(p.id);
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+
+    // Official lemmas no candidate generates: reserve ids and fold them into
+    // `isv_to_id`, so a raw lemma whose display equals an official-only headword
+    // dedups too (exactly as export).
+    let mut official_only = 0usize;
+    let mut official_only_records: Vec<(usize, String)> = Vec::new();
+    for e in official_entries {
+        let isv = e.isv.trim();
+        if isv.is_empty() || isv.contains('#') {
+            continue;
+        }
+        let fold = crate::orthography::to_standard(&isv.to_lowercase());
+        if !covered.insert(fold) {
+            continue;
+        }
+        id += 1;
+        official_only += 1;
+        official_only_records.push((id, isv.to_string()));
+    }
+    for (oid, isv) in &official_only_records {
+        isv_to_id
+            .entry(crate::orthography::to_standard(&isv.to_lowercase()))
+            .or_insert(*oid);
+    }
+
+    (xref, isv_to_id, generated_pages, official_only)
+}
+
+/// Classify one raw lemma exactly as `export_corpus`'s raw loop does. `raw_covered`
+/// carries the running raw-vs-raw dedup set (mutated). This is the single dedup
+/// rule the export renders by and the coverage reconciles against.
+fn raw_lemma_fate(
+    lemma: &crate::dump::RawSlavicLemma,
+    xref: &crate::enrich::Xref,
+    isv_to_id: &std::collections::HashMap<String, usize>,
+    raw_covered: &mut std::collections::HashSet<String>,
+) -> RawFate {
+    let word = lemma.word.trim();
+    if word.is_empty() {
+        // Export silently skips empty words (never counted); extraction never
+        // produces one, so treat it as a dedup for the tally's total accounting.
+        return RawFate::Deduped;
+    }
+    if xref.get(&lemma.lang, word).is_some() {
+        return RawFate::Deduped;
+    }
+    let display = source_display(&lemma.lang, word);
+    let disp_fold = crate::orthography::to_standard(&display.to_lowercase());
+    if disp_fold.is_empty() {
+        return RawFate::Deduped;
+    }
+    if isv_to_id.contains_key(&disp_fold) || !raw_covered.insert(disp_fold) {
+        return RawFate::Deduped;
+    }
+    RawFate::Rendered
+}
+
+/// Compute the raw-lemma coverage report and write it to `out` as both
+/// `raw-coverage.md` (human) and `raw-coverage.json` (machine). Reconciles the
+/// extraction tally, the site render/dedup split, and the native-join rate.
+pub fn run_coverage(out: &Path) -> Result<()> {
+    let raw_path = Path::new(crate::DEFAULT_RAW_LEMMA_CACHE);
+    let raw_corpus = crate::dump::RawSlavicCorpus::load(raw_path).map_err(|e| {
+        anyhow::anyhow!(
+            "coverage needs the raw cache {} — run `extract-raw-slavic` first ({e})",
+            raw_path.display()
+        )
+    })?;
+    let cov_stats_path = raw_path.with_file_name(crate::dump::RAW_COVERAGE_FILE);
+    let cov_stats = crate::dump::RawCoverageStats::load(&cov_stats_path).ok();
+    if cov_stats.is_none() {
+        println!(
+            "(no {} — re-run `extract-raw-slavic` to regenerate the extraction tally)",
+            cov_stats_path.display()
+        );
+    }
+
+    let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
+    let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap_or_default();
+    let enrich = crate::enrich::EnrichIndex::load(Path::new(crate::DEFAULT_ENRICH_CACHE)).ok();
+
+    // --- View 1: totals by language and POS over the kept raw lemmas ---
+    let total = raw_corpus.lemmas.len();
+    let mut by_lang: BTreeMap<String, usize> = BTreeMap::new();
+    let mut by_pos: BTreeMap<String, usize> = BTreeMap::new();
+    for l in &raw_corpus.lemmas {
+        *by_lang.entry(l.lang.clone()).or_default() += 1;
+        *by_pos.entry(l.pos.clone()).or_default() += 1;
+    }
+
+    // --- View 2: replicate the export dedup to split kept → rendered vs deduped ---
+    let (xref, isv_to_id, generated_pages, official_only_pages) =
+        build_corpus_render_index(&corpus, &official_entries);
+    let mut raw_covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut rendered = 0usize;
+    let mut deduped = 0usize;
+    let mut rendered_by_lang: BTreeMap<String, usize> = BTreeMap::new();
+    let mut deduped_by_lang: BTreeMap<String, usize> = BTreeMap::new();
+    for lemma in &raw_corpus.lemmas {
+        match raw_lemma_fate(lemma, &xref, &isv_to_id, &mut raw_covered) {
+            RawFate::Rendered => {
+                rendered += 1;
+                *rendered_by_lang.entry(lemma.lang.clone()).or_default() += 1;
+            }
+            RawFate::Deduped => {
+                deduped += 1;
+                *deduped_by_lang.entry(lemma.lang.clone()).or_default() += 1;
+            }
+        }
+    }
+
+    // --- View 3: native ru/pl/cs enrichment hit rate, by language ---
+    let mut native_hits: BTreeMap<String, usize> = BTreeMap::new();
+    if let Some(en) = &enrich {
+        for l in &raw_corpus.lemmas {
+            if en.get(&l.lang, &l.word).is_some() {
+                *native_hits.entry(l.lang.clone()).or_default() += 1;
+            }
+        }
+    }
+    let native_total: usize = native_hits.values().sum();
+
+    // --- Provenance: the datasets that fed the raw path, with paths + sizes ---
+    let file_line = |label: &str, path: &Path| -> String {
+        match std::fs::metadata(path) {
+            Ok(m) => format!("- {label}: `{}` ({})", path.display(), fmt_bytes(m.len())),
+            Err(_) => format!("- {label}: `{}` (not present)", path.display()),
+        }
+    };
+    let dump_path = cov_stats
+        .as_ref()
+        .map(|s| s.source.clone())
+        .unwrap_or_else(|| crate::DEFAULT_DUMP.to_string());
+    let mut provenance = vec![
+        format!(
+            "- English Wiktextract raw dump (single-token content-word gate): `{}`{}",
+            dump_path,
+            match std::fs::metadata(&dump_path) {
+                Ok(m) => format!(" ({})", fmt_bytes(m.len())),
+                Err(_) => " (not present here — the 22 GB source is streamed once)".to_string(),
+            }
+        ),
+        file_line(
+            "Derived raw lemma cache",
+            Path::new(crate::DEFAULT_RAW_LEMMA_CACHE),
+        ),
+        file_line("Extraction coverage tally", &cov_stats_path),
+        file_line(
+            "Native ru/pl/cs Wiktionary enrichment cache",
+            Path::new(crate::DEFAULT_ENRICH_CACHE),
+        ),
+    ];
+    provenance.push(format!(
+        "- Native editions merged: {} (ru = Russian, pl = Polish, cs = Czech Wiktionary)",
+        crate::enrich::ENRICH_LANGS.join(", ")
+    ));
+
+    // --- Reconciliation checks ---
+    let kept = total; // the cache is exactly the kept set
+    let render_reconciles = rendered + deduped == kept;
+    let extract_reconciles = cov_stats
+        .as_ref()
+        .map(|s| s.kept as usize == kept && s.kept + s.dropped_total() == s.slavic_pages_seen)
+        .unwrap_or(false);
+
+    std::fs::create_dir_all(out)?;
+
+    // ---- Machine-readable JSON ----
+    let report_json = coverage_report_json(
+        &raw_corpus,
+        cov_stats.as_ref(),
+        &by_lang,
+        &by_pos,
+        rendered,
+        deduped,
+        &rendered_by_lang,
+        generated_pages,
+        official_only_pages,
+        &native_hits,
+        native_total,
+    );
+    std::fs::write(out.join("raw-coverage.json"), report_json)?;
+
+    // ---- Human-readable Markdown ----
+    let mut md = String::new();
+    let _ = writeln!(md, "# Raw Slavic-lemma coverage (issue #35)\n");
+    let _ = writeln!(
+        md,
+        "Auditable account of the raw Slavic-Wiktionary datasets: what went in, how \
+         many words were included, and how many were excluded and why. Deterministic; \
+         regenerate with `coverage` after `extract-raw-slavic` + `export`.\n"
+    );
+
+    let _ = writeln!(md, "## Datasets used (provenance)\n");
+    for line in &provenance {
+        let _ = writeln!(md, "{line}");
+    }
+
+    let _ = writeln!(md, "\n## 1. Extraction coverage (English dump)\n");
+    if let Some(s) = &cov_stats {
+        let _ = writeln!(md, "Streamed {} dump lines.\n", s.lines_scanned);
+        let _ = writeln!(md, "| Outcome | Pages | Share of Slavic pages |");
+        let _ = writeln!(md, "|---|--:|--:|");
+        let seen = s.slavic_pages_seen.max(1);
+        let pct = |x: u64| format!("{:.2}%", 100.0 * x as f64 / seen as f64);
+        let _ = writeln!(
+            md,
+            "| Slavic pages seen | {} | 100.00% |",
+            s.slavic_pages_seen
+        );
+        let _ = writeln!(md, "| **KEPT** | {} | {} |", s.kept, pct(s.kept));
+        let _ = writeln!(
+            md,
+            "| dropped — redirect (no senses) | {} | {} |",
+            s.dropped_redirect_no_senses,
+            pct(s.dropped_redirect_no_senses)
+        );
+        let _ = writeln!(
+            md,
+            "| dropped — multiword / empty | {} | {} |",
+            s.dropped_multiword,
+            pct(s.dropped_multiword)
+        );
+        let _ = writeln!(
+            md,
+            "| dropped — non-content POS | {} | {} |",
+            s.dropped_non_content_pos,
+            pct(s.dropped_non_content_pos)
+        );
+        let _ = writeln!(
+            md,
+            "| dropped — no real gloss | {} | {} |",
+            s.dropped_no_real_gloss,
+            pct(s.dropped_no_real_gloss)
+        );
+        let _ = writeln!(
+            md,
+            "\nReconciles: kept ({}) + dropped ({}) = slavic pages seen ({}) → **{}**.",
+            s.kept,
+            s.dropped_total(),
+            s.slavic_pages_seen,
+            if extract_reconciles { "OK" } else { "MISMATCH" }
+        );
+    } else {
+        let _ = writeln!(
+            md,
+            "_Extraction tally unavailable ({} missing); re-run `extract-raw-slavic`._",
+            cov_stats_path.display()
+        );
+    }
+
+    let _ = writeln!(md, "\n## 2. Kept raw lemmas by language\n");
+    let _ = writeln!(md, "| Lang | Kept | Rendered raw | Deduped | Native join |");
+    let _ = writeln!(md, "|---|--:|--:|--:|--:|");
+    for (lang, n_lang) in &by_lang {
+        let r = rendered_by_lang.get(lang).copied().unwrap_or(0);
+        let d = deduped_by_lang.get(lang).copied().unwrap_or(0);
+        let h = native_hits.get(lang).copied().unwrap_or(0);
+        let hp = if *n_lang > 0 {
+            format!("{:.1}%", 100.0 * h as f64 / *n_lang as f64)
+        } else {
+            "0.0%".to_string()
+        };
+        let _ = writeln!(md, "| {lang} | {n_lang} | {r} | {d} | {h} ({hp}) |");
+    }
+    let _ = writeln!(
+        md,
+        "| **total** | **{total}** | **{rendered}** | **{deduped}** | **{native_total}** |"
+    );
+
+    let _ = writeln!(md, "\n## 3. Kept raw lemmas by part of speech\n");
+    let _ = writeln!(md, "| POS | Kept |");
+    let _ = writeln!(md, "|---|--:|");
+    for (pos, n_pos) in &by_pos {
+        let _ = writeln!(md, "| {pos} | {n_pos} |");
+    }
+
+    let _ = writeln!(md, "\n## 4. Site rendering (replicated export dedup)\n");
+    let _ = writeln!(
+        md,
+        "Of the {total} kept raw lemmas, the site renders **{rendered}** as raw-only \
+         attestation pages and dedups **{deduped}** against an existing official / \
+         generated / official-only headword (verbatim `(lang, word)` cognate match, or \
+         the display-headword fold already claimed)."
+    );
+    let _ = writeln!(
+        md,
+        "\nFor context, the same export renders {generated_pages} generated cognate \
+         pages and {official_only_pages} official-only pages.\n"
+    );
+    let _ = writeln!(
+        md,
+        "Reconciles: rendered ({rendered}) + deduped ({deduped}) = kept ({kept}) → **{}**.",
+        if render_reconciles { "OK" } else { "MISMATCH" }
+    );
+    let _ = writeln!(
+        md,
+        "\n> Correctness check: this `rendered-raw` count must equal the number of \
+         `R`-status rows in a fresh `export`'s `search.json`."
+    );
+
+    let _ = writeln!(md, "\n## 5. Native-join (ru/pl/cs enrichment) hit rate\n");
+    if enrich.is_some() {
+        let _ = writeln!(
+            md,
+            "{native_total} of {total} raw lemmas ({:.1}%) gain a native ru/pl/cs \
+             Wiktionary enrichment match. By language:\n",
+            if total > 0 {
+                100.0 * native_total as f64 / total as f64
+            } else {
+                0.0
+            }
+        );
+        let _ = writeln!(md, "| Lang | Kept | Native hits | Rate |");
+        let _ = writeln!(md, "|---|--:|--:|--:|");
+        for (lang, n_lang) in &by_lang {
+            let h = native_hits.get(lang).copied().unwrap_or(0);
+            let hp = if *n_lang > 0 {
+                format!("{:.1}%", 100.0 * h as f64 / *n_lang as f64)
+            } else {
+                "0.0%".to_string()
+            };
+            let _ = writeln!(md, "| {lang} | {n_lang} | {h} | {hp} |");
+        }
+    } else {
+        let _ = writeln!(
+            md,
+            "_Enrichment cache unavailable ({}); run `extract-enrich`._",
+            crate::DEFAULT_ENRICH_CACHE
+        );
+    }
+
+    std::fs::write(out.join("raw-coverage.md"), &md)?;
+
+    println!(
+        "coverage: {total} kept raw lemmas across {} languages → {rendered} rendered raw / {deduped} deduped (reconcile: {}).",
+        by_lang.len(),
+        if render_reconciles { "OK" } else { "MISMATCH" }
+    );
+    if let Some(s) = &cov_stats {
+        println!(
+            "extraction: {} slavic pages seen → {} kept + {} dropped (redirect {} / multiword {} / non-content-pos {} / no-gloss {}); reconcile: {}.",
+            s.slavic_pages_seen,
+            s.kept,
+            s.dropped_total(),
+            s.dropped_redirect_no_senses,
+            s.dropped_multiword,
+            s.dropped_non_content_pos,
+            s.dropped_no_real_gloss,
+            if extract_reconciles { "OK" } else { "MISMATCH" }
+        );
+    }
+    println!("native-join: {native_total}/{total} raw lemmas matched ru/pl/cs enrichment.");
+    println!(
+        "wrote {} and {}",
+        out.join("raw-coverage.md").display(),
+        out.join("raw-coverage.json").display()
+    );
+    if !render_reconciles || (cov_stats.is_some() && !extract_reconciles) {
+        anyhow::bail!("coverage reconciliation FAILED — see report");
+    }
+    Ok(())
+}
+
+/// Human byte size for provenance lines.
+fn fmt_bytes(n: u64) -> String {
+    const U: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = n as f64;
+    let mut i = 0;
+    while v >= 1024.0 && i < U.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{n} B")
+    } else {
+        format!("{v:.1} {}", U[i])
+    }
+}
+
+/// Machine-readable coverage report (stable key order via serde_json::json!).
+#[allow(clippy::too_many_arguments)]
+fn coverage_report_json(
+    raw_corpus: &crate::dump::RawSlavicCorpus,
+    cov_stats: Option<&crate::dump::RawCoverageStats>,
+    by_lang: &BTreeMap<String, usize>,
+    by_pos: &BTreeMap<String, usize>,
+    rendered: usize,
+    deduped: usize,
+    rendered_by_lang: &BTreeMap<String, usize>,
+    generated_pages: usize,
+    official_only_pages: usize,
+    native_hits: &BTreeMap<String, usize>,
+    native_total: usize,
+) -> Vec<u8> {
+    let total = raw_corpus.lemmas.len();
+    let extraction = cov_stats.map(|s| {
+        serde_json::json!({
+            "source": s.source,
+            "lines_scanned": s.lines_scanned,
+            "slavic_pages_seen": s.slavic_pages_seen,
+            "kept": s.kept,
+            "dropped": {
+                "redirect_no_senses": s.dropped_redirect_no_senses,
+                "multiword": s.dropped_multiword,
+                "non_content_pos": s.dropped_non_content_pos,
+                "no_real_gloss": s.dropped_no_real_gloss,
+                "total": s.dropped_total(),
+            },
+            "kept_by_lang": s.kept_by_lang,
+            "reconciles": s.kept as usize == total
+                && s.kept + s.dropped_total() == s.slavic_pages_seen,
+        })
+    });
+    let report = serde_json::json!({
+        "kept_total": total,
+        "kept_by_lang": by_lang,
+        "kept_by_pos": by_pos,
+        "site": {
+            "rendered_raw": rendered,
+            "deduped": deduped,
+            "rendered_by_lang": rendered_by_lang,
+            "generated_pages": generated_pages,
+            "official_only_pages": official_only_pages,
+            "reconciles": rendered + deduped == total,
+        },
+        "native_join": {
+            "total_hits": native_total,
+            "by_lang": native_hits,
+            "langs": crate::enrich::ENRICH_LANGS,
+        },
+        "extraction": extraction,
+    });
+    let mut v = serde_json::to_vec_pretty(&report).unwrap_or_default();
+    v.push(b'\n');
+    v
 }
 
 /// Inject `generated` derivative FormRecords off attested bases (issue #37) into
@@ -5220,7 +5860,8 @@ fn write_wiki_indexes(
     std::fs::write(out_dir.join("edges.json"), graph_json(edges))?;
     std::fs::write(out_dir.join("categories.json"), categories_json(metas))?;
     std::fs::write(out_dir.join("roots.json"), roots_json(&root_map))?;
-    std::fs::write(out_dir.join("datasets.html"), datasets_page())?;
+    // `datasets.html` is written by `export_corpus` after the raw-lemma loop, so it
+    // can document the site-level raw render/dedup coverage counts (issue #35).
     std::fs::write(out_dir.join("sitemap.xml"), sitemap_xml(metas))?;
     Ok(())
 }
@@ -5757,9 +6398,95 @@ function render(tok,recs,nts,key){{\
     page("Prověrka teksta — medžuslovjansky", &body, 0)
 }
 
-fn datasets_page() -> String {
-    let body = "<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search.json'>search.json</a></td><td>Klientsky indeks iskanja.</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table></article>";
-    page("Fajly za dostavanje", body, 0)
+fn datasets_page(coverage: &str) -> String {
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search.json'>search.json</a></td><td>Klientsky indeks iskanja.</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
+    page("Fajly za dostavanje", &body, 0)
+}
+
+/// The dataset-coverage block on `datasets.html` (issue #35): documents exactly
+/// which Slavic-Wiktionary datasets feed the site and the inclusion/exclusion
+/// counts. `stats` is the deterministic extraction tally; `rendered`/`deduped` are
+/// the site-level split from the raw loop. All numbers regenerate on export.
+fn datasets_coverage_section(
+    stats: Option<&crate::dump::RawCoverageStats>,
+    rendered: usize,
+    deduped: usize,
+    generated: usize,
+    official_only: usize,
+) -> String {
+    let mut s = String::new();
+    s.push_str("<h2 id='pokrytje'>Pokrytje slovjanskyh datasetov</h2>");
+    s.push_str("<p class='lede'>Čto znači „vse slovjanske Wiktionary dataset-y“: srovy tok iz anglijskoga Wiktextract-a (jednoslovne polnoznačne slova) + nativne ru/pl/cs izdanja za obogaćenje. Niže — koliko slov je vključeno i koliko izključeno, s pričinoju.</p>");
+    if let Some(st) = stats {
+        let seen = st.slavic_pages_seen.max(1);
+        let pct = |x: u64| format!("{:.1}%", 100.0 * x as f64 / seen as f64);
+        s.push_str("<table class='wikitable'><tr><th>Ekstrakcija (anglijsky dump)</th><th>Strany</th><th>Dělj</th></tr>");
+        let _ = write!(
+            s,
+            "<tr><th>Slovjanske strany viděne</th><td>{}</td><td>100%</td></tr>",
+            st.slavic_pages_seen
+        );
+        let _ = write!(
+            s,
+            "<tr><th>Zadŕžane (vključene)</th><td>{}</td><td>{}</td></tr>",
+            st.kept,
+            pct(st.kept)
+        );
+        let _ = write!(
+            s,
+            "<tr><th>Odbrošene — prěnapravjenje (bez smyslov)</th><td>{}</td><td>{}</td></tr>",
+            st.dropped_redirect_no_senses,
+            pct(st.dropped_redirect_no_senses)
+        );
+        let _ = write!(
+            s,
+            "<tr><th>Odbrošene — mnogoslovne / prazdne</th><td>{}</td><td>{}</td></tr>",
+            st.dropped_multiword,
+            pct(st.dropped_multiword)
+        );
+        let _ = write!(
+            s,
+            "<tr><th>Odbrošene — ne polnoznačna čęsť rěči</th><td>{}</td><td>{}</td></tr>",
+            st.dropped_non_content_pos,
+            pct(st.dropped_non_content_pos)
+        );
+        let _ = write!(
+            s,
+            "<tr><th>Odbrošene — bez pravoj definicije</th><td>{}</td><td>{}</td></tr>",
+            st.dropped_no_real_gloss,
+            pct(st.dropped_no_real_gloss)
+        );
+        s.push_str("</table>");
+        let _ = write!(
+            s,
+            "<p class='muted'>Zadŕžane ({}) + odbrošene ({}) = viděne slovjanske strany ({}).</p>",
+            st.kept,
+            st.dropped_total(),
+            st.slavic_pages_seen
+        );
+    } else {
+        s.push_str("<p class='muted'>Statistika ekstrakcije ješče ne generovana (<code>data/raw-slavic-coverage.json</code>). Pokreni <code>extract-raw-slavic</code>.</p>");
+    }
+    s.push_str("<table class='wikitable'><tr><th>Na sajtu</th><th>Strany</th></tr>");
+    let _ = write!(
+        s,
+        "<tr><th>Srove atestacije (samo surove, R)</th><td>{rendered}</td></tr>"
+    );
+    let _ = write!(
+        s,
+        "<tr><th>Surove dublikovane (uže pokryte)</th><td>{deduped}</td></tr>"
+    );
+    let _ = write!(
+        s,
+        "<tr><th>Generovane srodne strany</th><td>{generated}</td></tr>"
+    );
+    let _ = write!(
+        s,
+        "<tr><th>Samo oficialne strany</th><td>{official_only}</td></tr>"
+    );
+    s.push_str("</table>");
+    s.push_str("<p class='muted'>Podrobny izvěst: <code>target/eval/raw-coverage.md</code> (komanda <code>coverage</code>).</p>");
+    s
 }
 
 fn build_json(build: &BuildMeta) -> String {
