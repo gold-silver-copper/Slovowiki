@@ -404,70 +404,6 @@ impl RecordSink {
     }
 }
 
-/// The synthetic comparative of an adjective (STEEN-G Stupnjevanje):
-/// -ky/-eky/-oky → -ši (kratki→kratši, daleky→dalši, vysoky→vysši); otherwise
-/// stem + -ějši (-ejši after soft/palatalized: blagy→blažejši, svěži→
-/// svěžejši); seven lexical irregulars. Returns (comparative adjective,
-/// comparative adverb).
-pub fn comparative(adj: &str) -> Option<(String, String)> {
-    // Relational adjectives never gradate: -sky/-cky (russky, gręcky) would
-    // otherwise k-strip into garbage (russši). Lemmas that already ARE
-    // comparatives or participial adjectives (94 official ones end -ši/-ći:
-    // bogatši, gorši, bųdųći, goręći) must not double-gradate (*bogatšejši).
-    // Soft -ji possessives/relationals (božji, medvěďji, poslědnji) don't
-    // gradate synthetically either; ji+ejši would be morphologically broken.
-    if adj.ends_with("sky")
-        || adj.ends_with("cky")
-        || adj.ends_with("ši")
-        || adj.ends_with("ći")
-        || adj.ends_with("ji")
-    {
-        return None;
-    }
-    // The seven irregulars (steen adjectives page, verbatim).
-    for (base, comp, adv) in [
-        ("dobry", "lěpši", "lěpje"),
-        ("zly", "gorši", "gorje"),
-        ("veliky", "večši", "veče"),
-        ("maly", "menši", "menje"),
-        ("blagy", "unši", "unje"),
-        ("legky", "legši", "legše"),
-        ("mękky", "mękši", "mękše"),
-    ] {
-        if adj == base {
-            return Some((comp.to_string(), adv.to_string()));
-        }
-    }
-    let stem = adj.strip_suffix(['y', 'i'])?;
-    if stem.chars().count() < 2 {
-        return None;
-    }
-    // -ky / -eky / -oky class: -ši on the truncated root, adverb by iotation.
-    // Roots shorter than 3 chars (diky → *di-) fall through to the regular
-    // rule instead (dičejši/dičeje).
-    for suf in ["ok", "ek", "k"] {
-        if let Some(root) = stem.strip_suffix(suf) {
-            if root.chars().count() >= 3 {
-                let comp = format!("{root}ši");
-                let adv = format!("{}e", interslavic::phono::iotate_final(root));
-                return Some((comp, adv));
-            }
-            break;
-        }
-    }
-    // Regular: palatalize the seam (phono's shared table, incl. c→č), then
-    // the FULL softness predicate decides -ejši vs -ějši — the old local
-    // copy's soft set missed ń/ľ/ŕ/ć/đ and the digraphs (issue #15).
-    let pal = interslavic::phono::palatalize_final(stem);
-    let soft = interslavic::phono::is_soft(&pal);
-    let (adj_suf, adv_suf) = if soft {
-        ("ejši", "eje")
-    } else {
-        ("ějši", "ěje")
-    };
-    Some((format!("{pal}{adj_suf}"), format!("{pal}{adv_suf}")))
-}
-
 /// Decline an adjective-shaped lemma into the sink with a feature prefix
 /// (used for adjectives themselves, their comparatives/superlatives,
 /// declinable participles, and adjectivally-declined pronouns).
@@ -554,7 +490,7 @@ pub fn paradigm_records(
             );
             // Degrees of comparison (issue #13 §1): comparative and superlative
             // are soft adjectives — declined in full — plus their adverbs.
-            if let Some((comp, comp_adv)) = comparative(bare) {
+            if let Some((comp, comp_adv)) = interslavic::ISV::comparative(bare) {
                 for (deg, adj_form, adv_form) in [
                     ("komp. ", comp.clone(), comp_adv.clone()),
                     ("superl. ", format!("naj{comp}"), format!("naj{comp_adv}")),
@@ -1433,28 +1369,24 @@ mod tests {
     }
 
     #[test]
-    fn gradation_guards_and_citation_sanitizer() {
-        // Already-graded and non-gradable classes produce NO degrees.
-        for a in [
-            "russky",
-            "bogatši",
-            "bųdųći",
-            "boljši",
-            "božji",
-            "poslědnji",
-        ] {
-            assert_eq!(comparative(a), None, "{a} must not gradate");
-        }
-        // Short k-roots fall through to the regular rule (not degenerate *diši).
-        assert_eq!(
-            comparative("diky"),
-            Some(("dičejši".to_string(), "dičeje".to_string()))
-        );
-        // Citation sanitizer: pipeline notation and government hints.
+    fn citation_sanitizer() {
+        // Pipeline notation and government hints (comparative gradation itself
+        // is tested upstream in the interslavic crate).
         assert_eq!(citation("pozirati (na)").as_deref(), Some("pozirati"));
         assert_eq!(citation("pleskati,*plěskati").as_deref(), Some("pleskati"));
         assert_eq!(citation("*rekonstrukcija"), None);
         assert_eq!(citation("voda").as_deref(), Some("voda"));
+    }
+
+    #[test]
+    fn comparative_integration() {
+        // The upstream ISV::comparative is wired in, and the uzky-class fix
+        // (root-final-k lexical exception, published in 0.4.0) is in effect.
+        assert_eq!(
+            interslavic::ISV::comparative("uzky"),
+            Some(("uzši".to_string(), "uže".to_string()))
+        );
+        assert_eq!(interslavic::ISV::comparative("russky"), None);
     }
 
     #[test]
@@ -1471,49 +1403,6 @@ mod tests {
         assert!(dva.analyses.iter().any(|a| a.contains("nom")), "{dva:?}");
         let pet = recs.iter().find(|r| r.form == "pęť").expect("pęť");
         assert!(pet.analyses.iter().any(|a| a.contains("nom")), "{pet:?}");
-    }
-
-    #[test]
-    fn comparatives_follow_steen() {
-        assert_eq!(
-            comparative("novy"),
-            Some(("novějši".to_string(), "nověje".to_string()))
-        );
-        assert_eq!(
-            comparative("blagy"),
-            Some(("unši".to_string(), "unje".to_string()))
-        );
-        assert_eq!(
-            comparative("kratky"),
-            Some(("kratši".to_string(), "kraće".to_string()))
-        );
-        assert_eq!(
-            comparative("vysoky"),
-            Some(("vysši".to_string(), "vyše".to_string()))
-        );
-        assert_eq!(
-            comparative("dobry"),
-            Some(("lěpši".to_string(), "lěpje".to_string()))
-        );
-        // Issue #15 regressions: full iotation table for k-class adverbs
-        // (labials take j, h→š, st→šć) and the full softness set for the
-        // -ejši/-ějši choice (đ-final stems are soft).
-        assert_eq!(
-            comparative("glųboky"),
-            Some(("glųbši".to_string(), "glųbje".to_string()))
-        );
-        assert_eq!(
-            comparative("krěhky"),
-            Some(("krěhši".to_string(), "krěše".to_string()))
-        );
-        assert_eq!(
-            comparative("žestoky"),
-            Some(("žestši".to_string(), "žešće".to_string()))
-        );
-        assert_eq!(
-            comparative("ryđi"),
-            Some(("ryđejši".to_string(), "ryđeje".to_string()))
-        );
     }
 
     #[test]
