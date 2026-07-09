@@ -47,6 +47,17 @@ pub const SLAVIC_LANGS: &[&str] = &[
     "dsb", "hsb", "rue",
 ];
 
+/// The Slavic top-level `lang_code`s the RAW extraction path (issue #33) accepts.
+/// Superset of [`SLAVIC_LANGS`], adding the Serbo-Croatian macro-code `sh` (where
+/// English Wiktionary actually files hr/sr/bs entries) and Old East Slavic `orv`.
+/// This is a SEPARATE, evidence-free path from [`extract_lemmas`]; it must never
+/// feed the benchmark, which is why its output uses the distinct
+/// [`RawSlavicCorpus`] type and never the benchmark-gated [`LemmaCorpus`].
+pub const RAW_SLAVIC_LANGS: &[&str] = &[
+    "ru", "uk", "be", "pl", "cs", "sk", "sl", "hr", "sr", "bs", "bg", "mk", "sh", "dsb", "hsb",
+    "szl", "csb", "rue", "cu", "orv",
+];
+
 /// One modern-Slavic dictionary lemma tagged with its etymological ancestor, so
 /// lemmas sharing an ancestor form a cognate set. A lemma is either **inherited**
 /// (`proto` = a Proto-Slavic reconstruction) or a **borrowing / internationalism**
@@ -101,6 +112,58 @@ impl LemmaCorpus {
             .with_context(|| format!("open lemma corpus {}", path.display()))?
             .read_to_string(&mut json)?;
         serde_json::from_str(&json).context("parse lemma corpus")
+    }
+}
+
+/// One single-token Slavic dictionary lemma pulled by the RAW extraction path
+/// (issue #33), **without** the etymological-evidence filter that
+/// [`LemmaEntry`]/[`extract_lemmas`] apply. This deliberately captures
+/// low-evidence dictionary words the benchmark corpus drops (e.g. Russian
+/// пластинка, whose only ancestry is a native `-ка` suffixation).
+///
+/// It is a DISTINCT type from [`LemmaEntry`] on purpose: nothing that consumes
+/// the benchmark corpus accepts a `RawSlavicLemma`, so accidentally wiring this
+/// evidence-free data into the accuracy benchmark is a compile error, not a
+/// silent regression. `proto`/`etymon` are informational only here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawSlavicLemma {
+    pub word: String,
+    pub lang: String,
+    pub pos: String,
+    pub glosses: Vec<String>,
+    pub etymology_text: String,
+    pub proto: String,
+    pub etymon: String,
+}
+
+/// The RAW-path corpus. Distinct from [`LemmaCorpus`] (which the benchmark reads)
+/// so the two can never be confused at a call site.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawSlavicCorpus {
+    pub lemmas: Vec<RawSlavicLemma>,
+}
+
+impl RawSlavicCorpus {
+    pub fn load(path: &Path) -> Result<Self> {
+        use std::io::Read;
+        let mut json = String::new();
+        File::open(path)
+            .with_context(|| format!("open raw slavic corpus {}", path.display()))?
+            .read_to_string(&mut json)?;
+        serde_json::from_str(&json).context("parse raw slavic corpus")
+    }
+
+    /// Atomic write (tmp file + rename), mirroring [`extract_lemmas`]'s save.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let tmp = path.with_extension("json.tmp");
+        let mut f = File::create(&tmp)?;
+        serde_json::to_writer(&mut f, self)?;
+        f.flush()?;
+        std::fs::rename(&tmp, path)?;
+        Ok(())
     }
 }
 
@@ -406,6 +469,186 @@ fn lemma_gloss(value: &Value) -> Option<String> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// RAW single-token Slavic lemma extraction (issue #33, PR-1)
+//
+// A SEPARATE streaming pass from `extract_lemmas`. It drops the etymological-
+// evidence gate (no `proto.is_empty() && etymon.is_empty()` early-return) so it
+// keeps low-evidence dictionary words, and instead applies a QUALITY gate
+// (content POS + at least one real, non-form-of gloss). Output is the distinct
+// `RawSlavicCorpus`, which no benchmark/consensus/proto function accepts.
+// ---------------------------------------------------------------------------
+
+/// Stream the dump once and cache every single-token Slavic dictionary lemma that
+/// passes the quality gate, WITHOUT the evidence filter. See [`RawSlavicLemma`].
+pub fn extract_raw_slavic(dump: &Path, out: &Path) -> Result<()> {
+    if !dump.exists() {
+        anyhow::bail!("dump not found: {}", dump.display());
+    }
+    let file = File::open(dump).with_context(|| format!("open {}", dump.display()))?;
+    let reader = BufReader::with_capacity(8 * 1024 * 1024, file);
+
+    // Cheap substring prefilter: only fully parse lines whose top-level language
+    // is one of the Slavic codes, before the expensive JSON parse. The dump emits
+    // `"lang_code": "xx"` with a space after the colon (verified).
+    let markers: Vec<String> = RAW_SLAVIC_LANGS
+        .iter()
+        .map(|c| format!("\"lang_code\": \"{c}\""))
+        .collect();
+
+    let mut lemmas: Vec<RawSlavicLemma> = Vec::new();
+    let mut line_count: u64 = 0;
+    for line in reader.lines() {
+        let line = line?;
+        line_count += 1;
+        if !markers.iter().any(|m| line.contains(m.as_str())) {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(lemma) = raw_slavic_from_value(&value) {
+            lemmas.push(lemma);
+            if lemmas.len().is_multiple_of(20000) {
+                eprintln!(
+                    "  collected {} raw Slavic lemmas after {} lines",
+                    lemmas.len(),
+                    line_count
+                );
+            }
+        }
+    }
+
+    let corpus = RawSlavicCorpus { lemmas };
+    corpus.save(out)?;
+    println!(
+        "wrote {} ({} raw Slavic lemmas from {} lines)",
+        out.display(),
+        corpus.lemmas.len(),
+        line_count
+    );
+    Ok(())
+}
+
+/// Apply the RAW gate to one Wiktextract page, returning a [`RawSlavicLemma`] when
+/// it is a single-token Slavic content lemma with at least one real gloss.
+fn raw_slavic_from_value(value: &Value) -> Option<RawSlavicLemma> {
+    // Top-level language must be one of the Slavic codes.
+    let lang = value.get("lang_code").and_then(Value::as_str)?;
+    if !RAW_SLAVIC_LANGS.contains(&lang) {
+        return None;
+    }
+    // Real lemma page: a `word` plus non-empty `senses` (skips redirect rows).
+    let word = value.get("word").and_then(Value::as_str)?.trim().to_string();
+    let senses = value.get("senses").and_then(Value::as_array)?;
+    if senses.is_empty() {
+        return None;
+    }
+    // Single token: non-empty and no space.
+    if word.is_empty() || word.contains(' ') {
+        return None;
+    }
+    // Quality gate: content POS only (drop proper nouns/particles/etc.).
+    let raw_pos = value.get("pos").and_then(Value::as_str).unwrap_or("");
+    if !matches!(raw_pos, "noun" | "verb" | "adj" | "adv") {
+        return None;
+    }
+    // Quality gate: at least one real (non-form-of) gloss.
+    let glosses = real_glosses(senses, 4);
+    if glosses.is_empty() {
+        return None;
+    }
+    // Etymology: the English dump uses the SINGULAR `etymology_text`. Informational.
+    let etymology_text = value
+        .get("etymology_text")
+        .and_then(Value::as_str)
+        .map(|s| truncate_chars(s.trim(), 2600))
+        .unwrap_or_default();
+    // Cheaply reuse the evidence parsers; informational only (NOT benchmark-gated).
+    let proto = proto_ancestor(value).unwrap_or_default();
+    let etymon = if proto.is_empty() {
+        borrowed_etymon(value).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Some(RawSlavicLemma {
+        word,
+        lang: lang.to_string(),
+        pos: raw_pos.to_string(),
+        glosses,
+        etymology_text,
+        proto,
+        etymon,
+    })
+}
+
+/// Collect up to `cap` distinct real English glosses, skipping form-of /
+/// inflection / alternative-form / abbreviation senses. Returns empty if every
+/// sense is merely a pointer to another lemma.
+fn real_glosses(senses: &[Value], cap: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for sense in senses {
+        if is_form_of_sense(sense) {
+            continue;
+        }
+        let Some(gs) = sense.get("glosses").and_then(Value::as_array) else {
+            continue;
+        };
+        for g in gs.iter().filter_map(Value::as_str) {
+            let g = g.trim();
+            if g.is_empty() || gloss_marks_form_of(g) {
+                continue;
+            }
+            let g = truncate_chars(g, 200);
+            if !out.contains(&g) {
+                out.push(g);
+                if out.len() >= cap {
+                    return out;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// True when a sense is a form-of / inflection / alt-form / abbreviation pointer,
+/// per how wiktextract marks them: a populated `form_of`/`alt_of` field, or a
+/// form-of tag.
+fn is_form_of_sense(sense: &Value) -> bool {
+    let has_pointer = |field: &str| {
+        sense
+            .get(field)
+            .and_then(Value::as_array)
+            .is_some_and(|a| !a.is_empty())
+    };
+    if has_pointer("form_of") || has_pointer("alt_of") {
+        return true;
+    }
+    sense
+        .get("tags")
+        .and_then(Value::as_array)
+        .is_some_and(|tags| {
+            tags.iter().filter_map(Value::as_str).any(|t| {
+                matches!(
+                    t,
+                    "form-of" | "inflection-of" | "alt-of" | "alternative" | "abbreviation"
+                )
+            })
+        })
+}
+
+/// True when a gloss *text* announces itself as a form-of pointer (some
+/// wiktextract senses carry the marker only in the gloss, not the tags).
+fn gloss_marks_form_of(gloss: &str) -> bool {
+    let lc = gloss.to_lowercase();
+    lc.starts_with("form of ")
+        || lc.starts_with("inflection of ")
+        || lc.starts_with("alternative form of ")
+        || lc.starts_with("alternative spelling of ")
+        || lc.starts_with("abbreviation of ")
 }
 
 pub fn extract(dump: &Path, out: &Path) -> Result<()> {
@@ -754,5 +997,55 @@ mod tests {
         assert_eq!(proto_ancestor(&v), None);
         let v2 = json!({"etymology_templates":[{"name":"inh","args":{"2":"sla-pro","3":"*voda"}}]});
         assert_eq!(proto_ancestor(&v2).as_deref(), Some("*voda"));
+    }
+
+    #[test]
+    fn raw_slavic_keeps_low_evidence_lemma() {
+        use serde_json::json;
+        // Russian пластинка: no sla-pro/bor evidence (native `-ка` suffixation),
+        // so `extract_lemmas` drops it. The RAW path must keep it, skipping the
+        // leading form-of sense and taking the real "record, disc" gloss.
+        let v = json!({
+            "word": "пластинка",
+            "lang_code": "ru",
+            "pos": "noun",
+            "etymology_text": "пласти́на (plastína) + -ка (-ka)",
+            "senses": [
+                {"glosses": ["diminutive of пласти́на (plastína): plate"],
+                 "tags": ["diminutive", "form-of"],
+                 "form_of": [{"word": "пласти́на"}]},
+                {"glosses": ["record, disc"]},
+                {"glosses": ["blade, lamina"]}
+            ]
+        });
+        let lemma = raw_slavic_from_value(&v).expect("пластинка should be captured");
+        assert_eq!(lemma.word, "пластинка");
+        assert_eq!(lemma.lang, "ru");
+        assert_eq!(lemma.pos, "noun");
+        assert_eq!(lemma.glosses, vec!["record, disc", "blade, lamina"]);
+        assert_eq!(lemma.etymology_text, "пласти́на (plastína) + -ка (-ka)");
+    }
+
+    #[test]
+    fn raw_slavic_gate_rejects() {
+        use serde_json::json;
+        // Proper noun (pos "name") is dropped.
+        let name = json!({"word": "Москва", "lang_code": "ru", "pos": "name",
+                          "senses": [{"glosses": ["Moscow"]}]});
+        assert!(raw_slavic_from_value(&name).is_none());
+        // Non-Slavic language is dropped.
+        let en = json!({"word": "record", "lang_code": "en", "pos": "noun",
+                        "senses": [{"glosses": ["a record"]}]});
+        assert!(raw_slavic_from_value(&en).is_none());
+        // Multi-token is dropped.
+        let phrase = json!({"word": "по мере", "lang_code": "ru", "pos": "adv",
+                            "senses": [{"glosses": ["gradually"]}]});
+        assert!(raw_slavic_from_value(&phrase).is_none());
+        // Only form-of senses -> no real gloss -> dropped.
+        let only_form = json!({"word": "плаcтинки", "lang_code": "ru", "pos": "noun",
+                               "senses": [{"glosses": ["genitive singular of пластинка"],
+                                           "tags": ["form-of"],
+                                           "form_of": [{"word": "пластинка"}]}]});
+        assert!(raw_slavic_from_value(&only_form).is_none());
     }
 }
