@@ -2472,16 +2472,23 @@ fn case_rows() -> [(&'static str, IsvCase); 6] {
 fn noun_table(word: &str, gender: Option<crate::model::Gender>) -> String {
     // Build the whole paradigm once (issue #20) and index it — the same
     // NounParadigm the API records enumerate, so the table and the API cannot
-    // drift. clean_cell reproduces noun_cell_g byte-for-byte.
-    let forms = crate::forms::noun_paradigm_forms(word, gender);
+    // drift. clean_cell reproduces noun_cell_g byte-for-byte. If the build ever
+    // panics (inflect-eval asserts 0 panics over the official corpus), fall back
+    // to the per-cell getters, which degrade a panicking cell to "—" — keeping
+    // the old robustness for generated (non-official) cognate pages.
+    let forms = std::panic::catch_unwind(|| crate::forms::noun_paradigm_forms(word, gender)).ok();
+    let cell = |case, num| match &forms {
+        Some(f) => crate::forms::clean_cell(f.get(case, num)),
+        None => crate::forms::noun_cell_g(word, case, num, gender),
+    };
     let mut s = String::from("<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>Jednina</th><th>Množina</th></tr></thead><tbody>");
     for (label, case) in case_rows() {
         let _ = write!(
             s,
             "<tr><th>{}</th><td>{}</td><td>{}</td></tr>",
             label,
-            esc(&crate::forms::clean_cell(forms.get(case, IsvNumber::Singular))),
-            esc(&crate::forms::clean_cell(forms.get(case, IsvNumber::Plural))),
+            esc(&cell(case, IsvNumber::Singular)),
+            esc(&cell(case, IsvNumber::Plural)),
         );
     }
     s.push_str("</tbody></table>");
@@ -2490,19 +2497,21 @@ fn noun_table(word: &str, gender: Option<crate::model::Gender>) -> String {
 
 fn adj_table(word: &str) -> String {
     // Build the whole paradigm once (issue #20) and index it — same AdjParadigm
-    // as the API records. The four columns are exactly forms::ADJ_COLS.
-    let forms = ISV::adj_forms(word);
+    // as the API records. The four columns are exactly forms::ADJ_COLS. As in
+    // noun_table, a panicking build (none in the official corpus) falls back to
+    // the per-cell getters so generated cognate pages degrade to "—", not crash.
+    let forms = std::panic::catch_unwind(|| ISV::adj_forms(word)).ok();
     let header = "<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>";
     let number_block = |num: IsvNumber| {
         let mut s = String::new();
         for (label, case) in case_rows() {
             let _ = write!(s, "<tr><th>{label}</th>");
             for (_, g, a) in crate::forms::ADJ_COLS {
-                let _ = write!(
-                    s,
-                    "<td>{}</td>",
-                    esc(&crate::forms::clean_cell(forms.get(case, num, g, a)))
-                );
+                let c = match &forms {
+                    Some(f) => crate::forms::clean_cell(f.get(case, num, g, a)),
+                    None => crate::forms::adj_cell(word, case, num, g, a),
+                };
+                let _ = write!(s, "<td>{}</td>", esc(&c));
             }
             s.push_str("</tr>");
         }
