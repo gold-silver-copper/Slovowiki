@@ -2470,24 +2470,25 @@ fn case_rows() -> [(&'static str, IsvCase); 6] {
 }
 
 fn noun_table(word: &str, gender: Option<crate::model::Gender>) -> String {
+    // Build the whole paradigm once (issue #20) and index it — the same
+    // NounParadigm the API records enumerate, so the table and the API cannot
+    // drift. clean_cell reproduces noun_cell_g byte-for-byte. If the build ever
+    // panics (inflect-eval asserts 0 panics over the official corpus), fall back
+    // to the per-cell getters, which degrade a panicking cell to "—" — keeping
+    // the old robustness for generated (non-official) cognate pages.
+    let forms = std::panic::catch_unwind(|| crate::forms::noun_paradigm_forms(word, gender)).ok();
+    let cell = |case, num| match &forms {
+        Some(f) => crate::forms::clean_cell(f.get(case, num)),
+        None => crate::forms::noun_cell_g(word, case, num, gender),
+    };
     let mut s = String::from("<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>Jednina</th><th>Množina</th></tr></thead><tbody>");
     for (label, case) in case_rows() {
         let _ = write!(
             s,
             "<tr><th>{}</th><td>{}</td><td>{}</td></tr>",
             label,
-            esc(&crate::forms::noun_cell_g(
-                word,
-                case,
-                IsvNumber::Singular,
-                gender
-            )),
-            esc(&crate::forms::noun_cell_g(
-                word,
-                case,
-                IsvNumber::Plural,
-                gender
-            )),
+            esc(&cell(case, IsvNumber::Singular)),
+            esc(&cell(case, IsvNumber::Plural)),
         );
     }
     s.push_str("</tbody></table>");
@@ -2495,83 +2496,33 @@ fn noun_table(word: &str, gender: Option<crate::model::Gender>) -> String {
 }
 
 fn adj_table(word: &str) -> String {
-    let mut s = String::from(
-        "<h3>Jednina</h3><table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>",
-    );
-    for (label, case) in case_rows() {
-        let _ = write!(
-            s,
-            "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            label,
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Singular,
-                IsvGender::Masculine,
-                IsvAnimacy::Animate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Singular,
-                IsvGender::Masculine,
-                IsvAnimacy::Inanimate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Singular,
-                IsvGender::Feminine,
-                IsvAnimacy::Inanimate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Singular,
-                IsvGender::Neuter,
-                IsvAnimacy::Inanimate
-            )),
-        );
-    }
-    s.push_str("</tbody></table>");
-    s.push_str("<h3>Množina</h3><table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>");
-    for (label, case) in case_rows() {
-        let _ = write!(
-            s,
-            "<tr><th>{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            label,
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Plural,
-                IsvGender::Masculine,
-                IsvAnimacy::Animate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Plural,
-                IsvGender::Masculine,
-                IsvAnimacy::Inanimate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Plural,
-                IsvGender::Feminine,
-                IsvAnimacy::Inanimate
-            )),
-            esc(&crate::forms::adj_cell(
-                word,
-                case,
-                IsvNumber::Plural,
-                IsvGender::Neuter,
-                IsvAnimacy::Inanimate
-            )),
-        );
-    }
-    s.push_str("</tbody></table>");
-    s
+    // Build the whole paradigm once (issue #20) and index it — same AdjParadigm
+    // as the API records. The four columns are exactly forms::ADJ_COLS. As in
+    // noun_table, a panicking build (none in the official corpus) falls back to
+    // the per-cell getters so generated cognate pages degrade to "—", not crash.
+    let forms = std::panic::catch_unwind(|| ISV::adj_forms(word)).ok();
+    let header = "<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>";
+    let number_block = |num: IsvNumber| {
+        let mut s = String::new();
+        for (label, case) in case_rows() {
+            let _ = write!(s, "<tr><th>{label}</th>");
+            for (_, g, a) in crate::forms::ADJ_COLS {
+                let c = match &forms {
+                    Some(f) => crate::forms::clean_cell(f.get(case, num, g, a)),
+                    None => crate::forms::adj_cell(word, case, num, g, a),
+                };
+                let _ = write!(s, "<td>{}</td>", esc(&c));
+            }
+            s.push_str("</tr>");
+        }
+        s.push_str("</tbody></table>");
+        s
+    };
+    format!(
+        "<h3>Jednina</h3>{header}{}<h3>Množina</h3>{header}{}",
+        number_block(IsvNumber::Singular),
+        number_block(IsvNumber::Plural),
+    )
 }
 
 fn verb_table(word: &str, reflexive: bool) -> String {
@@ -2735,6 +2686,28 @@ pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                         "pl",
                     ));
                 }
+                // Full-corpus guard (issue #20): the paradigm-struct path that
+                // noun_table AND the API records now render from must equal the
+                // panic-guarded single-cell getters above, cell for cell, over
+                // every lemma — a build-time upgrade of the unit-scale
+                // noun_paradigm_roundtrip_matches_cells test.
+                let struct_ok = std::panic::catch_unwind(|| {
+                    let f = crate::forms::noun_paradigm_forms(bare, e.noun_traits.gender);
+                    let mut v = Vec::new();
+                    for (_, case) in case_rows() {
+                        v.push(crate::forms::clean_cell(f.get(case, IsvNumber::Singular)));
+                        v.push(crate::forms::clean_cell(f.get(case, IsvNumber::Plural)));
+                    }
+                    v
+                })
+                .ok()
+                .is_some_and(|v| {
+                    v.len() == cells.len() && v.iter().zip(&cells).all(|(a, (b, _))| a == b)
+                });
+                check(&mut inv, "noun table struct path = cell getter", struct_ok);
+                if !struct_ok && fail_sample.len() < 30 {
+                    fail_sample.push(format!("{bare}: noun struct/getter mismatch"));
+                }
                 let blanks = cells.iter().filter(|(c, _)| c == "—").count();
                 n_cells += cells.len();
                 n_blank += blanks;
@@ -2799,6 +2772,11 @@ pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 n_words += 1;
                 let mut blanks = 0usize;
                 let mut cnt = 0usize;
+                // Full-corpus guard (issue #20): the AdjParadigm path adj_table
+                // AND the API records render from, compared cell-for-cell to the
+                // panic-guarded getter over every lemma.
+                let struct_forms = std::panic::catch_unwind(|| ISV::adj_forms(bare)).ok();
+                let mut adj_struct_ok = struct_forms.is_some();
                 for (_, case) in case_rows() {
                     for (g, a) in [
                         (IsvGender::Masculine, IsvAnimacy::Animate),
@@ -2808,10 +2786,18 @@ pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                     ] {
                         for num in [IsvNumber::Singular, IsvNumber::Plural] {
                             let c = crate::forms::adj_cell(bare, case, num, g, a);
+                            if let Some(sf) = &struct_forms {
+                                adj_struct_ok &=
+                                    crate::forms::clean_cell(sf.get(case, num, g, a)) == c;
+                            }
                             cnt += 1;
                             blanks += (c == "—") as usize;
                         }
                     }
+                }
+                check(&mut inv, "adj table struct path = cell getter", adj_struct_ok);
+                if !adj_struct_ok && fail_sample.len() < 30 {
+                    fail_sample.push(format!("{bare}: adj struct/getter mismatch"));
                 }
                 n_cells += cnt;
                 n_blank += blanks;
