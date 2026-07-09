@@ -449,7 +449,7 @@ pub fn comparative(adj: &str) -> Option<(String, String)> {
         if let Some(root) = stem.strip_suffix(suf) {
             if root.chars().count() >= 3 {
                 let comp = format!("{root}ši");
-                let adv = format!("{}e", crate::phono::iotate_final(root));
+                let adv = format!("{}e", interslavic::phono::iotate_final(root));
                 return Some((comp, adv));
             }
             break;
@@ -458,8 +458,8 @@ pub fn comparative(adj: &str) -> Option<(String, String)> {
     // Regular: palatalize the seam (phono's shared table, incl. c→č), then
     // the FULL softness predicate decides -ejši vs -ějši — the old local
     // copy's soft set missed ń/ľ/ŕ/ć/đ and the digraphs (issue #15).
-    let pal = crate::phono::palatalize_final(stem);
-    let soft = crate::phono::is_soft(&pal);
+    let pal = interslavic::phono::palatalize_final(stem);
+    let soft = interslavic::phono::is_soft(&pal);
     let (adj_suf, adv_suf) = if soft {
         ("ejši", "eje")
     } else {
