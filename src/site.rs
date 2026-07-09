@@ -1245,7 +1245,6 @@ fn family_block<T: FamilyEntry>(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Committee-authored columns from the official dictionary, threaded to matched
 /// entry pages for verbatim, attributed *display*. This is presentation-only: it
 /// never feeds the generator, consensus vote, evidence, or home-list ranking
