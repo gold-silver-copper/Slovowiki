@@ -271,6 +271,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             String,
             crate::model::Pos,
             Option<crate::model::Gender>,
+            OfficialDisplay,
         ),
     > = std::collections::HashMap::new();
     for e in &official_entries {
@@ -286,6 +287,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                     e.english.clone(),
                     e.pos,
                     e.noun_traits.gender,
+                    OfficialDisplay::from_entry(e),
                 )
             });
     }
@@ -349,7 +351,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             g.candidates.iter().take(5).enumerate().find_map(|(i, c)| {
                 official_map
                     .get(&crate::orthography::to_standard(&c.form.to_lowercase()))
-                    .map(|(isv, en, _, _)| (i + 1, isv.clone(), en.clone()))
+                    .map(|(isv, en, _, _, _)| (i + 1, isv.clone(), en.clone()))
             });
         for c in g.candidates.iter().take(5) {
             covered.insert(crate::orthography::to_standard(&c.form.to_lowercase()));
@@ -668,7 +670,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             Some((_, isv, _)) => {
                 let pos = official_map
                     .get(&crate::orthography::to_standard(&isv.to_lowercase()))
-                    .map(|(_, _, pos, _)| *pos)
+                    .map(|(_, _, pos, _, _)| *pos)
                     .unwrap_or(p.g.set.pos);
                 derivation_block(isv, pos, &isv_to_id, true)
             }
@@ -683,11 +685,11 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             &curation,
             &build_meta,
         );
-        let official_pg = p.matched.as_ref().and_then(|(_, isv, _)| {
-            official_map
-                .get(&crate::orthography::to_standard(&isv.to_lowercase()))
-                .map(|(_, _, pos, gender)| (*pos, *gender))
+        let official_lookup = p.matched.as_ref().and_then(|(_, isv, _)| {
+            official_map.get(&crate::orthography::to_standard(&isv.to_lowercase()))
         });
+        let official_pg = official_lookup.map(|(_, _, pos, gender, _)| (*pos, *gender));
+        let official_disp = official_lookup.map(|(_, _, _, _, disp)| disp);
         let html = corpus_entry_page(
             p.id,
             &p.g,
@@ -696,6 +698,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 .as_ref()
                 .map(|(r, isv, en)| (*r, isv.as_str(), en.as_str())),
             official_pg,
+            official_disp,
             &family,
             enrich.as_ref(),
             Some(&xref),
@@ -954,7 +957,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         let (pos, gender) = match &p.matched {
             Some((_, isv, _)) => official_map
                 .get(&crate::orthography::to_standard(&isv.to_lowercase()))
-                .map(|(_, _, pos, gender)| (*pos, *gender))
+                .map(|(_, _, pos, gender, _)| (*pos, *gender))
                 .unwrap_or((p.g.set.pos, None)),
             None => (p.g.set.pos, None),
         };
@@ -1242,6 +1245,162 @@ fn family_block<T: FamilyEntry>(
     )
 }
 
+/// Committee-authored columns from the official dictionary, threaded to matched
+/// entry pages for verbatim, attributed *display*. This is presentation-only: it
+/// never feeds the generator, consensus vote, evidence, or home-list ranking
+/// (those continue to read `OfficialEntry.cells`/`.frequency` directly).
+#[derive(Clone, Default)]
+struct OfficialDisplay {
+    cells: std::collections::HashMap<String, String>,
+    de: String,
+    nl: String,
+    eo: String,
+    frequency: Option<f32>,
+    intelligibility: String,
+    using_example: String,
+}
+
+impl OfficialDisplay {
+    fn from_entry(e: &OfficialEntry) -> Self {
+        OfficialDisplay {
+            cells: e.cells.clone(),
+            de: e.de.clone(),
+            nl: e.nl.clone(),
+            eo: e.eo.clone(),
+            frequency: e.frequency,
+            intelligibility: e.intelligibility.clone(),
+            using_example: e.using_example.clone(),
+        }
+    }
+}
+
+/// Strip a single leading `!` committee marker (e.g. `!Baum` → `Baum`).
+fn strip_official_marker(s: &str) -> &str {
+    let s = s.trim();
+    s.strip_prefix('!').unwrap_or(s).trim()
+}
+
+/// A compact frequency chip for the headword line (verbatim committee value).
+/// Empty when the row carries no frequency. Display-only.
+fn official_frequency_chip(freq: Option<f32>) -> String {
+    match freq {
+        Some(f) => format!(
+            "<div class='headmeta'><span class='pill info' title='Čęstota v oficialnom slovniku (interslavic-dictionary.com)'>Čęstota {f:.0}</span></div>"
+        ),
+        None => String::new(),
+    }
+}
+
+/// The committee's ISV→language reference translations, rendered as a plain
+/// wikitable in a `Prěvody` section — deliberately distinct from the branch-
+/// grouped "Srodne slova" cognate *evidence*. Verbatim; the leading `!` marker
+/// is stripped consistently. Display-only.
+fn official_translations_block(cells: &std::collections::HashMap<String, String>, de: &str, nl: &str, eo: &str) -> String {
+    let mut rows = String::new();
+    // 12 Slavic columns in official CSV/branch order.
+    for li in crate::lang::official_slavic_cols() {
+        if let Some(raw) = cells.get(li.code) {
+            let val = strip_official_marker(raw);
+            if val.is_empty() {
+                continue;
+            }
+            let _ = write!(
+                rows,
+                "<tr><td class='lc'>{}</td><td>{}</td></tr>",
+                esc(li.name),
+                esc(val)
+            );
+        }
+    }
+    // Non-Slavic reference languages have no LangInfo entry — label them here.
+    for (name, raw) in [("němečsky", de), ("holandsky", nl), ("esperanto", eo)] {
+        let val = strip_official_marker(raw);
+        if val.is_empty() {
+            continue;
+        }
+        let _ = write!(
+            rows,
+            "<tr><td class='lc'>{}</td><td>{}</td></tr>",
+            esc(name),
+            esc(val)
+        );
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<section><h2 id='prevody'>Prěvody</h2>\
+         <p class='muted'>Oficialne prěvody komiteta — ne etimologičny dokaz.</p>\
+         <table class='wikitable translations-table'><tbody>{rows}</tbody></table>\
+         <p class='muted attr-official'>Oficialne danne: interslavic-dictionary.com</p></section>"
+    )
+}
+
+/// The committee's per-language mutual-intelligibility ratings as a `.chips` row
+/// of small language pills. Skipped for the bare `!` placeholder / empty value.
+/// Display-only.
+fn official_intelligibility_strip(intel: &str) -> String {
+    let intel = intel.trim();
+    if intel.is_empty() || intel == "!" {
+        return String::new();
+    }
+    let mut chips = String::new();
+    for tok in intel.split_whitespace() {
+        let sign = match tok.chars().last() {
+            Some(c @ ('+' | '~' | '-')) => c,
+            _ => continue,
+        };
+        let code = &tok[..tok.len() - sign.len_utf8()];
+        if code.is_empty() {
+            continue;
+        }
+        let cls = match sign {
+            '+' => "ok",
+            '-' => "bad",
+            _ => "",
+        };
+        let _ = write!(
+            chips,
+            "<span class='pill {cls}' title='{}'>{} {}</span>",
+            esc(crate::lang::lang_name(code)),
+            esc(code),
+            sign
+        );
+    }
+    if chips.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<section><h2 id='razumlivost'>Vzajemna razumlivosť</h2>\
+         <div class='chips'>{chips}</div>\
+         <p class='muted attr-official'>Oficialne danne: interslavic-dictionary.com</p></section>"
+    )
+}
+
+/// The committee's verbatim example sentence (rare — ~96 entries). Empty when
+/// absent. Display-only.
+fn official_example_block(ex: &str) -> String {
+    let ex = ex.trim();
+    if ex.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<section><h2 id='primer'>Priměr</h2>\
+         <blockquote class='example-official'>{}</blockquote>\
+         <p class='muted attr-official'>Oficialny priměr: interslavic-dictionary.com</p></section>",
+        esc(ex)
+    )
+}
+
+/// The full committee display cluster (translations + intelligibility + example)
+/// for the entry-main flow. Each sub-block self-omits when its column is empty.
+fn official_display_sections(o: &OfficialDisplay) -> String {
+    let mut s = official_translations_block(&o.cells, &o.de, &o.nl, &o.eo);
+    s.push_str(&official_intelligibility_strip(&o.intelligibility));
+    s.push_str(&official_example_block(&o.using_example));
+    s
+}
+
 #[allow(clippy::too_many_arguments)]
 fn corpus_entry_page(
     id: usize,
@@ -1252,6 +1411,9 @@ fn corpus_entry_page(
     // official lemma (the form-only match can cross POS; the inflection
     // table must use the official grammar, same as the API records).
     official_pg: Option<(crate::model::Pos, Option<crate::model::Gender>)>,
+    // Committee-authored display columns for a matched official lemma (verbatim,
+    // attributed, display-only — never feeds generation/ranking).
+    official_disp: Option<&OfficialDisplay>,
     family: &str,
     enrich: Option<&crate::enrich::EnrichIndex>,
     xref: Option<&crate::enrich::Xref>,
@@ -1326,6 +1488,10 @@ fn corpus_entry_page(
         official_note
     );
     let entry_card = entry_infobox(meta, &info_rows);
+    let freq_chip = official_disp
+        .map(|o| official_frequency_chip(o.frequency))
+        .unwrap_or_default();
+    let official_sections = official_disp.map(official_display_sections).unwrap_or_default();
     let cognates = cognate_block(g, enrich);
     let enrich_members: Vec<(String, String)> = g
         .set
@@ -1350,9 +1516,10 @@ fn corpus_entry_page(
            {wiki_top}\
            <div class='entry-grid'>\
              <div class='entry-main'>\
-               <h1 class='page-title firstHeading'>{headword}</h1>\
+               <h1 class='page-title firstHeading'>{headword}</h1>{freq_chip}\
                {etymology}{native_conn}\
                <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}<p class='muted'><a href='../forms.html?q={forms_q}'>Vse eksportovane formy togo slova (obratny indeks) →</a></p></section>\
+               {official_sections}\
                {synonyms}{word_formation}\
                <section><h2 id='cognaty'>Srodne slova — {nlangs} językov</h2>{cognates}</section>\
                <section><h2 id='sled'>Sled pravil</h2>{trace}</section>\
@@ -1420,14 +1587,18 @@ fn official_only_page(
     );
     let entry_card = entry_infobox(meta, &info_rows);
     let word_formation = word_formation_block(derivation, "");
+    let freq_chip = official_frequency_chip(e.frequency);
+    let official_sections =
+        official_display_sections(&OfficialDisplay::from_entry(e));
     let body = format!(
         "<article class='entry entry-with-rail'>\
            {wiki_top}\
            <div class='entry-grid'>\
              <div class='entry-main'>\
-               <h1 class='page-title firstHeading'>{isv}</h1>\
+               <h1 class='page-title firstHeading'>{isv}</h1>{freq_chip}\
                {etymology}{native_conn}\
                <section><h2 id='pregibanje'>Prěgibanje</h2>{inflection}<p class='muted'><a href='../forms.html?q={forms_q}'>Vse eksportovane formy togo slova (obratny indeks) →</a></p></section>\
+               {official_sections}\
                {synonyms}{word_formation}\
                <section><h2 id='cognaty'>Srodne slova</h2>{cog}</section>\
                {wiki_bottom}\
@@ -5205,6 +5376,9 @@ h3,h4{font-family:Georgia,'Linux Libertine','Times New Roman',serif;font-weight:
 .wikitable th,.wikitable thead th{background:var(--th);font-weight:bold}
 .inflection-table th{white-space:nowrap}
 .compact-table td.lc{color:var(--muted);white-space:nowrap}
+.translations-table td.lc{color:var(--muted);white-space:nowrap;width:9em}
+.example-official{border-left:3px solid var(--border);background:var(--page);padding:.45rem .75rem;margin:.5rem 0;font-style:italic}
+.attr-official{font-size:.82em;margin:.35rem 0 0}
 .top-candidate{background:#eafaef}
 tr:target{background:#fff3bf;outline:2px solid #f0c000}
 .score{font-variant-numeric:tabular-nums}
@@ -5237,6 +5411,7 @@ tr:target{background:#fff3bf;outline:2px solid #f0c000}
 .badge{display:inline-block;background:var(--th);border:1px solid var(--line);border-radius:2px;padding:.05rem .35rem;font-size:.85em;color:var(--text)}
 .pill{display:inline-block;border:1px solid var(--line);border-radius:2px;padding:.03rem .4rem;font-size:.8em;background:var(--th);white-space:nowrap}
 .pill.ok{background:#d5f4d5;border-color:#9cce9c}
+.pill.bad{background:#f6dada;border-color:#e0a0a0}
 .pill.warn{background:#fbeecb;border-color:#e3cd86}
 .pill.info,.pill.src-consensus{background:#dbe8fb;border-color:#a7c4ee}
 .pill.src-proto{background:#ece3fb;border-color:#c1abef}

@@ -29,8 +29,17 @@ pub struct OfficialEntry {
     /// Raw per-language cells keyed by language code.
     pub cells: HashMap<String, String>,
     pub frequency: Option<f32>,
-    /// German/Dutch/Esperanto cells (used only for internationalism hints).
+    /// German cell (committee reference translation).
     pub de: String,
+    /// Dutch cell (committee reference translation).
+    pub nl: String,
+    /// Esperanto cell (committee reference translation).
+    pub eo: String,
+    /// Per-language mutual-intelligibility strip, e.g. `be~ bg+ cs~ …`; the bare
+    /// `!` placeholder means "no data".
+    pub intelligibility: String,
+    /// Verbatim committee example sentence (rare; empty when absent).
+    pub using_example: String,
 }
 
 impl OfficialEntry {
@@ -183,6 +192,10 @@ pub fn load(path: &Path) -> Result<Vec<OfficialEntry>> {
             same_in: get(&rec, "sameinlanguages"),
             genesis: get(&rec, "genesis"),
             de: get(&rec, "de"),
+            nl: get(&rec, "nl"),
+            eo: get(&rec, "eo"),
+            intelligibility: get(&rec, "intelligibility"),
+            using_example: get(&rec, "using_example"),
             cells,
             frequency,
             isv,
