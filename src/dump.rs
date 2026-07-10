@@ -58,6 +58,59 @@ pub fn write_gz(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Cache schema stamps
+//
+// The committed caches used to load through bare serde with `#[serde(default)]`
+// fields, so a cache built by an OLDER extractor deserialized fine and any
+// newer field silently came back empty (empty categories, missing quotations,
+// …) — nothing failed until a reader noticed data was missing. Each cache now
+// carries a `schema` stamp checked at load time against the constant declared
+// next to its struct.
+//
+// The rule: when an extractor change alters WHAT goes into a cache (a new
+// field, a changed filter or normalization), bump that cache's
+// `*_CACHE_SCHEMA` constant in the same commit. Every loader — local runs, CI
+// test builds, the Pages deploy — then refuses the stale committed cache with
+// the exact `make` target to re-run, instead of shipping silently degraded
+// data. Caches stamped before this scheme deserialize as schema 0, which is
+// deliberately the initial expected value: the caches committed when the
+// stamps were introduced WERE current, so no restamp-only re-commit of ~50 MB
+// of gzip was needed.
+// ---------------------------------------------------------------------------
+
+/// Load a cache that is allowed to be absent: `None` when the file doesn't
+/// exist (callers degrade with their own notice), but a file that EXISTS and
+/// fails to load — corrupt, or refused by its schema stamp — is a hard error.
+/// Callers must NOT collapse that error to `None` (`.ok()` /
+/// `.unwrap_or_default()`), or a stale cache silently degrades the output,
+/// which is exactly what the schema stamps exist to prevent.
+pub fn load_optional<T>(path: &Path, load: impl FnOnce(&Path) -> Result<T>) -> Result<Option<T>> {
+    if path.exists() {
+        load(path).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// Loader-side check for the cache schema stamps above. `regen` is the exact
+/// `make` target that rebuilds the cache.
+pub(crate) fn check_cache_schema(
+    kind: &str,
+    path: &Path,
+    found: u32,
+    expected: u32,
+    regen: &str,
+) -> Result<()> {
+    anyhow::ensure!(
+        found == expected,
+        "stale {kind} cache {}: built with schema {found} but this binary expects {expected} — \
+         regenerate it with `{regen}` and commit the result",
+        path.display()
+    );
+    Ok(())
+}
+
 /// One Proto-Slavic reconstruction, distilled from a `sla-pro` page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtoEntry {
@@ -72,8 +125,16 @@ pub struct ProtoEntry {
     pub stem_class: Option<String>,
 }
 
+/// Bump when `extract-proto` changes what goes into [`ProtoCache`] (fields,
+/// filters, normalization); see the cache-schema-stamp note above.
+pub const PROTO_CACHE_SCHEMA: u32 = 0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtoCache {
+    /// Extractor schema stamp ([`PROTO_CACHE_SCHEMA`]); pre-stamp caches
+    /// deserialize as 0.
+    #[serde(default)]
+    pub schema: u32,
     pub source: String,
     pub entry_count: usize,
     pub entries: Vec<ProtoEntry>,
@@ -144,8 +205,16 @@ impl LemmaEntry {
     }
 }
 
+/// Bump when `extract-lemmas` changes what goes into [`LemmaCorpus`] (fields,
+/// filters, normalization); see the cache-schema-stamp note above.
+pub const LEMMA_CACHE_SCHEMA: u32 = 0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LemmaCorpus {
+    /// Extractor schema stamp ([`LEMMA_CACHE_SCHEMA`]); pre-stamp caches
+    /// deserialize as 0.
+    #[serde(default)]
+    pub schema: u32,
     pub source: String,
     pub entry_count: usize,
     pub entries: Vec<LemmaEntry>,
@@ -155,7 +224,22 @@ impl LemmaCorpus {
     pub fn load(path: &Path) -> Result<Self> {
         let bytes =
             read_maybe_gz(path).with_context(|| format!("open lemma corpus {}", path.display()))?;
-        serde_json::from_slice(&bytes).context("parse lemma corpus")
+        let corpus: Self = serde_json::from_slice(&bytes).context("parse lemma corpus")?;
+        check_cache_schema(
+            "lemma",
+            path,
+            corpus.schema,
+            LEMMA_CACHE_SCHEMA,
+            "make extract-lemmas",
+        )?;
+        anyhow::ensure!(
+            corpus.entry_count == corpus.entries.len(),
+            "corrupt lemma cache {}: entry_count {} but {} entries",
+            path.display(),
+            corpus.entry_count,
+            corpus.entries.len()
+        );
+        Ok(corpus)
     }
 
     /// Atomic gzip write (tmp file + rename). Decompressed bytes are the exact
@@ -187,10 +271,18 @@ pub struct RawSlavicLemma {
     pub etymon: String,
 }
 
+/// Bump when `extract-raw-slavic` changes what goes into [`RawSlavicCorpus`]
+/// (fields, filters, normalization); see the cache-schema-stamp note above.
+pub const RAW_CACHE_SCHEMA: u32 = 0;
+
 /// The RAW-path corpus. Distinct from [`LemmaCorpus`] (which the benchmark reads)
 /// so the two can never be confused at a call site.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawSlavicCorpus {
+    /// Extractor schema stamp ([`RAW_CACHE_SCHEMA`]); pre-stamp caches
+    /// deserialize as 0.
+    #[serde(default)]
+    pub schema: u32,
     pub lemmas: Vec<RawSlavicLemma>,
 }
 
@@ -198,7 +290,15 @@ impl RawSlavicCorpus {
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = read_maybe_gz(path)
             .with_context(|| format!("open raw slavic corpus {}", path.display()))?;
-        serde_json::from_slice(&bytes).context("parse raw slavic corpus")
+        let corpus: Self = serde_json::from_slice(&bytes).context("parse raw slavic corpus")?;
+        check_cache_schema(
+            "raw-slavic",
+            path,
+            corpus.schema,
+            RAW_CACHE_SCHEMA,
+            "make extract-raw-slavic",
+        )?;
+        Ok(corpus)
     }
 
     /// Atomic gzip write (tmp file + rename), mirroring [`extract_lemmas`]'s save.
@@ -309,6 +409,7 @@ pub fn extract_lemmas(dump: &Path, out: &Path) -> Result<()> {
     }
 
     let corpus = LemmaCorpus {
+        schema: LEMMA_CACHE_SCHEMA,
         source: dump.display().to_string(),
         entry_count: entries.len(),
         entries,
@@ -646,7 +747,10 @@ pub fn extract_raw_slavic(dump: &Path, out: &Path) -> Result<()> {
     }
     stats.lines_scanned = line_count;
 
-    let corpus = RawSlavicCorpus { lemmas };
+    let corpus = RawSlavicCorpus {
+        schema: RAW_CACHE_SCHEMA,
+        lemmas,
+    };
     corpus.save(out)?;
     let cov_path = out.with_file_name(RAW_COVERAGE_FILE);
     stats.save(&cov_path)?;
@@ -857,6 +961,7 @@ pub fn extract(dump: &Path, out: &Path) -> Result<()> {
     }
 
     let cache = ProtoCache {
+        schema: PROTO_CACHE_SCHEMA,
         source: dump.display().to_string(),
         entry_count: entries.len(),
         entries,
@@ -1010,14 +1115,29 @@ impl ProtoIndex {
         let bytes =
             read_maybe_gz(path).with_context(|| format!("open proto cache {}", path.display()))?;
         let cache: ProtoCache = serde_json::from_slice(&bytes).context("parse proto cache")?;
+        check_cache_schema(
+            "proto",
+            path,
+            cache.schema,
+            PROTO_CACHE_SCHEMA,
+            "make extract-proto",
+        )?;
+        anyhow::ensure!(
+            cache.entry_count == cache.entries.len(),
+            "corrupt proto cache {}: entry_count {} but {} entries",
+            path.display(),
+            cache.entry_count,
+            cache.entries.len()
+        );
         let mut idx = Self::build(cache.entries);
         // Attach Wiktionary's explicit (lang, lemma) -> ancestor etymology if the
-        // lemma corpus is available next to the proto cache.
-        let lemma_path = Path::new(crate::DEFAULT_LEMMA_CACHE);
-        if lemma_path.exists() {
-            if let Ok(corpus) = LemmaCorpus::load(lemma_path) {
-                idx.attach_etymology(&corpus);
-            }
+        // lemma corpus is available next to the proto cache. Absent → skip; a
+        // corpus that exists but fails to load is a hard error (a silently
+        // missing etymology map would degrade the linker with no visible cause).
+        if let Some(corpus) =
+            load_optional(Path::new(crate::DEFAULT_LEMMA_CACHE), LemmaCorpus::load)?
+        {
+            idx.attach_etymology(&corpus);
         }
         Ok(idx)
     }
@@ -1117,6 +1237,35 @@ pub fn gloss_tokens(gloss: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// Pins the cache-schema-stamp contract: a pre-stamp cache (no `schema`
+    /// field) deserializes as 0 — the initial expected value, so the caches
+    /// committed when stamps were introduced keep loading — while a cache
+    /// stamped by a different extractor version is refused with the exact
+    /// `make` target to re-run.
+    #[test]
+    fn cache_schema_guard_accepts_legacy_and_rejects_stale() {
+        let legacy: LemmaCorpus =
+            serde_json::from_str(r#"{"source":"","entry_count":0,"entries":[]}"#).unwrap();
+        assert_eq!(legacy.schema, LEMMA_CACHE_SCHEMA);
+        check_cache_schema(
+            "lemma",
+            Path::new("data/x.json"),
+            legacy.schema,
+            LEMMA_CACHE_SCHEMA,
+            "make extract-lemmas",
+        )
+        .unwrap();
+        let err = check_cache_schema(
+            "lemma",
+            Path::new("data/x.json"),
+            LEMMA_CACHE_SCHEMA + 1,
+            LEMMA_CACHE_SCHEMA,
+            "make extract-lemmas",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("make extract-lemmas"), "{err}");
+    }
+
     #[test]
     fn explicit_etymology_lookup() {
         let e = ProtoEntry {
@@ -1130,6 +1279,7 @@ mod tests {
         };
         let mut idx = ProtoIndex::build(vec![e]);
         let corpus = LemmaCorpus {
+            schema: LEMMA_CACHE_SCHEMA,
             source: String::new(),
             entry_count: 1,
             entries: vec![LemmaEntry {

@@ -148,33 +148,42 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
         }
     }
     if let Some(path) = novel_words_tsv {
-        if let Ok(tsv) = std::fs::read_to_string(path) {
-            for line in tsv.lines().skip(1) {
-                let cols: Vec<&str> = line.split('\t').collect();
-                if cols.len() < 8 {
-                    continue;
-                }
-                let (form, pos, prob, gloss) = (cols[0], cols[1], cols[2], cols[7]);
-                let pos: &'static str = match pos {
-                    "noun" => "noun",
-                    "verb" => "verb",
-                    "adj" => "adj",
-                    "adv" => "adv",
-                    "proper_noun" => "proper_noun",
-                    _ => "other",
-                };
-                sink.add(
-                    form,
-                    "",
-                    form,
-                    0,
-                    pos,
-                    "lemma",
-                    "generated",
-                    prob.parse::<f64>().ok(),
-                    gloss,
-                );
+        // The proposals file is a committed export artifact (`export` refreshes
+        // it). Degrade without it, but say so — otherwise generated words are
+        // silently reported as unknown and the caller can't tell why.
+        let tsv = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!(
+                "warning: no generated-word proposals ({}: {e}) — run `export` to regenerate; \
+                 generated words will be classified as unknown",
+                path.display()
+            );
+            String::new()
+        });
+        for line in tsv.lines().skip(1) {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() < 8 {
+                continue;
             }
+            let (form, pos, prob, gloss) = (cols[0], cols[1], cols[2], cols[7]);
+            let pos: &'static str = match pos {
+                "noun" => "noun",
+                "verb" => "verb",
+                "adj" => "adj",
+                "adv" => "adv",
+                "proper_noun" => "proper_noun",
+                _ => "other",
+            };
+            sink.add(
+                form,
+                "",
+                form,
+                0,
+                pos,
+                "lemma",
+                "generated",
+                prob.parse::<f64>().ok(),
+                gloss,
+            );
         }
     }
     let records = sink.into_records();

@@ -51,11 +51,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
     let overrides = Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
     let cfg = ConsensusConfig::production();
     let proto_path = Path::new(crate::DEFAULT_PROTO_CACHE);
-    let proto_index = if proto_path.exists() {
-        crate::dump::ProtoIndex::load(proto_path).ok()
-    } else {
-        None
-    };
+    let proto_index = crate::dump::load_optional(proto_path, crate::dump::ProtoIndex::load)?;
     let proto = proto_index.as_ref();
     if proto.is_some() {
         println!("Using Proto-Slavic cache for reconstruction-derived forms.");
@@ -234,7 +230,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
 /// Generate the static site from the Wiktionary cognate-set corpus. Every set of
 /// etymologically-connected Slavic lemmas becomes one Interslavic word, with
 /// confidence scaling by how many languages/branches attest it.
-pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
+pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -> Result<()> {
     install_quiet_inflection_hook();
     let corpus = crate::dump::LemmaCorpus::load(lemmas_path)?;
     let cfg = ConsensusConfig::production();
@@ -252,7 +248,11 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // this map.
     // Native-Wiktionary enrichment (RU/PL/CS etymology, senses, semantic links),
     // if the cache has been built. Display-only; generation never reads it.
-    let enrich = crate::enrich::EnrichIndex::load(Path::new(crate::DEFAULT_ENRICH_CACHE)).ok();
+    // Absent → degrade with a notice; present-but-stale/corrupt → hard error.
+    let enrich = crate::dump::load_optional(
+        Path::new(crate::DEFAULT_ENRICH_CACHE),
+        crate::enrich::EnrichIndex::load,
+    )?;
     if let Some(e) = &enrich {
         println!(
             "Loaded {} native-Wiktionary enrichment entries (RU/PL/CS).",
@@ -262,7 +262,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         println!("(no enrichment cache — run extract-enrich for native etymology/links)");
     }
 
-    let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap_or_default();
+    let official_entries = official::load(official_path)?;
     #[allow(clippy::type_complexity)]
     let mut official_map: std::collections::HashMap<
         String,
@@ -761,22 +761,30 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
         }) {
             collect_source_aliases(official_cell_pairs(e), &mut aliases, &mut alias_seen);
         }
+        // search.json row schema — one 13-element positional array per entry,
+        // emitted identically by THREE loops (generated / official-only / raw)
+        // and read by SEARCH_JS + the random-page script. Keep all five sides
+        // in lock-step:
+        //   0 id · 1 display · 2 gloss (truncated 70) · 3 pos code ·
+        //   4 status O/N/R · 5 confidence V/S/N · 6 keys [[key,rank],…]
+        //   (rank 1-5 = candidate deep-link anchor, 6 = gloss-token sentinel,
+        //   no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
+        //   10 quality label · 11 proto ancestor · 12 source aliases
+        //   [[lang,word,[folds]],…] (issue #31).
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2},{},{},{},{},{},{},{},{}]",
+            "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
             p.id,
             json_str(&p.display),
             json_str(&truncate(&p.g.set.gloss, 70)),
             json_str(p.g.set.pos.code()),
             json_str(if p.matched.is_some() { "O" } else { "N" }),
             json_str(conf_letter(p.g.confidence)),
-            p.g.score,
             keys_json(&keys),
             p.g.n_langs,
             p.g.n_branches,
             if p.g.set.borrowed { 1 } else { 0 },
             json_str(quality_label(meta)),
-            json_str(&meta.first),
             json_str(&meta.ancestor),
             source_aliases_json(&aliases),
         );
@@ -846,22 +854,21 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
             search.push_str(",\n");
         }
         first_search = false;
+        // Same 13-element row schema as the generated loop above.
         let _ = write!(
             search,
-            "[{},{},{},{},{},{},{:.2},{},{},{},{},{},{},{},{}]",
+            "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
             oid,
             json_str(isv),
             json_str(&truncate(&e.english, 70)),
             json_str(e.pos.code()),
             json_str("O"),
             json_str("V"),
-            1.0,
             keys_json(&keys),
             meta.n_langs,
             meta.n_branches,
             if meta.borrowed { 1 } else { 0 },
             json_str(quality_label(meta)),
-            json_str(&meta.first),
             json_str(&meta.ancestor),
             source_aliases_json(&aliases),
         );
@@ -889,8 +896,11 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // native RU/PL/CS merge is a later PR. Skipped gracefully when the cache is
     // absent, so a checkout without the 68 MB cache still exports cleanly.
     let (mut raw_rendered, mut raw_deduped) = (0usize, 0usize);
-    match crate::dump::RawSlavicCorpus::load(Path::new(crate::DEFAULT_RAW_LEMMA_CACHE)) {
-        Ok(raw_corpus) => {
+    match crate::dump::load_optional(
+        Path::new(crate::DEFAULT_RAW_LEMMA_CACHE),
+        crate::dump::RawSlavicCorpus::load,
+    )? {
+        Some(raw_corpus) => {
             // Cross-lingual "same meaning" index (reverse gloss links): every raw
             // + benchmark lemma's English gloss tokens -> its (lang, word), so each
             // raw page can show the words for its meaning(s) in other Slavic
@@ -958,10 +968,11 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 );
                 std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
-                // Search row (schema 2, 15 elements). Status char 'R'; the folds
-                // of the display headword are keys; e[14] carries the verbatim
-                // attested spelling (Cyrillic пластинка) + its Latin fold so a
-                // query in either script finds the page via the client aliasMatch.
+                // Search row (13 elements; schema documented at the generated
+                // loop). Status char 'R'; the folds of the display headword are
+                // keys; e[12] carries the verbatim attested spelling (Cyrillic
+                // пластинка) + its Latin fold so a query in either script finds
+                // the page via the client aliasMatch.
                 let mut keys: Vec<(String, usize)> = Vec::new();
                 let disp_lower = display.to_lowercase();
                 for k in [
@@ -987,22 +998,21 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                     search.push_str(",\n");
                 }
                 first_search = false;
+                // Same 13-element row schema as the generated loop above.
                 let _ = write!(
                     search,
-                    "[{},{},{},{},{},{},{:.2},{},{},{},{},{},{},{},{}]",
+                    "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
                     id,
                     json_str(&display),
                     json_str(&truncate(&gloss, 70)),
                     json_str(&lemma.pos),
                     json_str("R"),
                     json_str("N"),
-                    0.0,
                     keys_json(&keys),
                     1,
                     1,
                     0,
                     json_str(quality_label(&meta)),
-                    json_str(&meta.first),
                     json_str(&meta.ancestor),
                     source_aliases_json(&aliases),
                 );
@@ -1012,7 +1022,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
                 "wrote {raw_rendered} raw Wiktionary attestation pages (site-only, low-evidence; {raw_deduped} deduped against generated/raw pages)."
             );
         }
-        Err(_) => {
+        None => {
             println!(
                 "(no {} — skipping raw Wiktionary attestation pages; run extract-raw-slavic to build it)",
                 crate::DEFAULT_RAW_LEMMA_CACHE
@@ -1034,7 +1044,7 @@ pub fn export_corpus(lemmas_path: &Path, out_dir: &Path) -> Result<()> {
     // at the operating points measured there on the holdout split:
     // propose = p ≥ 0.6 (71.8% precision), review = p ≥ 0.3 (61.7% precision,
     // 88.9% recall), below = not listed.
-    let calibration = crate::calibrate::Calibration::load(Path::new(crate::calibrate::PATH));
+    let calibration = crate::calibrate::Calibration::load(Path::new(crate::calibrate::PATH))?;
     if calibration.is_none() {
         println!(
             "(no {} — run `evaluate` to fit the calibrator; novel-word probabilities fall back to raw scores)",
@@ -1634,7 +1644,8 @@ pub fn run_coverage(out: &Path) -> Result<()> {
         )
     })?;
     let cov_stats_path = raw_path.with_file_name(crate::dump::RAW_COVERAGE_FILE);
-    let cov_stats = crate::dump::RawCoverageStats::load(&cov_stats_path).ok();
+    let cov_stats =
+        crate::dump::load_optional(&cov_stats_path, crate::dump::RawCoverageStats::load)?;
     if cov_stats.is_none() {
         println!(
             "(no {} — re-run `extract-raw-slavic` to regenerate the extraction tally)",
@@ -1643,8 +1654,11 @@ pub fn run_coverage(out: &Path) -> Result<()> {
     }
 
     let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
-    let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap_or_default();
-    let enrich = crate::enrich::EnrichIndex::load(Path::new(crate::DEFAULT_ENRICH_CACHE)).ok();
+    let official_entries = official::load(Path::new(crate::DEFAULT_OFFICIAL))?;
+    let enrich = crate::dump::load_optional(
+        Path::new(crate::DEFAULT_ENRICH_CACHE),
+        crate::enrich::EnrichIndex::load,
+    )?;
 
     // --- View 1: totals by language and POS over the kept raw lemmas ---
     let total = raw_corpus.lemmas.len();
@@ -3645,7 +3659,7 @@ function fold(x){ return (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]
 // International committee columns (de/nl/eo) rank below the 12 Slavic cognates.
 var INTL={de:1,nl:1,eo:1};
 // Best source-word alias match for the query (issue #31 dictionary evidence:
-// verbatim committee/cognate spellings, e[14]). Ranks exact source word high
+// verbatim committee/cognate spellings, e[12]). Ranks exact source word high
 // (just under the ISV headword), then transliteration/fold, then prefix; the
 // international columns weigh less. Returns [score,'lang word'] so the hit can
 // show why it matched.
@@ -3661,27 +3675,27 @@ function filters(){ return {
   conf:(document.getElementById('f-conf')||{}).value||'', borrowed:(document.getElementById('f-borrowed')||{}).value||'',
   langs:parseInt((document.getElementById('f-langs')||{}).value||'0',10)||0
 }; }
-function pass(e,f){ if(f.pos&&e[3]!==f.pos)return false; if(f.status&&e[4]!==f.status)return false; if(f.conf&&e[5]!==f.conf)return false; if(f.borrowed!==''&&String(e[10]||0)!==f.borrowed)return false; if(f.langs&&Number(e[8]||0)<f.langs)return false; return true; }
+function pass(e,f){ if(f.pos&&e[3]!==f.pos)return false; if(f.status&&e[4]!==f.status)return false; if(f.conf&&e[5]!==f.conf)return false; if(f.borrowed!==''&&String(e[9]||0)!==f.borrowed)return false; if(f.langs&&Number(e[7]||0)<f.langs)return false; return true; }
 function scoreAll(raw){
   var s=(raw||'').trim().toLowerCase(), ftr=filters(); var showAll=pageRes&&!s, s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
-  for(var i=0;i<IDX.length;i++){ var e=IDX[i]; if(!pass(e,ftr))continue; var f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[7]||[];
+  for(var i=0;i<IDX.length;i++){ var e=IDX[i]; if(!pass(e,ftr))continue; var f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[6]||[];
     var gs=g.split(/[,;]\s*/), ff=fold(f), sc=showAll?1:0, anchor=0, srclab='';
     if(!showAll){
       if(f===s||f===s2)sc=100; else if(ff===sf)sc=90;
-      else{ for(var k=0;k<ks.length;k++){ var kr=ks[k]; if(kr[0]===s2||kr[0]===sf){ sc=85-3*Math.min(kr[1],5); if(kr[1]>1)anchor=kr[1]; break; } } }
+      else{ for(var k=0;k<ks.length;k++){ var kr=ks[k]; if(kr[0]===s2||kr[0]===sf){ sc=85-3*Math.min(kr[1],5); if(kr[1]>1&&kr[1]<6)anchor=kr[1]; break; } } }
       if(!sc){ if(f.indexOf(s2)===0||ff.indexOf(sf)===0)sc=60;
         else if(gs.some(function(x){return x.trim()===s||x.trim()===s2;}))sc=55;
         else if(ks.some(function(kr){return kr[0].indexOf(sf)===0;}))sc=50;
         else if(f.indexOf(s2)>=0)sc=40; else if(g.indexOf(s2)>=0)sc=20; }
       // A Slavic source/cognate match (committee evidence) outranks a mere
       // form/gloss substring and annotates the hit with the matched word.
-      var am=aliasMatch(e[14]||[],s2,sf); if(am[0]>sc){ sc=am[0]; anchor=0; srclab=am[1]; } else if(am[0]>0&&am[0]===sc){ srclab=am[1]; }
+      var am=aliasMatch(e[12]||[],s2,sf); if(am[0]>sc){ sc=am[0]; anchor=0; srclab=am[1]; } else if(am[0]>0&&am[0]===sc){ srclab=am[1]; }
     }
     if(sc>0)hits.push([sc,e,anchor,srclab]); if(hits.length>5000)break; }
   hits.sort(function(a,b){return b[0]-a[0] || a[1][1].localeCompare(b[1][1]);}); return hits;
 }
 function eh(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function hitHTML(e,a,src){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+eh(e[11]||'')+"</span>"; if(e[13])meta+=" <span class='ha'>"+eh(e[13])+"</span>"; meta+=" <span class='hl'>"+(e[8]||0)+" jęz. / "+(e[9]||0)+" vět.</span>"; if(src)meta+=" <span class='hsrc' title='Slovnikovy dokaz: perevod komiteta / kognat'>"+eh(src)+"</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+eh(e[1])+"</b> <span class='hp'>"+posLabel(e[3])+"</span> <span class='hg'>"+eh(e[2])+"</span> "+meta+"</a>"; }
+function hitHTML(e,a,src){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+eh(e[10]||'')+"</span>"; if(e[11])meta+=" <span class='ha'>"+eh(e[11])+"</span>"; meta+=" <span class='hl'>"+(e[7]||0)+" jęz. / "+(e[8]||0)+" vět.</span>"; if(src)meta+=" <span class='hsrc' title='Slovnikovy dokaz: perevod komiteta / kognat'>"+eh(src)+"</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+eh(e[1])+"</b> <span class='hp'>"+eh(posLabel(e[3]))+"</span> <span class='hg'>"+eh(e[2])+"</span> "+meta+"</a>"; }
 async function run(showDropdown){
   await ensure(); var v=q?q.value:''; var hits=scoreAll(v);
   // The search page has full results below the filters, so never reopen the
@@ -3706,7 +3720,7 @@ if(q){ var t=null; q.addEventListener('input',function(){ clearTimeout(t); t=set
 document.addEventListener('click',function(ev){ if(out&&!ev.target.closest('.hsearch'))closeDropdown(); });
 async function randomWord(){ await ensure(); if(!IDX.length)return; var pool=IDX.filter(function(e){return e[5]==='V'||e[4]==='O'}); if(!pool.length)pool=IDX; var e=pool[Math.floor(Math.random()*pool.length)];
   var el=document.getElementById('spotlight'); if(!el)return; var box=document.getElementById('spotbox'); if(box)box.style.display='';
-  el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+eh(e[1])+"</a><div class='muted'>"+posLabel(e[3])+" · "+eh(e[2])+"</div><div class='spot-strength'>"+strBadge(e)+" "+eh(e[11]||'')+"</div>"; }
+  el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+eh(e[1])+"</a><div class='muted'>"+eh(posLabel(e[3]))+" · "+eh(e[2])+"</div><div class='spot-strength'>"+strBadge(e)+" "+eh(e[10]||'')+"</div>"; }
 var rb=document.getElementById('randbtn'); if(rb) rb.addEventListener('click',randomWord);
 if(document.getElementById('spotlight')) randomWord();
 (function(){ var p=new URLSearchParams(location.search).get('q'); if(p&&q)q.value=p; if(pageRes||p)run(false); })();
@@ -4417,6 +4431,22 @@ pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     }
     std::fs::write(out_dir.join("inflection-report.md"), r)?;
     println!("Wrote {}", out_dir.join("inflection-report.md").display());
+    // The struct-path ≡ cell-getter equivalences are hard guarantees — the site
+    // tables AND the forms API render from the struct path, so any divergence
+    // from the panic-guarded getters is a bug, and this command (and the CI
+    // step running it) fails on it. Every other invariant is the inflector's
+    // known worklist (soft -o loans, unmarked indeclinables) and stays
+    // report-only.
+    for (rule, (chk, ok)) in &inv {
+        if rule.contains("struct path = cell getter") {
+            anyhow::ensure!(
+                ok == chk,
+                "inflect-eval: `{rule}` failed on {} of {chk} lemmas — the struct paradigm \
+                 path diverged from the cell getters",
+                chk - ok
+            );
+        }
+    }
     Ok(())
 }
 
@@ -5944,8 +5974,6 @@ fn write_wiki_indexes(
     std::fs::write(out_dir.join("random.html"), random_page())?;
     std::fs::write(out_dir.join("special.html"), special_pages_hub())?;
 
-    let graph_data = graph_json(edges);
-    std::fs::write(out_dir.join("graph.json"), graph_data)?;
     std::fs::write(out_dir.join("graph.html"), graph_page(edges, metas))?;
     std::fs::write(out_dir.join("contribute.html"), contribute_page())?;
     std::fs::write(out_dir.join("build.json"), build_json(build))?;
@@ -6232,7 +6260,7 @@ fn graph_page(edges: &[LinkEdge], metas: &[SiteEntryMeta]) -> String {
             esc(k)
         );
     }
-    let body = format!("<article class='entry'><h1 class='firstHeading'>Semantičny graf</h1><p class='muted'>Statičny spis prvih vęzej; polny kompaktny JSON je v <code>graph.json</code>. Filtry rabotajų bez servera.</p><div class='graph-filter'>{filter}</div><div class='stat-grid wiki-stats'>{}</div><h2 id='top'>Najbolje povezane strany</h2><ol>{top_items}</ol><h2 id='edges'>Vęzi</h2><ul class='compact-list'>{items}</ul><script>document.querySelectorAll('.graph-filter button').forEach(function(b){{b.onclick=function(){{var k=b.dataset.kind;document.querySelectorAll('.graph-edge').forEach(function(e){{e.style.display=(!k||e.dataset.kind===k)?'':'none';}});}};}});</script></article>", counts_table("Tipy vęzej", &kind_counts));
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Semantičny graf</h1><p class='muted'>Statičny spis prvih vęzej; polny kompaktny JSON je v <a href='edges.json'><code>edges.json</code></a>. Filtry rabotajų bez servera.</p><div class='graph-filter'>{filter}</div><div class='stat-grid wiki-stats'>{}</div><h2 id='top'>Najbolje povezane strany</h2><ol>{top_items}</ol><h2 id='edges'>Vęzi</h2><ul class='compact-list'>{items}</ul><script>document.querySelectorAll('.graph-filter button').forEach(function(b){{b.onclick=function(){{var k=b.dataset.kind;document.querySelectorAll('.graph-edge').forEach(function(e){{e.style.display=(!k||e.dataset.kind===k)?'':'none';}});}};}});</script></article>", counts_table("Tipy vęzej", &kind_counts));
     page("Semantičny graf", &body, 0)
 }
 
@@ -6412,7 +6440,7 @@ function fnv1a32(s){const b=new TextEncoder().encode(s);let h=0x811c9dc5>>>0;for
 const shardCache={};
 async function isvShard(base,n){if(shardCache[n])return shardCache[n];shardCache[n]=fetch(base+'api/forms/'+n+'.json').then(r=>r.ok?r.json():{records:{}}).catch(()=>({records:{}}));return shardCache[n];}
 async function isvLookup(base,q){const ok=await routerSelftest(base);const key=isvFold(q);if(!ok){return{key:key,recs:[],selftestFailed:true};}const shard=fnv1a32(key)%__SHARDS__;const j=await isvShard(base,shard);return{key:key,recs:(j.records&&j.records[key])||[]};}
-function recHtml(base,rec){const[form,lemma,id,pos,analyses,source,status,prob,gloss]=rec;
+function recHtml(base,rec){const[form,lemma,id,pos,analyses,,status,prob,gloss]=rec;
  const st=status==='generated'?('<span class="pill">mašinova rekonstrukcija p='+(prob==null?'?':prob.toFixed(2))+'</span>'):('<span class="pill src-official">'+escHtml(status)+'</span>');
  const an=analyses.length?('<span class="muted">'+escHtml(analyses.join(', '))+'</span>'):'<span class="muted">(citatna forma)</span>';
  return '<li><b>'+escHtml(form)+'</b> — <a href="'+base+'entry/'+id+'.html">'+escHtml(lemma)+'</a> <span class="badge pos">'+escHtml(pos)+'</span> '+an+' '+st+' <span class="muted">'+escHtml(gloss)+'</span></li>';}

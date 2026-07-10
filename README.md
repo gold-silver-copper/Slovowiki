@@ -277,7 +277,7 @@ experiments* table as documented negatives.
 
 ## Testing
 
-`cargo test` runs the unit suite — 85 tests across `proto`, `normalize`,
+`cargo test` runs the unit suite — 100+ tests across `proto`, `normalize`,
 `orthography`, `morph`, `derive`, `consensus`, `corpus`, `dump`, `eval`,
 `forms` (API round-trips, wire-format stability) and `check`
 (self-verification: sampled official lemmas and paradigm cells must resolve
@@ -357,7 +357,6 @@ data/
   score-calibration.json  the isotonic calibrator (refit by every `evaluate` run)
   semantic-notes.json     curated false-friend warnings (applied by check-text)
   curation-notes.example.json  format of the optional human curation notes
-  isv-thesaurus.json      dictionary-derived synonym sets (site + synonym-eval)
 ```
 
 ## Commands

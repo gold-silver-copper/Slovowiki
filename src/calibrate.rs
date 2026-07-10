@@ -39,9 +39,17 @@ pub struct Calibration {
 }
 
 impl Calibration {
-    pub fn load(path: &Path) -> Option<Self> {
-        let raw = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&raw).ok()
+    /// `Ok(None)` when the file doesn't exist (callers degrade to the raw,
+    /// uncalibrated score); a file that exists but doesn't parse is a hard
+    /// error, not a silent fallback.
+    pub fn load(path: &Path) -> anyhow::Result<Option<Self>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let raw = std::fs::read_to_string(path)?;
+        Ok(Some(serde_json::from_str(&raw).map_err(|e| {
+            anyhow::anyhow!("parse calibration {}: {e}", path.display())
+        })?))
     }
 
     /// Calibrated probability for a raw candidate score.
