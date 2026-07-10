@@ -62,16 +62,15 @@ impl GlossXref {
     }
 
     /// The cross-lingual matches for a word's glosses, grouped by gloss token in
-    /// gloss order (deduped), excluding the word itself and its own language.
-    /// Over-generic tokens (in > `FREQ_CAP` lemmas) are skipped. Each group's
-    /// `(lang, word)` list is already language-sorted (from [`finalize`]).
+    /// gloss order (deduped), excluding the source word's own language (which
+    /// also excludes the word itself). Over-generic tokens (in > `FREQ_CAP`
+    /// lemmas) are skipped. Each group's `(lang, word)` list is already
+    /// language-sorted (from [`finalize`]).
     pub fn matches(
         &self,
         lang: &str,
-        word: &str,
         glosses: &[String],
     ) -> Vec<(String, Vec<(String, String)>)> {
-        let word = word.trim();
         let mut out = Vec::new();
         let mut seen = HashSet::new();
         for tok in head_tokens(glosses) {
@@ -86,7 +85,7 @@ impl GlossXref {
             }
             let others: Vec<(String, String)> = all
                 .iter()
-                .filter(|(l, w)| l != lang && !(l == lang && w == word))
+                .filter(|(l, _)| l != lang)
                 .cloned()
                 .collect();
             if !others.is_empty() {
@@ -160,7 +159,7 @@ mod tests {
         gx.add("cs", "disk", &["disc, disk".to_string()]);
         gx.add("ru", "диск", &["disc".to_string()]); // same lang as source -> excluded
         gx.finalize();
-        let m = gx.matches("ru", "пластинка", &["record, disc".to_string()]);
+        let m = gx.matches("ru", &["record, disc".to_string()]);
         // token "record" -> cs deska ; token "disc" -> cs disk (ru диск excluded)
         assert_eq!(m.len(), 2);
         assert_eq!(m[0].0, "record");

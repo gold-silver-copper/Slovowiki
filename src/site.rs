@@ -2618,8 +2618,7 @@ fn raw_lemma_page(
     );
     let entry_card = entry_infobox(meta, &info_rows);
     // Reverse gloss links: the same meaning(s) in other Slavic languages.
-    let cross =
-        cross_lingual_meanings_section(gx, &lemma.lang, &lemma.word, &lemma.glosses, xref, id);
+    let cross = cross_lingual_meanings_section(gx, &lemma.lang, &lemma.glosses, xref, id);
     let body = format!(
         "<article class='entry entry-with-rail'>\
            <div class='entry-grid'>\
@@ -2653,12 +2652,11 @@ fn raw_lemma_page(
 fn cross_lingual_meanings_section(
     gx: &crate::glossxref::GlossXref,
     lang: &str,
-    word: &str,
     glosses: &[String],
     xref: Option<&crate::enrich::Xref>,
     self_id: usize,
 ) -> String {
-    let groups = gx.matches(lang, word, glosses);
+    let groups = gx.matches(lang, glosses);
     if groups.is_empty() {
         return String::new();
     }
