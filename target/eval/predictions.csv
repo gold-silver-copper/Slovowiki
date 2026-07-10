@@ -3798,7 +3798,7 @@ id,holdout,gloss,pos,official,predicted,exact,normalized,score,confidence,branch
 36547,0,"hatch, brood",verb,izlęgti,vyvesti,0,0,0.767,high,2,17,0.571
 17561,0,excursion,noun,izlet,poezdka,0,0,0.523,medium,1,21,0.857
 37180,0,"get out, climb out",verb,izlězati,vylezati,0,0,0.535,medium,2,17,0.250
-37179,0,"get out, climb out",verb,izlězti,vylězti,0,0,0.787,high,2,18,0.286
+37179,0,"get out, climb out",verb,izlězti,vylězti,0,0,0.813,high,3,18,0.286
 26196,0,"surplus, excess",noun,izlišek,izlišȯk,0,0,0.459,medium,2,28,0.143
 26197,1,pour out,verb,izliti,vyliti,0,0,0.854,high,3,11,0.333
 36396,0,pour out,verb,izlivati,vylivati,0,0,0.596,medium,2,14,0.250
@@ -4626,7 +4626,7 @@ id,holdout,gloss,pos,official,predicted,exact,normalized,score,confidence,branch
 8477,0,click,noun,klik,klik,1,1,0.980,high,3,16,0.000
 32567,1,"shout, cry, shriek, scream, cheer",noun,klik,krik,0,0,0.941,high,3,25,0.250
 32561,0,"clique, faction, cabal, coterie",noun,klika,kljuka,0,0,0.980,high,3,22,0.333
-5120,0,click,verb,kliknųti,kliknųti,1,1,0.780,high,1,14,0.000
+5120,0,click,verb,kliknųti,kliknųti,1,1,0.817,high,2,14,0.000
 32579,0,"shout, call, cheer, cry",verb,kliknųti,kryknųc,0,0,0.464,medium,2,20,0.500
 17659,0,climate,noun,klima,klimat,0,0,0.702,medium,3,11,0.167
 2986,0,climax,noun,klimaks,kulminacija,0,0,0.523,medium,1,13,0.636
@@ -9792,7 +9792,7 @@ id,holdout,gloss,pos,official,predicted,exact,normalized,score,confidence,branch
 14867,0,"kin, relation",noun,pokrȯvnik,pribuzny,0,0,0.407,low,1,19,0.778
 6158,0,kinship,noun,pokrȯvnosť,rodstvo,0,0,0.459,medium,2,23,0.700
 6154,0,"related, akin, cognate",adj,pokrȯvny,pribuzny,0,0,0.407,low,1,22,0.625
-1769,1,cover,verb,pokryti,pokryti,1,1,0.870,high,2,16,0.000
+1769,1,cover,verb,pokryti,pokryti,1,1,0.909,high,3,16,0.000
 18298,0,cover,noun,pokryťje,pokrytie,0,0,0.459,medium,1,20,0.125
 523,0,"roof, cover",noun,pokryv,strěha,0,0,0.920,high,3,23,1.000
 4506,1,"blanket, quilt",noun,pokryva,odeala,0,0,0.459,medium,2,23,0.714
@@ -12612,7 +12612,7 @@ id,holdout,gloss,pos,official,predicted,exact,normalized,score,confidence,branch
 12269,0,violinist,noun,skripač,violinist,0,0,0.481,medium,1,12,0.889
 18823,0,violinist,noun,skripačka,skrypačka,0,0,0.575,medium,2,12,0.111
 12850,0,scratch,noun,skripěńje,skripo,0,0,0.940,high,3,21,0.444
-18824,0,"creak, crunch, scrunch, scratch, squeak",verb,skripěti,škripěti,0,0,0.693,medium,3,23,0.125
+18824,0,"creak, crunch, scrunch, scratch, squeak",verb,skripěti,skripěti,1,1,0.837,high,3,23,0.000
 12270,0,violin,noun,skripka,skrypka,0,0,0.523,medium,1,11,0.143
 18827,0,"creak, crunch, scrunch, scratch, squeak",verb,skripnųti,škripnuti,0,0,0.741,high,3,16,0.111
 36611,1,script (computing),noun,skript,skript,1,1,0.970,high,3,11,0.000

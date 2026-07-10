@@ -5,34 +5,25 @@
 //! a **modern-Slavic translation** (a strong meaning signal) AND an **English
 //! gloss content token** (which filters the polysemy/homograph noise that shared
 //! translations alone introduce — e.g. `dom`↔`suka`), with the **same POS**. The
-//! result is a compact, high-precision `lemma → synonyms` resource, committed as
-//! `data/isv-thesaurus.json`, shown on the site and used to score the
-//! synonym-aware accuracy honestly.
+//! result is a compact, high-precision `lemma → synonyms` resource, rebuilt
+//! in-memory from the official dictionary wherever it's needed (the site export
+//! and the synonym-aware accuracy scoring) — it is never persisted, so it can
+//! never go stale.
 
 use crate::model::Pos;
 use crate::official::OfficialEntry;
 use crate::orthography as ortho;
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
 
 /// The modern Slavic columns whose shared translations signal a shared meaning.
 const SLAV: &[&str] = &[
     "ru", "be", "uk", "pl", "cs", "sk", "sl", "hr", "sr", "bg", "mk",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ThesaurusEntry {
     pub isv: String,
     pub synonyms: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThesaurusFile {
-    pub source: String,
-    pub entry_count: usize,
-    pub entries: Vec<ThesaurusEntry>,
 }
 
 /// Loaded thesaurus with an O(1) lookup by normalized lemma.
@@ -167,27 +158,6 @@ impl Thesaurus {
 
     pub fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let file = ThesaurusFile {
-            source: "official Interslavic dictionary (shared translation ∩ gloss ∩ POS)"
-                .to_string(),
-            entry_count: self.entries.len(),
-            entries: self.entries.clone(),
-        };
-        std::fs::write(path, serde_json::to_string_pretty(&file)?)?;
-        Ok(())
-    }
-
-    pub fn load(path: &Path) -> Result<Self> {
-        use std::io::Read;
-        let mut json = String::new();
-        std::fs::File::open(path)
-            .with_context(|| format!("open thesaurus {}", path.display()))?
-            .read_to_string(&mut json)?;
-        let file: ThesaurusFile = serde_json::from_str(&json).context("parse thesaurus")?;
-        Ok(Self::from_entries(file.entries))
     }
 }
 

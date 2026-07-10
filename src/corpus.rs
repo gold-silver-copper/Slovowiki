@@ -52,13 +52,12 @@ impl GeneratedWord {
 }
 
 /// Branch of a Slavic language, including the smaller lects the corpus carries.
+/// Delegates to the single [`crate::lang::LANGS`] registry — this used to be a
+/// second hand-coded table that had already drifted from it (it dropped `orv`,
+/// which `lang.rs` carries as East/non-modern, the same etymological-hint role
+/// as `cu`).
 pub fn branch_of(lang: &str) -> Option<Branch> {
-    Some(match lang {
-        "ru" | "uk" | "be" | "rue" => Branch::East,
-        "pl" | "cs" | "sk" | "dsb" | "hsb" | "csb" | "szl" => Branch::West,
-        "sl" | "hr" | "sr" | "bs" | "sh" | "bg" | "mk" | "cu" => Branch::South,
-        _ => return None,
-    })
+    crate::lang::branch_of(lang)
 }
 
 fn pos_class(pos: &str) -> &'static str {
@@ -358,7 +357,10 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
     let mut forms: Vec<SourceForm> = Vec::new();
     let mut seen_lang: BTreeMap<&str, bool> = BTreeMap::new();
     for m in &set.members {
-        let Some(branch) = branch_of(&m.lang) else {
+        // Branch AND the modern-voter flag both come from the single lang.rs
+        // registry (a local `!= "cu"` here used to mislabel other non-modern
+        // hint languages, e.g. `orv`, as voters).
+        let Some(info) = crate::lang::lang_info(&m.lang) else {
             continue;
         };
         let latin = normalize::to_phonemic_latin(&m.lang, &m.word);
@@ -370,8 +372,8 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
         seen_lang.insert(m.lang.as_str(), true);
         forms.push(SourceForm {
             lang_code: m.lang.clone(),
-            branch,
-            modern: m.lang != "cu",
+            branch: info.branch,
+            modern: info.modern,
             norm: NormForm {
                 original: m.word.clone(),
                 latin,
@@ -584,6 +586,7 @@ mod tests {
     #[test]
     fn build_sets_skips_placeholder_and_bound_proto() {
         let corpus = LemmaCorpus {
+            schema: crate::dump::LEMMA_CACHE_SCHEMA,
             source: String::new(),
             entry_count: 3,
             entries: vec![

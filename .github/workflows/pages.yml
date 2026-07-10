@@ -22,7 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Keep in sync with rust-toolchain.toml (same pin as ci.yml).
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.1
       - uses: Swatinem/rust-cache@v2
       - name: Build static site
         run: cargo run --release -- export --out site

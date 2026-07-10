@@ -86,8 +86,16 @@ impl EnrichEntry {
     }
 }
 
+/// Bump when `extract-enrich` changes what goes into [`EnrichCache`] (fields,
+/// filters, normalization); see the cache-schema-stamp note in `dump.rs`.
+pub const ENRICH_CACHE_SCHEMA: u32 = 0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrichCache {
+    /// Extractor schema stamp ([`ENRICH_CACHE_SCHEMA`]); pre-stamp caches
+    /// deserialize as 0.
+    #[serde(default)]
+    pub schema: u32,
     pub source: String,
     pub entry_count: usize,
     pub entries: Vec<EnrichEntry>,
@@ -105,6 +113,21 @@ impl EnrichIndex {
             .with_context(|| format!("open enrich cache {}", path.display()))?;
         let mut cache: EnrichCache =
             serde_json::from_slice(&bytes).context("parse enrich cache")?;
+        crate::dump::check_cache_schema(
+            "enrich",
+            path,
+            cache.schema,
+            ENRICH_CACHE_SCHEMA,
+            "make extract-enrich",
+        )?;
+        // Checked before the markup filter below mutates `entries`.
+        anyhow::ensure!(
+            cache.entry_count == cache.entries.len(),
+            "corrupt enrich cache {}: entry_count {} but {} entries",
+            path.display(),
+            cache.entry_count,
+            cache.entries.len()
+        );
         // Drop the handful of strings where wiktextract leaked unparsed wiki markup
         // (`[[">*melko< / [[span>#…|span>]]]]`, `''…''`, stray tags) so no page shows
         // garbage. A bare `<` is kept — it is legit descent notation ("*ognь < …").
@@ -303,6 +326,7 @@ pub fn extract(dir: &Path, wanted: &HashMap<String, HashSet<String>>, out: &Path
         (a.lang.as_str(), a.word.as_str()).cmp(&(b.lang.as_str(), b.word.as_str()))
     });
     let cache = EnrichCache {
+        schema: ENRICH_CACHE_SCHEMA,
         source: "per-edition wiktextract (ru/pl/cs Wiktionary)".to_string(),
         entry_count: entries.len(),
         entries,

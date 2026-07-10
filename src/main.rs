@@ -1,11 +1,12 @@
 //! Interslavic Wiktionary Lab — evidence-based candidate generation.
 //!
-//! Subcommands:
-//!   * `build`    — generate the site dataset from the official dictionary's
-//!                  Slavic evidence (fast, self-contained).
-//!   * `serve`    — local Wiktionary-style website over the generated dataset.
-//!   * `evaluate` — reproducible benchmark against the official dictionary.
-//!   * `explain`  — print the generator's full reasoning for one word/gloss.
+//! Main subcommands (see `Command` below for the full list):
+//!   * `export`    — generate the static site (cognate-set dictionary) from the
+//!                   committed caches; `make serve` previews it locally.
+//!   * `extract-*` — stream the Wiktextract dumps into the committed caches.
+//!   * `evaluate`  — reproducible benchmark against the official dictionary.
+//!   * `explain`   — print the generator's full reasoning for one word/gloss.
+//!   * `check-text` — verify an Interslavic text against the lexicon.
 
 // The data model and orthography/linguistics helpers intentionally expose a
 // broader API surface (evidence relations, alternate configs, helper accessors)
@@ -42,7 +43,6 @@ mod site;
 mod thesaurus;
 
 pub const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl";
-const DEFAULT_DATA: &str = "data/wiktionary-lab.json";
 const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
 const DEFAULT_OVERRIDES: &str = "data/overrides.toml";
 const DEFAULT_PROTO_CACHE: &str = "data/proto-slavic.cache.json";
@@ -53,7 +53,6 @@ pub const DEFAULT_LEMMA_CACHE: &str = "data/slavic-lemmas.cache.json";
 pub const DEFAULT_RAW_LEMMA_CACHE: &str = "data/raw-slavic-lemmas.cache.json";
 const DEFAULT_ENRICH_CACHE: &str = "data/wiktionary-enrich.cache.json";
 const DEFAULT_WIKI_DIR: &str = "/Users/kisaczka/Desktop/code/wikidata";
-const DEFAULT_THESAURUS: &str = "data/isv-thesaurus.json";
 
 #[derive(Parser)]
 #[command(
@@ -142,11 +141,10 @@ enum Command {
     },
     /// Benchmark the SITE's generation path (corpus::generate_set) against the
     /// official dictionary — the cognate-set path's own leakage-free accuracy.
+    /// Prints to stdout only (no report file).
     CorpusEval {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
-        #[arg(long, default_value = "target/eval")]
-        out: PathBuf,
     },
     /// Benchmark the derivation layer: mined official base→derivative pairs,
     /// seam-aware layer vs naive concatenation (Track A / issue #1).
@@ -245,22 +243,12 @@ enum Command {
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
     },
-    /// Build the Interslavic synonym thesaurus from the official dictionary
-    /// (shared modern translation ∩ gloss token ∩ POS) → data/isv-thesaurus.json.
-    BuildThesaurus {
-        #[arg(long, default_value = DEFAULT_OFFICIAL)]
-        official: PathBuf,
-        #[arg(long, default_value = DEFAULT_THESAURUS)]
-        out: PathBuf,
-    },
     /// Benchmark the candidate generator against the official Interslavic dictionary.
+    /// The Proto-Slavic rung reads the committed proto cache (`make extract-proto`).
     Evaluate {
         /// Official dictionary: full export with per-language translations.
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
-        /// Optional Wiktextract dump for the Proto-Slavic benchmark path.
-        #[arg(long)]
-        dump: Option<PathBuf>,
         /// Output directory for the report artifacts.
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
@@ -276,7 +264,7 @@ fn main() -> Result<()> {
             // official-dictionary-seeded site.
             let lemmas = std::path::Path::new(DEFAULT_LEMMA_CACHE);
             if lemmas.exists() {
-                site::export_corpus(lemmas, &out)
+                site::export_corpus(lemmas, &official, &out)
             } else {
                 site::export(&official, &out)
             }
@@ -311,7 +299,7 @@ fn main() -> Result<()> {
         Command::Coverage { out } => site::run_coverage(&out),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
-        Command::CorpusEval { official, out } => eval::run_corpus_eval(&official, &out),
+        Command::CorpusEval { official } => eval::run_corpus_eval(&official),
         Command::DeriveEval { official, out } => derive::run_eval(&official, &out),
         Command::MultiwordEval { official, out } => eval::run_multiword_eval(&official, &out),
         Command::EvidenceEval { official, out } => eval::run_evidence_eval(&official, &out),
@@ -327,21 +315,6 @@ fn main() -> Result<()> {
         Command::SelectEval { official, out } => eval::run_select_eval(&official, &out),
         Command::RepEval { official, out } => eval::run_rep_eval(&official, &out),
         Command::SynonymEval { official, out } => eval::run_synonym_eval(&official, &out),
-        Command::BuildThesaurus { official, out } => {
-            let entries = official::load(&official)?;
-            let t = thesaurus::Thesaurus::build(&entries);
-            t.save(&out)?;
-            println!(
-                "Built thesaurus: {} lemmas with synonyms -> {}",
-                t.len(),
-                out.display()
-            );
-            Ok(())
-        }
-        Command::Evaluate {
-            official,
-            dump,
-            out,
-        } => eval::run(&official, dump.as_deref(), &out),
+        Command::Evaluate { official, out } => eval::run(&official, &out),
     }
 }

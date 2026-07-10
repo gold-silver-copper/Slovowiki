@@ -13,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Keep in sync with rust-toolchain.toml — the pin is what stops local
+      # rustfmt/clippy from drifting against CI.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.93.1
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Format
@@ -27,6 +30,11 @@ jobs:
         run: cargo clippy --release --all-targets
       - name: Test
         run: cargo test --release
+      # Full-corpus inflection guard: the command exits nonzero if the paradigm
+      # struct path (which the site tables and the forms API render from)
+      # diverges from the panic-guarded cell getters on any official lemma.
+      - name: Inflection full-corpus guard
+        run: cargo run --release -- inflect-eval
       - name: Accuracy regression floor (exact top-1 must stay >= 39.5%)
         run: |
           out=$(cargo run --release -- evaluate)

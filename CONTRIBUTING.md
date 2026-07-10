@@ -8,7 +8,7 @@ output. There are three ways to contribute: **curate data** (no Rust needed),
 ## Local workflow
 
 ```bash
-cargo test                                    # 85 tests, incl. self-verification
+cargo test                                    # full unit suite, incl. self-verification
 cargo run --release -- export --out site      # regenerate the whole site + api/
 cd site && python3 -m http.server 8765
 ```

@@ -1,0 +1,9 @@
+# Pin the toolchain so rustfmt/clippy behave identically locally and in CI.
+# `cargo fmt --check` gates CI; an unpinned "stable" drifted between a
+# contributor's machine and the runners twice (fixed in PRs #50/#54 — this pin
+# closes the class). Both workflows install this same version. Bump
+# deliberately: update the channel here, run `cargo fmt`, and commit any
+# reformat in the same PR.
+[toolchain]
+channel = "1.93.1"
+components = ["rustfmt", "clippy"]

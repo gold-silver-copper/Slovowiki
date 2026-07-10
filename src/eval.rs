@@ -101,12 +101,12 @@ fn kept_ladder() -> Vec<Rung> {
 }
 
 /// Load the Proto-Slavic cache if it exists (else the proto-derived rung is a
-/// no-op that equals the +nasals config).
+/// no-op that equals the +nasals config). A cache that exists but fails to
+/// load (corrupt, or refused by its schema stamp) aborts with the loader's
+/// message instead of silently dropping the proto engine from every rung —
+/// that would read as a benchmark regression with no visible cause.
 fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
     let path = Path::new(crate::DEFAULT_PROTO_CACHE);
-    if !path.exists() {
-        return None;
-    }
     // Note (rejected experiment): augmenting the explicit-etymology map with
     // Proto-Slavic ancestors parsed from the native RU/PL/CS Wiktionary prose
     // (3,369 extra links) measured **−0.10pp exact** — the English etymology +
@@ -115,7 +115,8 @@ fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
     // that were already right or aren't improvable. Coverage is not the
     // bottleneck; the remaining error is editorial/evidence-gap (see the
     // cluster-selection measurement). Left out.
-    crate::dump::ProtoIndex::load(path).ok()
+    crate::dump::load_optional(path, crate::dump::ProtoIndex::load)
+        .unwrap_or_else(|e| panic!("{}: {e:#}", path.display()))
 }
 
 /// Rules that were tried and *rejected*: each is the production config plus one
@@ -210,7 +211,7 @@ fn branch_cov_of(input: &MeaningInput) -> usize {
 /// internationalism flag) — exactly what the corpus site does — run
 /// `generate_set`, and score its headword. This gives the site path its own
 /// accuracy number, distinct from the consensus pipeline's headline.
-pub fn run_corpus_eval(official_path: &Path, _out_dir: &Path) -> Result<()> {
+pub fn run_corpus_eval(official_path: &Path) -> Result<()> {
     use crate::corpus::{self, CognateSet};
     use crate::dump::LemmaEntry;
     let entries = official::load(official_path)?;
@@ -2246,7 +2247,7 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run(official_path: &Path, _dump: Option<&Path>, out_dir: &Path) -> Result<()> {
+pub fn run(official_path: &Path, out_dir: &Path) -> Result<()> {
     let mut entries_all = official::load(official_path)?;
     // The metadata TSV has no per-language translations, so the consensus
     // benchmark is impossible from it. Fall back to the bundled full export.

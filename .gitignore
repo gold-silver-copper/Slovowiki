@@ -1,8 +1,8 @@
 /target/
+/site/
 data/*.tmp
 data/wiktionary-lab.json
-data/wiktionary-lab.sample.json
 __pycache__/
 *.pyc
-data/wiktionary-lab.json
-/site/
+# Local scratch notes (accidentally committed once, untracked in #53 — keep ignored).
+/context.md

@@ -242,3 +242,47 @@ pub fn official_slavic_cols() -> &'static [LangInfo] {
     // First 12 entries of LANGS are the CSV-backed languages in column order.
     &LANGS[0..12]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `official_slavic_cols` slices `LANGS[0..12]` by position; pin the layout
+    /// that slice assumes — every CSV-backed language is in the first 12 slots
+    /// and nothing after them carries a CSV column — so inserting a language in
+    /// the wrong place fails here instead of silently dropping a column.
+    #[test]
+    fn official_slavic_cols_slice_matches_csv_backed_langs() {
+        let cols = official_slavic_cols();
+        assert_eq!(cols.len(), 12);
+        for l in cols {
+            assert!(!l.csv_col.is_empty(), "{} has no CSV column", l.code);
+        }
+        for l in &LANGS[12..] {
+            assert!(
+                l.csv_col.is_empty(),
+                "{} is CSV-backed but outside official_slavic_cols",
+                l.code
+            );
+        }
+    }
+
+    /// The raw-extraction language set must stay a superset of the benchmark
+    /// corpus set, and every code in either must exist in the LANGS registry
+    /// (PR #53 added `sh` everywhere; keep the registries from drifting again).
+    #[test]
+    fn lang_registries_are_consistent() {
+        for code in crate::dump::SLAVIC_LANGS {
+            assert!(
+                crate::dump::RAW_SLAVIC_LANGS.contains(code),
+                "{code} in SLAVIC_LANGS but not RAW_SLAVIC_LANGS"
+            );
+        }
+        for code in crate::dump::RAW_SLAVIC_LANGS {
+            assert!(
+                lang_info(code).is_some(),
+                "{code} in RAW_SLAVIC_LANGS but missing from lang.rs LANGS"
+            );
+        }
+    }
+}
