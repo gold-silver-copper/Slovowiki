@@ -791,6 +791,11 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // export note about blank cells limited to the actual entry pages rendered below.
     INFLECTION_PANICS.store(0, std::sync::atomic::Ordering::Relaxed);
 
+    // (d) Derivational-suffix browse (issue #73): `derivation_block` reports
+    // every row it renders into this collector; the deriv/ pages are written
+    // after the official-only loop, once BOTH render passes have contributed.
+    let mut deriv_rows: BTreeMap<&'static str, DerivAgg> = BTreeMap::new();
+
     // Second pass: render pages (with family links) + the search index.
     // Script census (issue #66): a generated display headword must never carry
     // Cyrillic — count and report loudly if the normalization hygiene ever
@@ -824,9 +829,16 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                     .get(&crate::orthography::to_standard(&isv.to_lowercase()))
                     .map(|(_, _, pos, _, _)| *pos)
                     .unwrap_or(p.g.set.pos);
-                derivation_block(isv, pos, &isv_to_id, true)
+                derivation_block(isv, pos, &isv_to_id, true, p.id, &mut deriv_rows)
             }
-            None => derivation_block(p.g.form(), p.g.set.pos, &isv_to_id, false),
+            None => derivation_block(
+                p.g.form(),
+                p.g.set.pos,
+                &isv_to_id,
+                false,
+                p.id,
+                &mut deriv_rows,
+            ),
         };
         let meta = meta_by_id.get(&p.id).expect("generated entry meta");
         // Predok infobox link to the proto-lemma reflex page (issue #73b),
@@ -969,7 +981,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let isv = e.isv.trim();
         let fold = crate::orthography::to_standard(&isv.to_lowercase());
         let syn = synonyms_block(isv, &thesaurus, &isv_to_id);
-        let deriv = derivation_block(isv, e.pos, &isv_to_id, true);
+        let deriv = derivation_block(isv, e.pos, &isv_to_id, true, *oid, &mut deriv_rows);
         let meta = meta_by_id.get(oid).expect("official-only entry meta");
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
         let wiki_bottom = entry_wiki_blocks(
@@ -1533,6 +1545,16 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         crate::forms::SHARDS,
         api_counts.bytes / 1024,
         api_counts.largest_shard / 1024,
+    );
+
+    // (d) Derivational-suffix browse pages (issue #73): the rows the two
+    // render loops reported, plus the SAME per-pattern Wilson-95 probability
+    // the API's generated derivatives ship (`deriv_probs` above — one fit
+    // serves both surfaces).
+    let deriv_row_total = write_deriv_pages(out_dir, &deriv_rows, &deriv_probs)?;
+    println!(
+        "deriv pages: {} patterns / {deriv_row_total} rows (issue #73).",
+        deriv_rows.len(),
     );
 
     rows.sort_by(|a, b| b.freq.total_cmp(&a.freq));
@@ -3255,6 +3277,8 @@ fn derivation_block(
     pos: crate::model::Pos,
     isv_to_id: &std::collections::HashMap<String, usize>,
     attested_base: bool,
+    base_id: usize,
+    deriv_rows: &mut BTreeMap<&'static str, DerivAgg>,
 ) -> String {
     let fam = crate::derive::derive_family(headword, pos);
     if fam.is_empty() {
@@ -3265,7 +3289,25 @@ fn derivation_block(
     let mut proposed = 0usize;
     for d in &fam {
         let key = crate::orthography::to_standard(&d.form.to_lowercase());
-        let (form, status) = match isv_to_id.get(&key).copied() {
+        let derived_entry_id = isv_to_id.get(&key).copied();
+        // Report the row EXACTLY as rendered (same derive_family inputs, same
+        // isv_to_id resolution) to the derivational-suffix browse collector
+        // (issue #73d) — the deriv/ pages can never drift from this block.
+        deriv_rows
+            .entry(d.pattern)
+            .or_insert_with(|| DerivAgg {
+                label: d.label,
+                rows: Vec::new(),
+            })
+            .rows
+            .push(DerivRow {
+                base_id,
+                base: headword.to_string(),
+                form: d.form.clone(),
+                derived_entry_id,
+                official: attested_base,
+            });
+        let (form, status) = match derived_entry_id {
             Some(id) => {
                 linked += 1;
                 (
@@ -3655,7 +3697,7 @@ fn corpus_home(
            </article>
            <aside class='home-aside'>
              <div class='side-box'><div class='side-h'>Izbrano / slučajno</div><div id='spotlight'><p class='muted'>Nakladajě sę…</p></div><button id='randbtn' type='button'>Drugo slovo</button></div>
-             <div class='side-box'><div class='side-h'>Wiki-navigacija</div><ul class='compact-list'><li><a href='special.html'>Speciaľne strany</a></li><li><a href='all-pages.html'>Vse strany</a></li><li><a href='categories.html'>Kategorije</a></li><li><a href='indices.html'>Abecedne indeksy</a></li><li><a href='portals.html'>Języčne portaly</a></li><li><a href='borrowings.html'>Pozajęta slova</a></li><li><a href='needs-review.html'>Trěbuje prověrky</a></li><li><a href='rules.html'>Indeks pravil</a></li><li><a href='proto-index.html'>Praslovjanske lemmy</a></li><li><a href='site-stats.html'>Statistiky sajta</a></li><li><a href='graph.html'>Semantičny graf</a></li></ul></div>
+             <div class='side-box'><div class='side-h'>Wiki-navigacija</div><ul class='compact-list'><li><a href='special.html'>Speciaľne strany</a></li><li><a href='all-pages.html'>Vse strany</a></li><li><a href='categories.html'>Kategorije</a></li><li><a href='indices.html'>Abecedne indeksy</a></li><li><a href='portals.html'>Języčne portaly</a></li><li><a href='borrowings.html'>Pozajęta slova</a></li><li><a href='needs-review.html'>Trěbuje prověrky</a></li><li><a href='rules.html'>Indeks pravil</a></li><li><a href='proto-index.html'>Praslovjanske lemmy</a></li><li><a href='derivations.html'>Odvodženja po sufiksah</a></li><li><a href='site-stats.html'>Statistiky sajta</a></li><li><a href='graph.html'>Semantičny graf</a></li></ul></div>
              <div class='side-box'><div class='side-h'>Slovnik</div>
                <table class='wikitable compact-table'>
                  <tr><th>Slov</th><td>{total}</td></tr>
@@ -3727,7 +3769,7 @@ fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
            </ul>
 
            <h2 id='wiki'>Wiki-navigacija</h2>
-           <p>Najbolje startne točky: <a href='special.html'>posebne strany</a>, <a href='all-pages.html'>Vse strany</a>, <a href='categories.html'>Kategorije</a>, <a href='portals.html'>językove portaly</a>, <a href='borrowings.html'>portal zaimok</a>, <a href='needs-review.html'>spis za prověrku</a>, <a href='site-stats.html'>statistiky sajta</a>, <a href='graph.html'>semantičny graf</a>, <a href='rules.html'>indeks pravil (zvukove zakony)</a>, <a href='proto-index.html'>praslovjanske lemmy s refleksami</a> i <a href='metrics.html'>statistiky točnosti</a>.</p>
+           <p>Najbolje startne točky: <a href='special.html'>posebne strany</a>, <a href='all-pages.html'>Vse strany</a>, <a href='categories.html'>Kategorije</a>, <a href='portals.html'>językove portaly</a>, <a href='borrowings.html'>portal zaimok</a>, <a href='needs-review.html'>spis za prověrku</a>, <a href='site-stats.html'>statistiky sajta</a>, <a href='graph.html'>semantičny graf</a>, <a href='rules.html'>indeks pravil (zvukove zakony)</a>, <a href='proto-index.html'>praslovjanske lemmy s refleksami</a>, <a href='derivations.html'>odvodženja po sufiksah</a> i <a href='metrics.html'>statistiky točnosti</a>.</p>
 
            <h2 id='validacija'>Validacija i granice</h2>
            <p>{official} generovanyh slov sovpadaje s oficialnym medžuslovjanskim slovnikom. To je kontrola, ale ne jedin cilj: mnogo validnyh medžuslovjanskyh slov može byti synonymami, regionalnymi izborami ili novymi kandidami, ktoryh oficialny slovnik ne imaje.</p>
@@ -5483,6 +5525,35 @@ fn quality_label(m: &SiteEntryMeta) -> &'static str {
     }
 }
 
+/// The branch attestation PATTERN of a language set (issue #73c): WHICH of
+/// the three branches attest the entry, rendered "V" / "Z" / "J" / "V+Z" /
+/// "V+J" / "Z+J" / "V+Z+J" (V = vȯzhod/East, Z = zapad/West, J = jug/South,
+/// always in that canonical order). Computed from the actual language SET via
+/// `branch_of` — `n_branches` only counts and cannot distinguish V+Z from
+/// Z+J. `None` when no code resolves to a branch.
+fn branch_pattern(langs: &[String]) -> Option<String> {
+    let mut set = std::collections::BTreeSet::new();
+    for l in langs {
+        if let Some(b) = crate::corpus::branch_of(l) {
+            set.insert(match b {
+                Branch::East => 0u8,
+                Branch::West => 1,
+                Branch::South => 2,
+            });
+        }
+    }
+    if set.is_empty() {
+        return None;
+    }
+    const LETTERS: [&str; 3] = ["V", "Z", "J"];
+    Some(
+        set.iter()
+            .map(|&i| LETTERS[i as usize])
+            .collect::<Vec<_>>()
+            .join("+"),
+    )
+}
+
 fn entry_categories(m: &SiteEntryMeta, wiki_categories: Vec<Vec<String>>) -> Vec<Vec<String>> {
     let mut cats = Vec::new();
     add_category_path(
@@ -5525,6 +5596,15 @@ fn entry_categories(m: &SiteEntryMeta, wiki_categories: Vec<Vec<String>>) -> Vec
             format!("{} větvy", m.n_branches),
         ],
     );
+    // Attestation-pattern axis (issue #73c): the exact branch COMBINATION,
+    // not just the count — "ktore slova sųt tȯlko vȯzhodno-južne?" becomes a
+    // browsable category page (7 non-empty combinations).
+    if let Some(pattern) = branch_pattern(&m.languages) {
+        add_category_path(
+            &mut cats,
+            vec!["Pokrytje větvi (vzorec)".to_string(), pattern],
+        );
+    }
     add_category_path(
         &mut cats,
         vec!["Kvaliteta".to_string(), quality_label(m).to_string()],
@@ -6450,6 +6530,7 @@ fn special_pages_hub() -> String {
         <li><a href='borrowings.html'>Portal:PozajętaSlova</a></li>\
         <li><a href='rules.html'>Indeks pravil (zvukove zakony)</a></li>\
         <li><a href='proto-index.html'>Praslovjanske lemmy (refleksy)</a></li>\
+        <li><a href='derivations.html'>Odvodženja po sufiksah</a></li>\
         <li><a href='suffix-index.html'>Indeks po zakončenjah</a></li>\
         <li><a href='datasets.html'>Fajly za dostavanje</a></li>\
         <li><a href='proposals.html'>Predloženja novyh slov</a></li>\
@@ -6641,6 +6722,7 @@ fn write_wiki_indexes(
         "needs-review",
         "rule",
         "proto",
+        "deriv",
     ] {
         let p = out_dir.join(dir);
         let _ = std::fs::remove_dir_all(&p);
@@ -7211,6 +7293,14 @@ fn contribute_page() -> String {
     page("Prinos", body, 0)
 }
 
+/// Machine-queryable entry metadata. Fields per entry: id, title, gloss, pos,
+/// quality, confidence, prob (calibrated probability, null for
+/// official/raw), langs (attesting-language COUNT), `langs_list` (the sorted
+/// attesting language-code SET, issue #73c), branches (branch count),
+/// `branch_pattern` (the exact branch combination "V"/"Z"/"J"/"V+Z"/…/
+/// "V+Z+J", null when no code resolves — issue #73c), borrowed, official,
+/// ancestor. `langs_list` + `branch_pattern` make any attestation-pattern
+/// query a jq one-liner (e.g. `.[] | select(.branch_pattern == "V+J")`).
 fn entries_json(metas: &[SiteEntryMeta]) -> String {
     let mut s = String::from("[\n");
     for (i, m) in metas.iter().enumerate() {
@@ -7221,8 +7311,17 @@ fn entries_json(metas: &[SiteEntryMeta]) -> String {
             .prob
             .map(|p| format!("{p:.3}"))
             .unwrap_or_else(|| "null".to_string());
-        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"prob\":{},\"langs\":{},\"branches\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{}}}",
-            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), prob, m.n_langs, m.n_branches, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor));
+        let langs_list = m
+            .languages
+            .iter()
+            .map(|l| json_str(l))
+            .collect::<Vec<_>>()
+            .join(",");
+        let pattern = branch_pattern(&m.languages)
+            .map(|p| json_str(&p))
+            .unwrap_or_else(|| "null".to_string());
+        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"prob\":{},\"langs\":{},\"langs_list\":[{}],\"branches\":{},\"branch_pattern\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{}}}",
+            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), prob, m.n_langs, langs_list, m.n_branches, pattern, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor));
     }
     s.push_str("\n]\n");
     s
@@ -7732,6 +7831,132 @@ fn proto_index_page(proto_groups: &ProtoGroups, proto: Option<&crate::dump::Prot
     page("Praslovjanske lemmy (refleksy)", &body, 0)
 }
 
+/// One rendered derivation-table row (issue #73d), recorded by
+/// [`derivation_block`] EXACTLY as rendered — same `derive_family` inputs,
+/// same `isv_to_id` resolution — so the deriv/ browse can never drift from
+/// the entry pages.
+struct DerivRow {
+    base_id: usize,
+    base: String,
+    form: String,
+    derived_entry_id: Option<usize>,
+    /// Whether the base is an attested official headword (else a machine
+    /// reconstruction, marked as such on the pattern page).
+    official: bool,
+}
+
+/// All rendered rows of one derivation pattern plus its human label (the
+/// label is constant per pattern; carried here so the page header needs no
+/// second derivation pass).
+struct DerivAgg {
+    label: &'static str,
+    rows: Vec<DerivRow>,
+}
+
+/// Write the deriv/ pattern pages + the derivations.html overview; returns
+/// the total row count for the export's console report.
+fn write_deriv_pages(
+    out_dir: &Path,
+    deriv_rows: &BTreeMap<&'static str, DerivAgg>,
+    probs: &crate::derive::DerivationProbabilities,
+) -> Result<usize> {
+    let mut total = 0usize;
+    for (pattern, agg) in deriv_rows {
+        total += agg.rows.len();
+        std::fs::write(
+            out_dir.join("deriv").join(format!("{pattern}.html")),
+            deriv_page(pattern, agg, probs.probability(pattern)),
+        )?;
+    }
+    std::fs::write(
+        out_dir.join("derivations.html"),
+        derivations_index_page(deriv_rows, probs),
+    )?;
+    Ok(total)
+}
+
+/// The tooltip explaining what the per-pattern Wilson-95 probability is and
+/// what it gates (shared by the pattern pages and the overview).
+const DERIV_P_TITLE: &str = "Wilson-95: dolnja granica 95% intervala točnosti togo obrazca na odloženyh oficialnyh parah — ta že věrojętnosť bramkuje mašinove predlogy odvodženj v formovom API (api/forms)";
+
+/// One derivational pattern's page: label + probability header, then every
+/// rendered base → derivative row.
+fn deriv_page(pattern: &str, agg: &DerivAgg, p: f64) -> String {
+    let mut rows_sorted: Vec<&DerivRow> = agg.rows.iter().collect();
+    rows_sorted.sort_by(|a, b| {
+        crate::orthography::ascii_skeleton(&a.base)
+            .cmp(&crate::orthography::ascii_skeleton(&b.base))
+            .then_with(|| a.form.cmp(&b.form))
+            .then(a.base_id.cmp(&b.base_id))
+    });
+    let mut rows = String::new();
+    for r in rows_sorted {
+        let base_note = if r.official {
+            ""
+        } else {
+            " <span class='muted'>(rekonstrukcija)</span>"
+        };
+        let odvod = match r.derived_entry_id {
+            Some(id) => format!(
+                "<a href='../entry/{id}.html'><span class='mention'>{}</span></a>",
+                esc(&r.form)
+            ),
+            None => format!("<span class='mention muted'>{}</span>", esc(&r.form)),
+        };
+        let _ = write!(
+            rows,
+            "<tr><td><a href='../entry/{}.html'><b>{}</b></a>{base_note}</td><td>{odvod}</td></tr>",
+            r.base_id,
+            esc(&r.base),
+        );
+    }
+    let title = format!("Odvodženje: {} (-{pattern})", agg.label);
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>{}</h1>\
+         <p class='lede'><code>{}</code> — {} pokazanyh odvodženj. <b title='{}'>Wilson-95 p≈{p:.2}</b>.</p>\
+         <p class='muted'>Odvody bez linku (prigašene) sųt pravilno tvorjene formy, ktoryh něma v naslovnom množstvě sajta — one sųt dostupne v formovom API kako p-bramkovane predlogy (vidi <a href='../datasets.html'>Fajly za dostavanje</a>).</p>\
+         <p><a href='../derivations.html'>← vse obrazcy</a></p>\
+         <table class='wikitable'><thead><tr><th>Baza</th><th>Odvod</th></tr></thead><tbody>{rows}</tbody></table></article>",
+        esc(&title),
+        esc(pattern),
+        agg.rows.len(),
+        DERIV_P_TITLE,
+    );
+    page(&title, &body, 1)
+}
+
+/// The derivations.html overview: pattern | label | rendered-row count | p,
+/// sorted by count desc then pattern id.
+fn derivations_index_page(
+    deriv_rows: &BTreeMap<&'static str, DerivAgg>,
+    probs: &crate::derive::DerivationProbabilities,
+) -> String {
+    let mut items: Vec<(&&'static str, &DerivAgg)> = deriv_rows.iter().collect();
+    items.sort_by(|a, b| {
+        b.1.rows
+            .len()
+            .cmp(&a.1.rows.len())
+            .then_with(|| a.0.cmp(b.0))
+    });
+    let mut rows = String::new();
+    for (pattern, agg) in items {
+        let _ = write!(
+            rows,
+            "<tr><td><a href='deriv/{pattern}.html'><code>{pattern}</code></a></td><td>{}</td><td>{}</td><td title='{}'>p≈{:.2}</td></tr>",
+            esc(agg.label),
+            compact(agg.rows.len()),
+            DERIV_P_TITLE,
+            probs.probability(pattern),
+        );
+    }
+    let body = format!(
+        "<article class='entry'><h1 class='firstHeading'>Odvodženja po sufiksah</h1>\
+         <p class='lede'>Prěgled pravilnogo slovotvorstva: za vsaky obrazec — vse pary baza → odvod, ktore strany zapisov pokazyvajųt v bloku „Pravilne odvodženja“. Věrojętnosť p je ta sama Wilson-95 ocěna, ktora bramkuje mašinove predlogy v formovom API.</p>\
+         <table class='wikitable'><thead><tr><th>Obrazec</th><th>Nazva</th><th>Parov</th><th>p</th></tr></thead><tbody>{rows}</tbody></table></article>",
+    );
+    page("Odvodženja po sufiksah", &body, 0)
+}
+
 /// One novel-vocabulary proposal (a generated word with no official match).
 struct ProposalRow {
     id: usize,
@@ -7910,7 +8135,7 @@ function render(tok,recs,nts,key){{\
 }
 
 fn datasets_page(coverage: &str) -> String {
-    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost (kalibrovany kȯšik), <code>prob</code> = kalibrovana věrojętnosť generovanyh zapisov (null za oficialne/surove), prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='rules.json'>rules.json</a></td><td>Obratny indeks pravil: \u{201e}motor:id-pravila\u{201c} (motor = proto ili konsensus — id pravila ne je unikatny črěz motory) → spis id zapisov, ktoryh pokazany kandidat koristil to pravilo (vidi <a href='rules.html'>indeks pravil</a>; issue #73).</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost (kalibrovany kȯšik), <code>prob</code> = kalibrovana věrojętnosť generovanyh zapisov (null za oficialne/surove), prědȯk, <code>langs_list</code> = sortovany spis kodov atestujučih językov i <code>branch_pattern</code> = vzorec větvi (V/Z/J kombinacija, null bez větvi) — vsako zapytanje po vzorcu atestacije je jedna jq-linija (issue #73).</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='rules.json'>rules.json</a></td><td>Obratny indeks pravil: \u{201e}motor:id-pravila\u{201c} (motor = proto ili konsensus — id pravila ne je unikatny črěz motory) → spis id zapisov, ktoryh pokazany kandidat koristil to pravilo (vidi <a href='rules.html'>indeks pravil</a>; issue #73).</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
     page("Fajly za dostavanje", &body, 0)
 }
 
@@ -8026,6 +8251,7 @@ fn sitemap_xml(metas: &[SiteEntryMeta]) -> String {
         "datasets.html",
         "rules.html",
         "proto-index.html",
+        "derivations.html",
         "suffix-index.html",
         "inflection-issues.html",
         "featured.html",
@@ -8416,6 +8642,31 @@ fn json_str(v: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn branch_pattern_renders_the_seven_combinations_canonically() {
+        // Issue #73c: the pattern is the exact branch SET (via branch_of), in
+        // the fixed V→Z→J order, independent of input order; codes outside
+        // the registry drop out; an empty/unresolvable set yields None.
+        let l = |codes: &[&str]| -> Vec<String> { codes.iter().map(|s| s.to_string()).collect() };
+        assert_eq!(branch_pattern(&l(&["ru"])).as_deref(), Some("V"));
+        assert_eq!(branch_pattern(&l(&["pl", "cs"])).as_deref(), Some("Z"));
+        assert_eq!(branch_pattern(&l(&["sh"])).as_deref(), Some("J"));
+        assert_eq!(branch_pattern(&l(&["ru", "pl"])).as_deref(), Some("V+Z"));
+        assert_eq!(branch_pattern(&l(&["uk", "bg"])).as_deref(), Some("V+J"));
+        assert_eq!(branch_pattern(&l(&["sk", "mk"])).as_deref(), Some("Z+J"));
+        assert_eq!(
+            branch_pattern(&l(&["ru", "pl", "sl"])).as_deref(),
+            Some("V+Z+J")
+        );
+        // Canonical order regardless of input order; unknown codes ignored.
+        assert_eq!(
+            branch_pattern(&l(&["bg", "xx", "ru"])).as_deref(),
+            Some("V+J")
+        );
+        assert_eq!(branch_pattern(&l(&["xx"])), None);
+        assert_eq!(branch_pattern(&[]), None);
+    }
 
     #[test]
     fn rule_keys_disambiguate_engines_and_map_to_safe_files() {
