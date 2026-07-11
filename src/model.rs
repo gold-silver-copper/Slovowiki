@@ -60,6 +60,20 @@ impl Confidence {
         }
     }
 
+    /// Calibrated-probability bucket for DISPLAY surfaces (issue #77); measured
+    /// operating points in methodology.md — propose p>=0.6: 71.6%/66.3% P/R,
+    /// review p>=0.3: 61.7%/88.9% (holdout). [`Confidence::from_score`] stays
+    /// the internal/eval raw-score bucket.
+    pub fn from_probability(p: f64) -> Self {
+        if p >= crate::calibrate::PROPOSE_T {
+            Confidence::High
+        } else if p >= crate::calibrate::REVIEW_T {
+            Confidence::Medium
+        } else {
+            Confidence::Low
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Confidence::High => "vysoka",
@@ -356,4 +370,32 @@ pub fn parse_noun_traits(raw: &str) -> NounTraits {
     t.singular_only = s.contains(".sg") || s.contains("sg.");
     t.indeclinable = s.contains("indecl");
     t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The display bucket cuts exactly at the persisted operating points
+    /// (issue #77) — tested against the real consts so a threshold change
+    /// re-tests the boundaries.
+    #[test]
+    fn from_probability_buckets_at_the_operating_points() {
+        assert_eq!(
+            Confidence::from_probability(crate::calibrate::PROPOSE_T),
+            Confidence::High
+        );
+        assert_eq!(
+            Confidence::from_probability(crate::calibrate::PROPOSE_T - 1e-9),
+            Confidence::Medium
+        );
+        assert_eq!(
+            Confidence::from_probability(crate::calibrate::REVIEW_T),
+            Confidence::Medium
+        );
+        assert_eq!(
+            Confidence::from_probability(crate::calibrate::REVIEW_T - 1e-9),
+            Confidence::Low
+        );
+    }
 }

@@ -56,6 +56,16 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
     if proto.is_some() {
         println!("Using Proto-Slavic cache for reconstruction-derived forms.");
     }
+    // Calibrated confidence for display (issue #77): the legacy candidate
+    // scores are the calibrator's native scale, so badges re-bucket through
+    // the fitted probability map. Absent file → raw-score buckets stand.
+    let calibration = crate::calibrate::Calibration::load(Path::new(crate::calibrate::PATH))?;
+    if calibration.is_none() {
+        println!(
+            "(no {} — run `evaluate` to fit the calibrator; badges fall back to raw-score buckets)",
+            crate::calibrate::PATH
+        );
+    }
 
     let entry_dir = out_dir.join("entry");
     std::fs::create_dir_all(&entry_dir)?;
@@ -77,7 +87,14 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         } else {
             Some(entry.isv.as_str())
         };
-        let g = generator::generate(&input, official, proto, &cfg, &overrides);
+        let mut g = generator::generate(&input, official, proto, &cfg, &overrides);
+        // Display badges come from the calibrated probability, never the raw
+        // score (issue #77); scores/ordering stay untouched.
+        if let Some(cal) = &calibration {
+            for c in g.candidates.iter_mut() {
+                c.confidence = Confidence::from_probability(cal.probability(c.score));
+            }
+        }
         let Some(top) = g.candidates.first() else {
             continue;
         };
@@ -102,7 +119,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         }
         let form = top.form.clone();
         let evidence = branch_evidence(&input);
-        let html = entry_page(id, entry, &g, &evidence);
+        let html = entry_page(id, entry, &g, &evidence, calibration.as_ref());
         std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
         // search index row (13-element schema shared with the corpus path).
@@ -164,6 +181,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             status: g.match_status,
             conf: top.confidence,
             score: top.score,
+            prob: calibration.as_ref().map(|c| c.probability(top.score)),
         });
     }
     write_search_index(out_dir, &search_rows)?;
@@ -395,6 +413,28 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         });
     }
 
+    // ---- Calibrated confidence (issue #77) ----
+    // One loaded Calibration serves every surface below: the display badge
+    // re-bucket, per-entry meta probabilities, the novel-word proposals and
+    // the API's generated-lemma probability.
+    let calibration = crate::calibrate::Calibration::load(Path::new(crate::calibrate::PATH))?;
+    if calibration.is_none() {
+        println!(
+            "(no {} — run `evaluate` to fit the calibrator; novel-word probabilities fall back to raw scores)",
+            crate::calibrate::PATH
+        );
+    }
+    // Re-bucket every generated entry's badge from the calibrated probability —
+    // the raw coverage score is a ranking key, not a probability (ECE 0.185).
+    // Scores are UNTOUCHED: raw score stays the sort key everywhere (the decile
+    // map creates ties). Without a calibrator the coverage buckets stand, same
+    // as the proposals' "nekalibrovano" posture.
+    if let Some(cal) = &calibration {
+        for p in prepared.iter_mut() {
+            p.g.confidence = Confidence::from_probability(cal.probability(p.g.score));
+        }
+    }
+
     // Homograph / duplicate dedup. Several corpus sets can fold to the same
     // official lemma: genuine homographs (`ja` = I / and / yes), redundant
     // same-meaning sets (`jedin` ×N, all "one"), or a borrowing colliding with a
@@ -618,6 +658,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.status,
             p.g.confidence,
             p.g.score,
+            calibration.as_ref().map(|c| c.probability(p.g.score)),
             p.g.n_langs,
             p.g.n_branches,
             p.g.set.borrowed,
@@ -651,6 +692,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             MatchStatus::OfficialMatch,
             Confidence::High,
             1.0,
+            None,
             langs.len(),
             branches.len(),
             e.genesis.trim() == "I",
@@ -837,6 +879,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             status: p.status,
             conf: p.g.confidence,
             score: p.g.score,
+            prob: meta.prob,
         });
     }
     if cyrillic_displays > 0 {
@@ -929,6 +972,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             status: MatchStatus::OfficialMatch,
             conf: Confidence::High,
             score: 1.0,
+            prob: None,
         });
     }
 
@@ -995,6 +1039,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                         MatchStatus::NoOfficialEntry,
                         Confidence::Low,
                         0.0,
+                        None,
                         1,
                         1,
                         false,
@@ -1114,14 +1159,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // benchmark's dev split, holdout-validated — see methodology.md), bucketed
     // at the operating points measured there on the holdout split:
     // propose = p ≥ 0.6 (71.8% precision), review = p ≥ 0.3 (61.7% precision,
-    // 88.9% recall), below = not listed.
-    let calibration = crate::calibrate::Calibration::load(Path::new(crate::calibrate::PATH))?;
-    if calibration.is_none() {
-        println!(
-            "(no {} — run `evaluate` to fit the calibrator; novel-word probabilities fall back to raw scores)",
-            crate::calibrate::PATH
-        );
-    }
+    // 88.9% recall), below = not listed. `calibration` was loaded before the
+    // badge re-bucket above (issue #77) — one value serves both.
     let mut proposals: Vec<ProposalRow> = Vec::new();
     for p in &prepared {
         if p.suppressed || p.matched.is_some() {
@@ -1425,7 +1464,10 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         out_dir.join("about.html"),
         corpus_about(n, lemma_total, official),
     )?;
-    std::fs::write(out_dir.join("metrics.html"), metrics_page())?;
+    std::fs::write(
+        out_dir.join("metrics.html"),
+        metrics_page(calibration.as_ref()),
+    )?;
 
     // Dataset-coverage page (issue #35): documents which Slavic-Wiktionary datasets
     // feed the site and the inclusion/exclusion counts. The extraction tally is the
@@ -3481,7 +3523,7 @@ fn corpus_home(
             esc(&r.form),
             esc(&pos_code_label(&r.pos)),
             esc(&truncate(&r.gloss, 50)),
-            strength_cell(r.conf, r.score),
+            strength_cell(r.conf, r.prob, r.score),
             langs
         );
     }
@@ -3639,6 +3681,9 @@ struct HomeRow {
     status: MatchStatus,
     conf: Confidence,
     score: f32,
+    /// Calibrated probability shown in the strength cell (issue #77); `None`
+    /// for official-only rows and calibrator-less exports (raw score shown).
+    prob: Option<f64>,
 }
 
 /// Compact strength letter for the search index (V/S/N = high/medium/low).
@@ -3650,13 +3695,19 @@ fn conf_letter(c: Confidence) -> &'static str {
     }
 }
 
-/// The "guess strength" cell: a calibrated-confidence label + the numeric score.
-fn strength_cell(conf: Confidence, score: f32) -> String {
+/// The "guess strength" cell: the confidence badge plus the calibrated
+/// probability when a calibrator is fitted (issue #77), else the raw ranking
+/// score (which is NOT a probability — ECE 0.185).
+fn strength_cell(conf: Confidence, prob: Option<f64>, raw_score: f32) -> String {
+    let num = match prob {
+        Some(p) => format!("p≈{p:.2}"),
+        None => format!("{raw_score:.2}"),
+    };
     format!(
-        "<span class='reliability {}'>{}</span> <span class='score muted'>{:.2}</span>",
+        "<span class='reliability {}'>{}</span> <span class='score muted'>{}</span>",
         conf_class(conf),
         conf.label(),
-        score
+        num
     )
 }
 
@@ -3679,7 +3730,7 @@ fn home_page(
             esc(&r.form),
             esc(&pos_code_label(&r.pos)),
             esc(&truncate(&r.gloss, 55)),
-            strength_cell(r.conf, r.score),
+            strength_cell(r.conf, r.prob, r.score),
             status_pill(r.status)
         );
     }
@@ -4319,7 +4370,13 @@ const TOC_JS: &str = r#"
 // Entry page
 // ---------------------------------------------------------------------------
 
-fn entry_page(id: usize, entry: &OfficialEntry, g: &Generation, evidence: &[Evidence]) -> String {
+fn entry_page(
+    id: usize,
+    entry: &OfficialEntry,
+    g: &Generation,
+    evidence: &[Evidence],
+    cal: Option<&crate::calibrate::Calibration>,
+) -> String {
     let top = g.candidates.first().unwrap();
     let status = g.match_status;
     let pos_code = entry.pos.code();
@@ -4349,7 +4406,7 @@ fn entry_page(id: usize, entry: &OfficialEntry, g: &Generation, evidence: &[Evid
     let evidence_html = evidence_block(evidence);
     let alternatives = alternatives_block(&g.candidates);
     let trace = trace_block(top);
-    let calib = calibration_note(top.confidence);
+    let calib = calibration_note(top.confidence, cal);
     let freq = entry
         .frequency
         .map(|f| format!("<p class='muted'>Čęstota v slovniku: {f:.0}.</p>"))
@@ -5073,13 +5130,32 @@ fn conf_class(c: Confidence) -> &'static str {
     }
 }
 
-fn calibration_note(c: Confidence) -> String {
-    let rate = match c {
-        Confidence::High => "≈67% takyh kandidatov odgovara oficialnomu slovniku",
-        Confidence::Medium => "≈35% takyh kandidatov odgovara oficialnomu slovniku",
-        Confidence::Low => "≈10% takyh kandidatov odgovara oficialnomu slovniku",
+/// The badge explainer under the legacy entry headline: measured operating
+/// points read live from the committed calibrator (issue #77), never
+/// hand-maintained rates that go stale.
+fn calibration_note(c: Confidence, cal: Option<&crate::calibrate::Calibration>) -> String {
+    let Some(cal) = cal else {
+        return "<p class='muted calib'>Kalibracija ne najdena — věrojętnosti sųt syrove ocěny (puštaj `evaluate`).</p>".to_string();
     };
-    format!("<p class='muted calib'>Kalibrovana věrodostojnosť: {rate} (izměrjeno na testovom množstvu).</p>")
+    let rate = match c {
+        Confidence::High => format!(
+            "predlog p≥{:.1}: {:.1}% takyh kandidatov odgovara oficialnomu slovniku ({:.1}% pokrytje)",
+            crate::calibrate::PROPOSE_T,
+            100.0 * cal.propose_pr.0,
+            100.0 * cal.propose_pr.1,
+        ),
+        Confidence::Medium => format!(
+            "pregled p≥{:.1}: {:.1}% takyh kandidatov odgovara oficialnomu slovniku ({:.1}% pokrytje)",
+            crate::calibrate::REVIEW_T,
+            100.0 * cal.review_pr.0,
+            100.0 * cal.review_pr.1,
+        ),
+        Confidence::Low => "pod pragom pregleda (p<0.3)".to_string(),
+    };
+    format!(
+        "<p class='muted calib'>Kalibrovana věrodostojnosť: {rate} (izměrjeno na odloženoj četvrtině; ECE {:.3}).</p>",
+        cal.holdout_ece
+    )
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -5111,6 +5187,10 @@ struct SiteEntryMeta {
     status: MatchStatus,
     conf: Confidence,
     score: f32,
+    /// Calibrated P(matches an official decision) for generated entries
+    /// (issue #77); `None` for official-only (a fact, not a prediction), raw
+    /// attestations, and exports without a fitted calibrator.
+    prob: Option<f64>,
     n_langs: usize,
     n_branches: usize,
     borrowed: bool,
@@ -5176,6 +5256,7 @@ fn entry_meta(
     status: MatchStatus,
     conf: Confidence,
     score: f32,
+    prob: Option<f64>,
     n_langs: usize,
     n_branches: usize,
     borrowed: bool,
@@ -5194,6 +5275,7 @@ fn entry_meta(
         status,
         conf,
         score,
+        prob,
         n_langs,
         n_branches,
         borrowed,
@@ -5919,7 +6001,7 @@ fn needs_review(m: &SiteEntryMeta) -> bool {
         || matches!(m.conf, Confidence::Low)
         || m.n_branches < 2
         || m.n_langs < 3
-        || m.score < 0.45
+        || m.prob.is_some_and(|p| p < crate::calibrate::REVIEW_T)
 }
 
 fn language_portal_page(lang: &str, rows: &[SiteEntryMeta], all: &[SiteEntryMeta]) -> String {
@@ -6094,8 +6176,11 @@ fn write_needs_review_subpages(out_dir: &Path, rows: &[SiteEntryMeta]) -> Result
         ),
         (
             "nizka-ocena",
-            "Nizka ocěna",
-            rows.iter().filter(|m| m.score < 0.45).cloned().collect(),
+            "Nizka ocěna (kalibrovana p < 0.3)",
+            rows.iter()
+                .filter(|m| m.prob.is_some_and(|p| p < crate::calibrate::REVIEW_T))
+                .cloned()
+                .collect(),
         ),
     ];
     for (file, title, mut items) in groups {
@@ -6609,9 +6694,32 @@ fn entry_infobox(m: &SiteEntryMeta, extra_rows: &str) -> String {
                 &m.ancestor
             })
         });
+    // Calibrated reliability badge (issue #77). Official-only pages state the
+    // fact ("oficialno" — not a prediction, no p); raw attestation pages keep
+    // no badge row, as before.
+    let reliability = if m.raw {
+        String::new()
+    } else if m.official_only {
+        "<tr><th>Uvěrjenost</th><td><span class='reliability conf-high'>oficialno</span></td></tr>"
+            .to_string()
+    } else {
+        let p = m
+            .prob
+            .map(|p| {
+                format!(
+                    " <span class='score muted' title='kalibrovana věrojętnosť P(odgovara oficialnomu rěšenju); metodologija: target/eval/methodology.md'>p≈{p:.2}</span>"
+                )
+            })
+            .unwrap_or_default();
+        format!(
+            "<tr><th>Uvěrjenost</th><td><span class='reliability {}'>{}</span>{p}</td></tr>",
+            conf_class(m.conf),
+            m.conf.label(),
+        )
+    };
     format!(
         "<aside class='entry-infobox'><table class='wikitable compact-table'><caption>{}</caption>\
-         <tr><th>Čęst rěči</th><td>{}</td></tr><tr><th>Stav</th><td>{}</td></tr>\
+         <tr><th>Čęst rěči</th><td>{}</td></tr><tr><th>Stav</th><td>{}</td></tr>{reliability}\
          <tr><th>Kvaliteta</th><td>{}</td></tr><tr><th>Dokaz</th><td>{} jęz. / {} vět.</td></tr>\
          <tr><th>Tip</th><td>{}</td></tr><tr><th>Predok</th><td>{}</td></tr>{extra_rows}<tr><th>ID</th><td>{}</td></tr></table></aside>",
         esc(&m.title),
@@ -6865,8 +6973,12 @@ fn entries_json(metas: &[SiteEntryMeta]) -> String {
         if i > 0 {
             s.push_str(",\n");
         }
-        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"langs\":{},\"branches\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{}}}",
-            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), m.n_langs, m.n_branches, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor));
+        let prob = m
+            .prob
+            .map(|p| format!("{p:.3}"))
+            .unwrap_or_else(|| "null".to_string());
+        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"prob\":{},\"langs\":{},\"branches\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{}}}",
+            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), prob, m.n_langs, m.n_branches, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor));
     }
     s.push_str("\n]\n");
     s
@@ -7100,7 +7212,7 @@ function render(tok,recs,nts,key){{\
 }
 
 fn datasets_page(coverage: &str) -> String {
-    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost (kalibrovany kȯšik), <code>prob</code> = kalibrovana věrojętnosť generovanyh zapisov (null za oficialne/surove), prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
     page("Fajly za dostavanje", &body, 0)
 }
 
@@ -7235,9 +7347,11 @@ fn sitemap_xml(metas: &[SiteEntryMeta]) -> String {
 }
 
 /// A full explainer of every accuracy statistic tracked against the official
-/// dictionary. Static content; figures are the current production measurements.
-fn metrics_page() -> String {
-    let body = r##"<article class='entry metrics'>
+/// dictionary. Mostly static content; the confidence-calibration section is
+/// rendered live from the committed calibrator (issue #77) so it can never
+/// drift from data/score-calibration.json.
+fn metrics_page(cal: Option<&crate::calibrate::Calibration>) -> String {
+    let head = r##"<article class='entry metrics'>
   <h1 class='firstHeading'>Statistiky točnosti</h1>
   <p class='lede'>Ta strana objasnjaje <b>vsaku statistiku</b>, ktoru měrimo, da bismo proverili točnosť generatora protiv oficialnogo medžuslovjanskogo slovnika. Čisla sųt aktualne měrjenja produkcijnoj konfiguracije; vsaky artefakt sę regeneruje v <code>target/eval/</code>.</p>
 
@@ -7268,13 +7382,33 @@ fn metrics_page() -> String {
     <li><b>Po pokrytju větvi</b> — koliko od trěh větvi (iztok / zapad / jug) potvŕđaje formu; više pokrytja = viša točnosť.</li>
     <li><b>Po věrodostojnosti</b> — vidi niže.</li>
   </ul>
-
-  <h2 id='kalibracija'>Kalibracija věrodostojnosti</h2>
-  <p>Vsakomu kandidatu dajemo <b>kalibrovanu věrodostojnosť</b>. Dobra kalibracija znači: vysokověrodostojne kandidaty sovpadajųt čęstěje.</p>
-  <table class='wikitable'><thead><tr><th>Věrodostojnosť</th><th>n</th><th>normalizovano sovpadenje</th></tr></thead>
-  <tbody><tr><td>vysoka</td><td>6&nbsp;988</td><td>72%</td></tr><tr><td>srědnja</td><td>7&nbsp;097</td><td>39%</td></tr><tr><td>nizka</td><td>2&nbsp;215</td><td>12%</td></tr></tbody></table>
-  <p>Podrobna kalibracija je v <code>methodology.md</code>: tablica věrodostojnosti po decilah, ECE i Brier, plus <b>izotonična rekalibracija</b> — naučena na razvojnoj čęsti i prověrjena na odloženoj četvrtině (ECE na odloženyh: 0,195 syrovo → <b>0,013</b> rekalibrovano). Rekalibrovana věrojętnosť je to, čto třěba čitati kako <i>P(sovpadenja s oficialnoju lemmoju)</i>.</p>
-
+"##;
+    // Live confidence-calibration section: fitted provenance, holdout ECE and
+    // both measured operating points come straight from the persisted struct.
+    let mut calib = String::from(
+        "<h2 id='kalibracija'>Kalibracija věrodostojnosti</h2>\n  <p>Znak uvěrjenosti (vysoka/srědnja/nizka) na stranah zapisov je kȯšik <b>izotonično kalibrovanoj věrojętnosti</b> <i>P(sovpadenja s oficialnoju lemmoju)</i>, ne syrovoj ocěny (syrova ocěna je rangovy ključ, prěuvěrjena: ECE 0,185).</p>\n",
+    );
+    match cal {
+        Some(c) => {
+            let _ = write!(
+                calib,
+                "  <table class='wikitable'><tbody>\n  <tr><th>Naučeno na</th><td>{}</td></tr>\n  <tr><th>ECE na odloženoj četvrtině</th><td>{:.3}</td></tr>\n  <tr><th>predlog p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  <tr><th>pregled p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  </tbody></table>\n",
+                esc(&c.fitted_on),
+                c.holdout_ece,
+                crate::calibrate::PROPOSE_T,
+                100.0 * c.propose_pr.0,
+                100.0 * c.propose_pr.1,
+                crate::calibrate::REVIEW_T,
+                100.0 * c.review_pr.0,
+                100.0 * c.review_pr.1,
+            );
+        }
+        None => calib.push_str(
+            "  <p>Kalibracija ne najdena — věrojętnosti sųt syrove ocěny (puštaj `evaluate`).</p>\n",
+        ),
+    }
+    calib.push_str("  <p>Podrobna kalibracija (decilna tablica, ECE i Brier) je v <code>methodology.md</code>; kalibrovane věrojętnosti novyh slov sųt na straně <a href='proposals.html'>Predloženja</a>.</p>\n");
+    let tail = r##"
   <h2 id='corpus'>Sajtovy pųť (corpus-eval)</h2>
   <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,6% točno / 63,1% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
 
@@ -7316,7 +7450,8 @@ fn metrics_page() -> String {
   <h2 id='artefakty'>Artefakty</h2>
   <p>Vse měrjenja sųt zapisane v <code>target/eval/</code>: <code>candidate-generation-report.md</code>, <code>stage-attribution.md</code>, <code>oracle-ladder.md</code>, <code>cluster-selection.md</code>, <code>rep-selection.md</code>, <code>synonym-accuracy.md</code>, <code>methodology.md</code> (razděl razvoj/kontrola bez prěučenja, značimosť stupnjev, bootstrap-intervaly, kalibracija), <code>predictions.csv</code> (vse prědvidženja). Vsaka je reproducibilna jednoju komandoju.</p>
 </article>"##;
-    page("Statistiky točnosti — medžuslovjansky", body, 0)
+    let body = format!("{head}\n  {calib}{tail}");
+    page("Statistiky točnosti — medžuslovjansky", &body, 0)
 }
 
 fn about_page(n: usize, norm_rate: f32, exact_rate: f32, top3: f32) -> String {

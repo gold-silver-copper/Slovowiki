@@ -77,4 +77,30 @@ mod tests {
         // Scores of exactly 1.0 clamp into the top decile.
         assert_eq!(c.probability(1.0), 0.9);
     }
+
+    /// The display re-bucket (issue #77: `from_probability ∘ probability`)
+    /// must span Low→High on the committed calibrator's decile shape: the
+    /// flat floor (0.136, scores < 0.4) lands under REVIEW_T and the cap
+    /// (0.733, scores ≥ 0.8) clears PROPOSE_T.
+    #[test]
+    fn display_rebucket_spans_low_to_high_on_committed_deciles() {
+        use crate::model::Confidence;
+        let c = Calibration {
+            fitted_on: String::new(),
+            holdout_ece: 0.0,
+            propose_pr: (0.0, 0.0),
+            review_pr: (0.0, 0.0),
+            deciles: [
+                0.136, 0.136, 0.136, 0.136, 0.193, 0.397, 0.593, 0.660, 0.733, 0.733,
+            ],
+        };
+        assert_eq!(
+            Confidence::from_probability(c.probability(0.2)),
+            Confidence::Low
+        );
+        assert_eq!(
+            Confidence::from_probability(c.probability(0.99)),
+            Confidence::High
+        );
+    }
 }
