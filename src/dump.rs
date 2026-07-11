@@ -224,7 +224,7 @@ impl LemmaCorpus {
     pub fn load(path: &Path) -> Result<Self> {
         let bytes =
             read_maybe_gz(path).with_context(|| format!("open lemma corpus {}", path.display()))?;
-        let corpus: Self = serde_json::from_slice(&bytes).context("parse lemma corpus")?;
+        let mut corpus: Self = serde_json::from_slice(&bytes).context("parse lemma corpus")?;
         check_cache_schema(
             "lemma",
             path,
@@ -239,6 +239,16 @@ impl LemmaCorpus {
             corpus.entry_count,
             corpus.entries.len()
         );
+        // Load-time hygiene (issue #66): a couple dozen cached protos carry
+        // Cyrillic homoglyph typos from en.wiktionary etymologies (*klоръ for
+        // *klopъ). Fold them here — the single choke point every consumer
+        // (corpus sets, proto linking, eval etymology attach) reads through —
+        // so the on-disk cache stays verbatim and needs no regen/schema bump.
+        for e in &mut corpus.entries {
+            if !e.proto.is_empty() {
+                e.proto = crate::normalize::fold_proto_homoglyphs(&e.proto);
+            }
+        }
         Ok(corpus)
     }
 
@@ -1114,7 +1124,7 @@ impl ProtoIndex {
     pub fn load(path: &Path) -> Result<Self> {
         let bytes =
             read_maybe_gz(path).with_context(|| format!("open proto cache {}", path.display()))?;
-        let cache: ProtoCache = serde_json::from_slice(&bytes).context("parse proto cache")?;
+        let mut cache: ProtoCache = serde_json::from_slice(&bytes).context("parse proto cache")?;
         check_cache_schema(
             "proto",
             path,
@@ -1129,6 +1139,13 @@ impl ProtoIndex {
             cache.entry_count,
             cache.entries.len()
         );
+        // Same load-time homoglyph hygiene as LemmaCorpus::load (issue #66),
+        // applied to reconstruction names so `by_word` and the lemma corpus's
+        // folded `proto` fields keep matching. Descendants stay verbatim —
+        // those are attested modern words, legitimately Cyrillic.
+        for e in &mut cache.entries {
+            e.word = crate::normalize::fold_proto_homoglyphs(&e.word);
+        }
         let mut idx = Self::build(cache.entries);
         // Attach Wiktionary's explicit (lang, lemma) -> ancestor etymology if the
         // lemma corpus is available next to the proto cache. Absent → skip; a

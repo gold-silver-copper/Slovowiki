@@ -691,9 +691,20 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     INFLECTION_PANICS.store(0, std::sync::atomic::Ordering::Relaxed);
 
     // Second pass: render pages (with family links) + the search index.
+    // Script census (issue #66): a generated display headword must never carry
+    // Cyrillic — count and report loudly if the normalization hygiene ever
+    // regresses (sh dual-script lemmas, homoglyph protos).
+    let mut cyrillic_displays = 0usize;
     for (i, p) in prepared.iter().enumerate() {
         if p.suppressed {
             continue;
+        }
+        if p.display.chars().any(crate::normalize::is_cyrillic_char) {
+            cyrillic_displays += 1;
+            eprintln!(
+                "WARNING: generated display contains Cyrillic: id {} {:?} (issue #66 class)",
+                p.id, p.display
+            );
         }
         let family = family_block(i, &prepared, &families);
         // Synonyms only on official-headword pages, where the thesaurus lemma's
@@ -824,6 +835,13 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             conf: p.g.confidence,
             score: p.g.score,
         });
+    }
+    if cyrillic_displays > 0 {
+        println!(
+            "WARNING: {cyrillic_displays} generated display headwords contain Cyrillic letters (issue #66 class — see stderr for the list)."
+        );
+    } else {
+        println!("script census: all generated display headwords are Latin (issue #66).");
     }
 
     // Official lemmas no candidate generates: still searchable, clearly badged
