@@ -763,7 +763,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             crate::DEFAULT_PROTO_CACHE
         );
     }
-    let (proto_groups, proto_linked, proto_misses) = build_proto_reflex_groups(
+    let proto_reflex = build_proto_reflex_index(
         proto_index.as_ref(),
         prepared
             .iter()
@@ -771,8 +771,10 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             .map(|p| (p.id, &p.g.set)),
     );
     println!(
-        "proto pages: {} pages / {proto_linked} linked entries / {proto_misses} lookup misses (issue #73).",
-        proto_groups.len(),
+        "proto pages: {} pages / {} linked entries / {} lookup misses (issue #73).",
+        proto_reflex.pages.len(),
+        proto_reflex.linked,
+        proto_reflex.misses,
     );
 
     write_wiki_indexes(
@@ -785,7 +787,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         &curation,
         &rule_index,
         proto_index.as_ref(),
-        &proto_groups,
+        &proto_reflex,
     )?;
     // Some special pages intentionally probe inflection failures. Keep the final
     // export note about blank cells limited to the actual entry pages rendered below.
@@ -842,9 +844,11 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         };
         let meta = meta_by_id.get(&p.id).expect("generated entry meta");
         // Predok infobox link to the proto-lemma reflex page (issue #73b),
-        // only when that page is actually emitted for this ancestor's slug.
-        let proto_link = ancestor_slug(meta)
-            .filter(|sl| proto_groups.contains_key(sl))
+        // gated on THIS entry's membership — the target page is guaranteed
+        // to list the entry (never a slug-coincidence lexeme).
+        let proto_link = proto_reflex
+            .membership
+            .get(&p.id)
             .map(|sl| format!(" <a href='../proto/{sl}.html'>(rekonstrukcija)</a>"))
             .unwrap_or_default();
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
@@ -6707,7 +6711,7 @@ fn write_wiki_indexes(
     curation: &std::collections::HashMap<String, String>,
     rule_index: &RuleIndex,
     proto: Option<&crate::dump::ProtoIndex>,
-    proto_groups: &ProtoGroups,
+    proto_reflex: &ProtoReflexIndex,
 ) -> Result<()> {
     for dir in [
         "category",
@@ -6826,14 +6830,35 @@ fn write_wiki_indexes(
             .first()
             .map(|m| m.ancestor.trim_start_matches('*').to_string())
             .unwrap_or_else(|| sl.clone());
-        // Link the proto-lemma reflex page when one exists for this slug
-        // (issue #73b) — added alongside, never replacing, existing links.
-        let proto_link = if proto_groups.contains_key(sl.as_str()) {
-            format!(
-                "<p><a href='../proto/{sl}.html'>Praslovjanska lemma-strana (rekonstrukcija, glosy, potomky) →</a></p>"
-            )
-        } else {
+        // Link every proto-lemma reflex page that lists at least one of THIS
+        // root's entries (membership-gated, issue #73b review): a root can
+        // mix ancestors that resolve to different reconstructions (cělo vs
+        // čelo both slug to "celo"), so each gets its own labeled link.
+        let mut root_proto: std::collections::BTreeSet<&String> = std::collections::BTreeSet::new();
+        for m in rows.iter() {
+            if let Some(psl) = proto_reflex.membership.get(&m.id) {
+                root_proto.insert(psl);
+            }
+        }
+        let proto_link = if root_proto.is_empty() {
             String::new()
+        } else {
+            let links = root_proto
+                .iter()
+                .map(|psl| {
+                    let label = proto_reflex
+                        .pages
+                        .get(psl.as_str())
+                        .map(|p| p.word.as_str())
+                        .unwrap_or(psl.as_str());
+                    format!(
+                        "<a href='../proto/{psl}.html'><span class='mention'>*{}</span></a>",
+                        esc(label)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" · ");
+            format!("<p>Praslovjanske lemma-strany (rekonstrukcija, glosy, potomky): {links} →</p>")
         };
         std::fs::write(
             out_dir.join("root").join(format!("{sl}.html")),
@@ -6859,16 +6884,16 @@ fn write_wiki_indexes(
     if let Some(pi) = proto {
         let by_id: std::collections::HashMap<usize, &SiteEntryMeta> =
             metas.iter().map(|m| (m.id, m)).collect();
-        for (sl, recons) in proto_groups {
+        for (sl, pg) in &proto_reflex.pages {
             std::fs::write(
                 out_dir.join("proto").join(format!("{sl}.html")),
-                proto_page(sl, recons, pi, &by_id),
+                proto_page(sl, pg, pi, &by_id),
             )?;
         }
     }
     std::fs::write(
         out_dir.join("proto-index.html"),
-        proto_index_page(proto_groups, proto),
+        proto_index_page(proto_reflex, proto),
     )?;
 
     for (fold, rows) in homographs {
@@ -7406,11 +7431,17 @@ struct RuleRow {
     n_branches: usize,
 }
 
-/// All firings of one (engine, rule id), with the rule's human explanation
-/// and doc reference taken from the FIRST firing seen (they are constant per
-/// id within an engine).
+/// All firings of one (engine, rule id). The explanation texts are DYNAMIC
+/// for several ids (consensus-vote, pick-representative, proto-ancestor, …:
+/// they embed the entry's own vote counts / forms), so the first firing's
+/// text is kept only as an attributed EXAMPLE — `example_display` names the
+/// entry it came from and the pages label it "Priklad (…)", never as the
+/// rule's general description. The doc reference IS constant per id.
 struct RuleAgg {
     explanation: String,
+    /// Display headword + page id of the entry `explanation` was taken from.
+    example_display: String,
+    example_id: usize,
     reference: Option<String>,
     rows: Vec<RuleRow>,
 }
@@ -7421,10 +7452,36 @@ struct RuleAgg {
 /// on the pair, the same disambiguation `eval::stage_of_step` uses.
 type RuleIndex = BTreeMap<(&'static str, String), RuleAgg>;
 
-/// Proto-lemma reflex groups (issue #73b): ancestor slug (the SAME
-/// [`slug`]-fold `root/` pages key on) → proto-cache entry index → ids of the
-/// rendered entries whose ancestor resolved to that reconstruction.
-type ProtoGroups = BTreeMap<String, BTreeMap<usize, Vec<usize>>>;
+/// The proto-lemma reflex join (issue #73b). One page per RESOLVED
+/// reconstruction word (the accent-folded proto-cache word — canonical, so
+/// accented and unaccented ancestor spellings of one lemma share a page),
+/// carrying ALL homonymous ProtoEntries under that word. `membership` is the
+/// authoritative entry→page map: the infobox "(rekonstrukcija)" link and the
+/// root-page links are gated on it, so a link can never point at a proto
+/// page that does not list the linking entry.
+#[derive(Default)]
+struct ProtoReflexIndex {
+    /// Page slug → group. Slugs derive from the canonical folded word;
+    /// collisions between DIFFERENT folded words (cělo vs čelo → "celo") get
+    /// deterministic "-2"/"-3"… suffixes in folded-word order.
+    pages: BTreeMap<String, ProtoReflexPage>,
+    /// Entry id → page slug, only for entries whose ancestor resolved.
+    membership: BTreeMap<usize, String>,
+    linked: usize,
+    misses: usize,
+}
+
+/// One proto reflex page: a canonical folded reconstruction word, ALL
+/// proto-cache entries folding to it (homonyms / accent variants), and the
+/// rendered entries whose ancestor resolved to it.
+struct ProtoReflexPage {
+    /// Canonical accent-folded cache word (no '*').
+    word: String,
+    /// ProtoEntry indexes whose folded word equals `word`, in cache order.
+    recons: Vec<usize>,
+    /// Linked entry ids, ascending.
+    entry_ids: Vec<usize>,
+}
 
 /// Engine tag for the rule index, derived from the top candidate's source
 /// exactly as the benchmark derives its `is_proto` flag.
@@ -7466,6 +7523,8 @@ fn build_rule_index<'a>(
                 .entry((engine, step.id.clone()))
                 .or_insert_with(|| RuleAgg {
                     explanation: step.explanation.clone(),
+                    example_display: display.to_string(),
+                    example_id: id,
                     reference: step.reference.clone(),
                     rows: Vec::new(),
                 });
@@ -7490,58 +7549,83 @@ fn build_rule_index<'a>(
     index
 }
 
-/// Strip Wiktionary combining accent/length marks (U+0300–U+036F): the lemma
-/// corpus's ancestor strings can carry them (*pę̑tь) while the proto cache's
-/// reconstruction titles do not, so reflex lookups fold BOTH sides the same
-/// way before comparing (the same mark filter `proto_stem` uses).
-fn strip_combining_accents(w: &str) -> String {
+/// Fold a Proto-Slavic word for the reflex join: strip COMBINING accent /
+/// length marks (U+0300–U+036F, e.g. *pę̑tь) AND fold the PREcomposed
+/// accented vowels (à á â ã ā ȁ ȃ ò ì … — the majority of ancestor accents)
+/// via the proto engine's own [`crate::proto::debase_vowel`] table, which
+/// preserves the etymological letters (ě ę ǫ ъ ь y). Applied identically to
+/// the ancestor string and the cache word, so the two sides cannot drift.
+fn fold_proto_accents(w: &str) -> String {
     w.chars()
         .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .map(crate::proto::debase_vowel)
         .collect()
 }
 
-/// Group the rendered entries' non-borrowed ancestors by [`slug`] and resolve
-/// each against the proto cache — first verbatim (`entry_by_word`; both sides
-/// are homoglyph-folded at load), then accent-blind. Returns the groups plus
-/// (linked entries, lookup misses); misses are expected — the corpus carries
-/// ancestors the 5.4k-entry cache does not.
-fn build_proto_reflex_groups<'a>(
+/// Resolve every rendered entry's non-borrowed '*' ancestor against the
+/// proto cache — both sides folded through [`fold_proto_accents`] (they are
+/// already homoglyph-folded at load) — and group pages by the RESOLVED
+/// folded cache word. Where several ProtoEntries share the folded word
+/// (homonyms, accent variants), the page carries ALL of them; where two
+/// different folded words collide on a slug (cělo vs čelo → "celo"), the
+/// later word (folded-word order) gets a deterministic "-2"/"-3"… suffix.
+/// Misses are expected — the corpus carries ancestors the 5.4k-entry cache
+/// does not.
+fn build_proto_reflex_index<'a>(
     proto: Option<&crate::dump::ProtoIndex>,
     entries: impl Iterator<Item = (usize, &'a crate::corpus::CognateSet)>,
-) -> (ProtoGroups, usize, usize) {
-    let mut groups: ProtoGroups = BTreeMap::new();
+) -> ProtoReflexIndex {
+    let mut index = ProtoReflexIndex::default();
     let Some(pi) = proto else {
-        return (groups, 0, 0);
+        return index;
     };
-    let mut by_plain: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    // Folded cache word → ALL ProtoEntry indexes (a single-index map would
+    // silently attribute homonyms to whichever entry came first).
+    let mut by_fold: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (i, e) in pi.entries.iter().enumerate() {
-        by_plain
-            .entry(strip_combining_accents(&e.word))
-            .or_insert(i);
+        by_fold
+            .entry(fold_proto_accents(&e.word))
+            .or_default()
+            .push(i);
     }
-    let (mut linked, mut misses) = (0usize, 0usize);
+    // Resolve entries; group linked ids by the canonical folded word.
+    let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (id, set) in entries {
         if set.borrowed || !set.proto.starts_with('*') {
             continue;
         }
-        let word = set.proto.trim_start_matches('*');
-        let hit = pi
-            .entry_by_word(word)
-            .or_else(|| by_plain.get(&strip_combining_accents(word)).copied());
-        match hit {
-            Some(i) => {
-                groups
-                    .entry(slug(word))
-                    .or_default()
-                    .entry(i)
-                    .or_default()
-                    .push(id);
-                linked += 1;
-            }
-            None => misses += 1,
+        let folded = fold_proto_accents(set.proto.trim_start_matches('*'));
+        if by_fold.contains_key(&folded) {
+            groups.entry(folded).or_default().push(id);
+            index.linked += 1;
+        } else {
+            index.misses += 1;
         }
     }
-    (groups, linked, misses)
+    // Assign page slugs in folded-word order (deterministic) and build the
+    // membership map that gates every inbound link.
+    let mut used: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (word, mut ids) in groups {
+        let base = slug(&word);
+        let n = used.entry(base.clone()).or_insert(0);
+        *n += 1;
+        let sl = if *n == 1 { base } else { format!("{base}-{n}") };
+        ids.sort_unstable();
+        ids.dedup();
+        for &id in &ids {
+            index.membership.insert(id, sl.clone());
+        }
+        let recons = by_fold.get(&word).cloned().unwrap_or_default();
+        index.pages.insert(
+            sl,
+            ProtoReflexPage {
+                word,
+                recons,
+                entry_ids: ids,
+            },
+        );
+    }
+    index
 }
 
 /// One rule's page: lede (engine tag, explanation, [dok] reference), then
@@ -7567,14 +7651,21 @@ fn rule_page(engine: &str, id: &str, agg: &RuleAgg) -> String {
         );
     }
     let title = format!("Pravilo: {id}");
+    // The explanation text is per-entry (several ids embed the entry's own
+    // vote counts / forms), so it is shown ONLY as an attributed example —
+    // the rule's stable identity is the id + engine + [dok] reference.
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>{}</h1>\
-         <p class='lede'><span class='badge'>{}</span> {}{dok}</p>\
-         <p class='muted'>Strany zapisov, na ktoryh sled pravil pokazanogo (najvyše rangovanogo) kandidata koristi to pravilo — {} použitij. „Prěd → po“ je točna transformacija togo kroka.</p>\
+         <p class='lede'><span class='badge'>{}</span> <code class='rule-id'>{}</code>{dok}</p>\
+         <p>Priklad (<a href='../entry/{}.html'>{}</a>): <span class='muted'>{}</span></p>\
+         <p class='muted'>Strany zapisov, na ktoryh sled pravil pokazanogo (najvyše rangovanogo) kandidata koristi to pravilo — {} použitij. „Prěd → po“ je točna transformacija togo kroka; objasnjenje kroka je specifično za vsaky zapis (vidi jego stranu).</p>\
          <p><a href='../rules.html'>← vse pravila</a></p>\
          <table class='wikitable'><thead><tr><th>Slovo</th><th>Prěd → po</th><th>Čęst rěči</th><th>Dokaz</th></tr></thead><tbody>{rows}</tbody></table></article>",
         esc(&title),
         esc(engine),
+        esc(id),
+        agg.example_id,
+        esc(&agg.example_display),
         esc(&agg.explanation),
         agg.rows.len(),
     );
@@ -7600,11 +7691,12 @@ fn rules_index_page(rule_index: &RuleIndex) -> String {
             .unwrap_or_default();
         let _ = write!(
             rows,
-            "<tr><td><a href='rule/{}.html'><code class='rule-id'>{}</code></a></td><td><span class='badge'>{}</span></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td><a href='rule/{}.html'><code class='rule-id'>{}</code></a></td><td><span class='badge'>{}</span></td><td>{}</td><td class='muted'>({}) {}</td><td>{}</td></tr>",
             rule_file_stem(engine, id),
             esc(id),
             esc(engine),
             compact(agg.rows.len()),
+            esc(&agg.example_display),
             esc(&truncate(&agg.explanation, 110)),
             dok,
         );
@@ -7612,8 +7704,8 @@ fn rules_index_page(rule_index: &RuleIndex) -> String {
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>Indeks pravil (zvukove zakony)</h1>\
          <p class='lede'>Obratny indeks sledov pravil: za vsako pravilo generatora — vse strany zapisov, na ktoryh pokazany kandidat prošel črěz njego. Motor <span class='badge'>proto</span> je praslovjansky pravilny stroj, <span class='badge'>konsensus</span> — medžuvětvovy konsensus s reparacijami; id pravila NE je unikatny črěz motory (napr. <code>liquid-metathesis</code>), zato indeks ključuje na paru motor+id.</p>\
-         <p class='muted'>Strojevo čitatelna forma: <a href='rules.json'>rules.json</a> (\u{201e}motor:id\u{201c} → spis id zapisov).</p>\
-         <table class='wikitable'><thead><tr><th>Pravilo</th><th>Motor</th><th>Zapisov</th><th>Objasnjenje</th><th>Dok.</th></tr></thead><tbody>{rows}</tbody></table></article>",
+         <p class='muted'>Strojevo čitatelna forma: <a href='rules.json'>rules.json</a> (\u{201e}motor:id\u{201c} → spis id zapisov). Stolpec „Priklad“ je objasnjenje kroka iz JEDNOGO zapisa (v skobkah) — tekst je specifičny za zapis, ne obča definicija pravila.</p>\
+         <table class='wikitable'><thead><tr><th>Pravilo</th><th>Motor</th><th>Zapisov</th><th>Priklad</th><th>Dok.</th></tr></thead><tbody>{rows}</tbody></table></article>",
     );
     page("Indeks pravil (zvukove zakony)", &body, 0)
 }
@@ -7640,22 +7732,62 @@ fn rules_json(rule_index: &RuleIndex) -> String {
     s
 }
 
-/// One proto-lemma reflex page (issue #73b): every reconstruction whose word
-/// folds to this slug, with its glosses, stem class, deeper ancestry and
-/// branch-grouped descendants — plus the generated Slovowiki entries whose
-/// ancestor resolved to it, as prominent links.
+/// One proto-lemma reflex page (issue #73b): the canonical (accent-folded)
+/// reconstruction word with ALL proto-cache entries folding to it — genuine
+/// homonyms and accent variants alike. The join is by word alone, so a
+/// generated reflex cannot honestly be attributed to one homonym over
+/// another: the linked entries are listed ONCE at page level, and every
+/// entry in that list carries the inbound "(rekonstrukcija)" link (same
+/// membership map — the audit invariant).
 fn proto_page(
-    slug_key: &str,
-    recons: &BTreeMap<usize, Vec<usize>>,
+    _slug_key: &str,
+    pg: &ProtoReflexPage,
     pi: &crate::dump::ProtoIndex,
     by_id: &std::collections::HashMap<usize, &SiteEntryMeta>,
 ) -> String {
-    let mut order: Vec<usize> = recons.keys().copied().collect();
+    let title = format!("Praslovjanska lemma: *{}", pg.word);
+    // Page-level reflex list: exactly the membership set.
+    let mut reflexes = String::new();
+    for id in &pg.entry_ids {
+        let Some(m) = by_id.get(id) else { continue };
+        let _ = write!(
+            reflexes,
+            "<li><a href='../entry/{}.html'><b>{}</b></a> <span class='muted'>{} — {}</span></li>",
+            m.id,
+            esc(&m.title),
+            esc(&pos_code_label(&m.pos)),
+            esc(&truncate(&m.gloss, 60)),
+        );
+    }
+    let reflex_block = if reflexes.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<section><h2 id='refleksy'>Generovany refleks v Slovowiki</h2><ul class='compact-list'>{reflexes}</ul></section>"
+        )
+    };
+    // Root back-link via a linked entry's own root page (the proto slug is
+    // canonical and need not equal any root slug).
+    let root_link = pg
+        .entry_ids
+        .iter()
+        .find_map(|id| by_id.get(id).and_then(|m| ancestor_slug(m)))
+        .map(|sl| {
+            format!(
+                "<a href='../root/{sl}.html'>← korenj-strana (vse zapisy pod tym korenjem)</a> · "
+            )
+        })
+        .unwrap_or_default();
+    let homonym_note = if pg.recons.len() > 1 {
+        format!(
+            "<p class='muted'>{} rekonstrukcije v proto-cache dělę tu formu (homonimy ili akcentne varianty) — refleksy vyše sųt povezane s formoju, ne s jednoj iz njih.</p>",
+            pg.recons.len()
+        )
+    } else {
+        String::new()
+    };
+    let mut order: Vec<usize> = pg.recons.clone();
     order.sort_by_key(|&i| (crate::orthography::ascii_skeleton(&pi.entries[i].word), i));
-    let title = order
-        .first()
-        .map(|&i| format!("Praslovjanska lemma: *{}", pi.entries[i].word))
-        .unwrap_or_else(|| format!("Praslovjanska lemma: {slug_key}"));
     let mut sections = String::new();
     for &i in &order {
         let e = &pi.entries[i];
@@ -7672,8 +7804,8 @@ fn proto_page(
                 esc(&e.glosses.join("; "))
             );
         }
-        // Sparse on schema-0 caches: render only when present, silently skip
-        // otherwise (issue #76 improves coverage later).
+        // Sparse in the cache: render only when present, silently skip
+        // otherwise.
         if let Some(sc) = e.stem_class.as_deref() {
             let _ = write!(
                 info,
@@ -7695,29 +7827,13 @@ fn proto_page(
                 esc(e.pie.trim())
             );
         }
-        // Generated Slovowiki reflexes: prominent internal links.
-        let mut reflexes = String::new();
-        for id in recons.get(&i).map(Vec::as_slice).unwrap_or(&[]) {
-            let Some(m) = by_id.get(id) else { continue };
-            let _ = write!(
-                reflexes,
-                "<li><a href='../entry/{}.html'><b>{}</b></a> <span class='muted'>{} — {}</span></li>",
-                m.id,
-                esc(&m.title),
-                esc(&pos_code_label(&m.pos)),
-                esc(&truncate(&m.gloss, 60)),
-            );
-        }
-        let reflex_block = if reflexes.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "<h3>Generovany refleks v Slovowiki</h3><ul class='compact-list'>{reflexes}</ul>"
-            )
-        };
         // Attested descendants grouped by branch; codes outside the lang
         // registry (Baltic, non-Slavic IE comparanda) go under a muted
-        // "ine/pročeje" group.
+        // "ine/pročeje" group and display their raw code (the registry
+        // name fallback would mislabel them "slovjansky").
+        fn dname(code: &str) -> &str {
+            crate::lang::lang_info(code).map(|i| i.name).unwrap_or(code)
+        }
         let mut by_branch: BTreeMap<u8, Vec<(String, String)>> = BTreeMap::new();
         for (code, form) in &e.descendants {
             let key = match crate::corpus::branch_of(code) {
@@ -7741,22 +7857,18 @@ fn proto_page(
             let Some(items) = by_branch.get_mut(&key) else {
                 continue;
             };
-            items.sort_by(|a, b| {
-                crate::lang::lang_name(&a.0)
-                    .cmp(crate::lang::lang_name(&b.0))
-                    .then_with(|| a.1.cmp(&b.1))
-            });
-            let muted = if key == 3 { " class='muted'" } else { "" };
+            items.sort_by(|a, b| dname(&a.0).cmp(dname(&b.0)).then_with(|| a.1.cmp(&b.1)));
+            let muted = if key == 3 { " muted" } else { "" };
             let _ = write!(
                 desc,
-                "<div class='branch-box'{muted}><h4>{}</h4><table class='wikitable compact-table'><tbody>",
+                "<div class='branch-box{muted}'><h4>{}</h4><table class='wikitable compact-table'><tbody>",
                 esc(label)
             );
             for (code, form) in items.iter() {
                 let _ = write!(
                     desc,
                     "<tr><td class='lc'>{}</td><td>{}</td></tr>",
-                    esc(crate::lang::lang_name(code)),
+                    esc(dname(code)),
                     esc(form),
                 );
             }
@@ -7771,15 +7883,15 @@ fn proto_page(
             sections,
             "<section><h2 id='p{i}'><span class='mention'>*{}</span></h2>\
              <table class='wikitable compact-table'><tbody>{info}</tbody></table>\
-             {reflex_block}\
              <h3>Atestovane potomky (Wiktionary)</h3>{desc_block}</section>",
             esc(&e.word),
         );
     }
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>{}</h1>\
-         <p class='lede'>Strana praslovjanskoj lemmy iz proto-cache: rekonstrukcija s glosami, dubjejšeju etimologijeju i atestovanymi potomkami po větvah — i generovane medžuslovjanske refleksy na sajtu. Nekoliko rekonstrukcij može děliti jedin ključ (varianty akcenta / bliske formy).</p>\
-         <p><a href='../root/{slug_key}.html'>← korenj-strana (vse zapisy pod tym korenjem)</a> · <a href='../proto-index.html'>vse praslovjanske lemmy</a></p>\
+         <p class='lede'>Strana praslovjanskoj lemmy iz proto-cache: rekonstrukcija s glosami, dubjejšeju etimologijeju i atestovanymi potomkami po větvah — i generovane medžuslovjanske refleksy na sajtu.</p>\
+         <p>{root_link}<a href='../proto-index.html'>vse praslovjanske lemmy</a></p>\
+         {reflex_block}{homonym_note}\
          {sections}\
          <p class='foot'>Rekonstrukcije i potomky: Wiktionary (CC BY-SA), en.wiktionary Reconstruction:Proto-Slavic.</p></article>",
         esc(&title),
@@ -7788,13 +7900,17 @@ fn proto_page(
 }
 
 /// The proto-index.html overview: every reconstruction with a reflex page,
-/// sorted by word skeleton. Written even without the proto cache (with a
-/// note), so hub/sidebar links never dangle.
-fn proto_index_page(proto_groups: &ProtoGroups, proto: Option<&crate::dump::ProtoIndex>) -> String {
+/// sorted by word skeleton (homonyms each get a row, linking their shared
+/// page). Written even without the proto cache (with a note), so hub/sidebar
+/// links never dangle.
+fn proto_index_page(
+    proto_reflex: &ProtoReflexIndex,
+    proto: Option<&crate::dump::ProtoIndex>,
+) -> String {
     let mut rows_data: Vec<(&str, usize, usize)> = Vec::new(); // (slug, proto idx, linked)
-    for (sl, recons) in proto_groups {
-        for (&i, ids) in recons {
-            rows_data.push((sl.as_str(), i, ids.len()));
+    for (sl, pg) in &proto_reflex.pages {
+        for &i in &pg.recons {
+            rows_data.push((sl.as_str(), i, pg.entry_ids.len()));
         }
     }
     let body = match proto {
@@ -7819,9 +7935,10 @@ fn proto_index_page(proto_groups: &ProtoGroups, proto: Option<&crate::dump::Prot
             }
             format!(
                 "<article class='entry'><h1 class='firstHeading'>Praslovjanske lemmy (refleksy)</h1>\
-                 <p class='lede'>Vse praslovjanske rekonstrukcije iz proto-cache, ktore imajųt generovany medžuslovjansky refleks na sajtu: {} rekonstrukcij. Vsaka strana pokazyvaje glosy, dubjejšu etimologiju, atestovane potomky po větvah i linky na generovane refleksy.</p>\
-                 <table class='wikitable'><thead><tr><th>Rekonstrukcija</th><th>Glosa</th><th>Potomkov</th><th>Refleksov na sajtu</th></tr></thead><tbody>{rows}</tbody></table></article>",
+                 <p class='lede'>Vse praslovjanske rekonstrukcije iz proto-cache, ktore imajųt generovany medžuslovjansky refleks na sajtu: {} rekonstrukcij na {} stranah. Vsaka strana pokazyvaje glosy, dubjejšu etimologiju, atestovane potomky po větvah i linky na generovane refleksy; homonimne rekonstrukcije dělę jednu stranu.</p>\
+                 <table class='wikitable'><thead><tr><th>Rekonstrukcija</th><th>Glosa</th><th>Potomkov</th><th>Refleksov na straně</th></tr></thead><tbody>{rows}</tbody></table></article>",
                 compact(rows_data.len()),
+                compact(proto_reflex.pages.len()),
             )
         }
         None => "<article class='entry'><h1 class='firstHeading'>Praslovjanske lemmy (refleksy)</h1>\
@@ -7914,7 +8031,7 @@ fn deriv_page(pattern: &str, agg: &DerivAgg, p: f64) -> String {
     let body = format!(
         "<article class='entry'><h1 class='firstHeading'>{}</h1>\
          <p class='lede'><code>{}</code> — {} pokazanyh odvodženj. <b title='{}'>Wilson-95 p≈{p:.2}</b>.</p>\
-         <p class='muted'>Odvody bez linku (prigašene) sųt pravilno tvorjene formy, ktoryh něma v naslovnom množstvě sajta — one sųt dostupne v formovom API kako p-bramkovane predlogy (vidi <a href='../datasets.html'>Fajly za dostavanje</a>).</p>\
+         <p class='muted'>Odvody bez linku (prigašene) sųt pravilno tvorjene formy, ktoryh něma v naslovnom množstvě sajta. Kȯgda baza je oficialna lemma, taky odvod je dostupny v formovom API kako p-bramkovany predlog (vidi <a href='../datasets.html'>Fajly za dostavanje</a>); kȯgda baza je označena „(rekonstrukcija)“, odvodženja sųt hypotetične — baza sama je mašinova rekonstrukcija — i NE sųt v API.</p>\
          <p><a href='../derivations.html'>← vse obrazcy</a></p>\
          <table class='wikitable'><thead><tr><th>Baza</th><th>Odvod</th></tr></thead><tbody>{rows}</tbody></table></article>",
         esc(&title),
@@ -8701,45 +8818,78 @@ mod tests {
     }
 
     #[test]
-    fn proto_reflex_lookup_folds_combining_accents_on_both_sides() {
-        // Issue #73b: corpus ancestors can carry Wiktionary combining accents
-        // (*pę̑tь) while proto-cache titles do not — the group builder must
-        // still join them, and group keys must equal the root-page slug fold.
+    fn proto_reflex_join_folds_accents_and_attributes_by_membership() {
+        // Issue #73b (review-hardened). The fold must strip BOTH combining
+        // marks (*pę̑tь) and precomposed accented vowels (*vodà) while
+        // keeping etymological letters (ě ≠ e, č ≠ c) apart.
         assert_eq!(
-            strip_combining_accents("p\u{119}\u{311}t\u{44c}"),
+            fold_proto_accents("p\u{119}\u{311}t\u{44c}"),
             "p\u{119}t\u{44c}"
         );
-        let entries = vec![crate::dump::ProtoEntry {
-            word: "pętь".to_string(),
-            pos: "num".to_string(),
-            glosses: vec!["five".to_string()],
-            descendants: vec![("ru".to_string(), "пять".to_string())],
+        assert_eq!(fold_proto_accents("vod\u{e0}"), "voda"); // à precomposed
+        assert_eq!(fold_proto_accents("\u{f2}ko"), "oko"); // ò precomposed
+        assert_ne!(fold_proto_accents("cělo"), fold_proto_accents("čelo"));
+
+        let pe = |word: &str, gloss: &str| crate::dump::ProtoEntry {
+            word: word.to_string(),
+            pos: "noun".to_string(),
+            glosses: vec![gloss.to_string()],
+            descendants: vec![("ru".to_string(), "x".to_string())],
             pbs: String::new(),
             pie: String::new(),
             stem_class: None,
-        }];
-        let pi = crate::dump::ProtoIndex::build(entries);
-        let set = crate::corpus::CognateSet {
-            proto: "*p\u{119}\u{311}t\u{44c}".to_string(), // accented ancestor
-            etymon: "*pętь".to_string(),
+        };
+        // Cache: homonymous *voda ×2 + the cělo/čelo slug-collision pair.
+        let pi = crate::dump::ProtoIndex::build(vec![
+            pe("voda", "water"),
+            pe("voda", "leash (homonym)"),
+            pe("cělo", "whole"),
+            pe("čelo", "forehead"),
+        ]);
+        let set = |proto: &str| crate::corpus::CognateSet {
+            proto: proto.to_string(),
+            etymon: proto.to_string(),
             borrowed: false,
-            pos: crate::model::Pos::Numeral,
-            gloss: "five".to_string(),
+            pos: crate::model::Pos::Noun,
+            gloss: String::new(),
             members: Vec::new(),
         };
-        let (groups, linked, misses) =
-            build_proto_reflex_groups(Some(&pi), std::iter::once((7usize, &set)));
-        assert_eq!((linked, misses), (1, 0), "accent-blind fallback must hit");
-        // Group key = the same slug fold ancestor_slug/root pages use.
-        let key = slug("p\u{119}\u{311}t\u{44c}");
-        let recons = groups.get(&key).expect("group under the root slug");
-        assert_eq!(recons.get(&0).map(Vec::as_slice), Some(&[7usize][..]));
+        let sets = [
+            (1usize, set("*vod\u{e0}")), // precomposed accent joins "voda"
+            (2usize, set("*cělo")),
+            (3usize, set("*čelo")),
+            (4usize, set("*neznajemo")), // honest miss
+        ];
+        let index = build_proto_reflex_index(Some(&pi), sets.iter().map(|(id, s)| (*id, s)));
+        assert_eq!((index.linked, index.misses), (3, 1));
+        // Homonyms: the voda page lists BOTH cache entries.
+        let voda_slug = index.membership.get(&1).expect("voda membership");
+        let voda = index.pages.get(voda_slug).unwrap();
+        assert_eq!(voda.recons, vec![0, 1], "homonyms share the page");
+        assert_eq!(voda.entry_ids, vec![1]);
+        // Slug collision: cělo and čelo both slug to "celo" but are DIFFERENT
+        // lexemes → two pages with a deterministic suffix, and membership
+        // sends each entry to ITS OWN lexeme's page (entry 679 class bug).
+        let celo_slug = index.membership.get(&2).unwrap();
+        let chelo_slug = index.membership.get(&3).unwrap();
+        assert_ne!(celo_slug, chelo_slug, "cělo vs čelo must not share a page");
+        assert_eq!(celo_slug, "celo");
+        assert_eq!(chelo_slug, "celo-2");
+        assert_eq!(index.pages[celo_slug].recons, vec![2]);
+        assert_eq!(index.pages[chelo_slug].recons, vec![3]);
+        // The membership invariant the link audit checks: every membership
+        // target page lists the member.
+        for (id, sl) in &index.membership {
+            assert!(
+                index.pages[sl].entry_ids.contains(id),
+                "membership target must list entry {id}"
+            );
+        }
         // A borrowed set or a non-'*' ancestor is never looked up.
-        let mut borrowed = set.clone();
+        let mut borrowed = set("*voda");
         borrowed.borrowed = true;
-        let (g2, l2, m2) =
-            build_proto_reflex_groups(Some(&pi), std::iter::once((8usize, &borrowed)));
-        assert!(g2.is_empty() && l2 == 0 && m2 == 0);
+        let i2 = build_proto_reflex_index(Some(&pi), std::iter::once((8usize, &borrowed)));
+        assert!(i2.pages.is_empty() && i2.linked == 0 && i2.misses == 0);
     }
 
     #[test]
