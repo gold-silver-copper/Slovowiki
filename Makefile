@@ -5,7 +5,8 @@ SITE ?= site
 OUT ?= target/eval
 
 .PHONY: extract-proto extract-lemmas extract-raw-slavic extract-enrich extract-all \
-	eval proto-eval corpus-eval audit export serve explain coverage check fmt test clean
+	eval proto-eval corpus-eval audit export serve explain coverage check fmt test clean \
+	search-perf
 
 # One-time: stream the 23GB dump into the Proto-Slavic cache (enables +proto-derived).
 extract-proto:
@@ -53,6 +54,11 @@ export:
 # Preview the generated static site locally (any static server works).
 serve: export
 	cd "$(SITE)" && python3 -m http.server 8765
+
+# Cold-search cost of the exported site, measured by driving the production
+# search client under Node (tools/search-perf.mjs; issue #71).
+search-perf:
+	node tools/search-perf.mjs "$(SITE)" --out "$(OUT)/search-performance.md" --label "$$(git rev-parse --short HEAD)"
 
 # Spot-check one word/gloss with a full rule trace, e.g. `make explain W=duša`.
 explain:

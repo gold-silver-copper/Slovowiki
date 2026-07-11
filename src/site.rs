@@ -61,8 +61,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(&entry_dir)?;
 
     // Streaming pass: render each entry, accumulate the search index + stats.
-    let mut search = String::from("[\n");
-    let mut first_search = true;
+    let mut search_rows: Vec<SearchRow> = Vec::new();
     let mut top_rows: Vec<HomeRow> = Vec::new();
     let (mut n, mut n_match, mut n_diff, mut n_none, mut n_exact, mut n_top3) =
         (0usize, 0, 0, 0, 0, 0);
@@ -106,17 +105,12 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         let html = entry_page(id, entry, &g, &evidence);
         std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
-        // search index row: [id, form, gloss, pos, statuschar]
+        // search index row (13-element schema shared with the corpus path).
         let statuschar = match g.match_status {
             MatchStatus::OfficialMatch => "O",
             MatchStatus::DiffersFromOfficial => "D",
             MatchStatus::NoOfficialEntry => "N",
         };
-        if !first_search {
-            search.push_str(",\n");
-        }
-        first_search = false;
-        // row: [id, form, gloss, pos, statuschar, strengthLetter, score, keys]
         let mut keys = search_keys(&g.candidates, &form);
         if let Some(off) = official {
             // The official lemma is searchable even when no candidate spells it:
@@ -141,18 +135,25 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
                 }
             }
         }
-        let _ = write!(
-            search,
-            "[{},{},{},{},{},{},{:.2},{}]",
+        let gloss70 = truncate(&entry.english, 70);
+        search_rows.push(SearchRow {
             id,
-            json_str(&form),
-            json_str(&truncate(&entry.english, 70)),
-            json_str(&entry.pos.code()),
-            json_str(statuschar),
-            json_str(conf_letter(top.confidence)),
-            top.score,
-            keys_json(&keys),
-        );
+            head: format!(
+                "[{},{},{},{},{},{},{},1,1,0,{},{}",
+                id,
+                json_str(&form),
+                json_str(&gloss70),
+                json_str(&entry.pos.code()),
+                json_str(statuschar),
+                json_str(conf_letter(top.confidence)),
+                keys_json(&keys),
+                json_str(""),
+                json_str(""),
+            ),
+            aliases: "[]".to_string(),
+            core: true,
+            buckets: search_row_buckets(&form, &gloss70, &keys, &[]),
+        });
         let freq = entry.frequency.unwrap_or(0.0);
         top_rows.push(HomeRow {
             freq,
@@ -165,9 +166,8 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             score: top.score,
         });
     }
-    search.push_str("\n]\n");
-
-    std::fs::write(out_dir.join("search.json"), search)?;
+    write_search_index(out_dir, &search_rows)?;
+    let _ = std::fs::remove_file(out_dir.join("search.json"));
     std::fs::write(out_dir.join("wiktionary.css"), css())?;
     std::fs::write(out_dir.join(".nojekyll"), "")?; // don't run Jekyll on GitHub Pages
 
@@ -312,8 +312,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     let _ = std::fs::remove_dir_all(&entry_dir); // clear any stale pages
     std::fs::create_dir_all(&entry_dir)?;
 
-    let mut search = String::from("[\n");
-    let mut first_search = true;
+    // Search rows are staged and written as first-letter shards at the end
+    // (issue #71; see `write_search_index`).
+    let mut search_rows: Vec<SearchRow> = Vec::new();
     let mut rows: Vec<HomeRow> = Vec::new();
     let (mut official, mut borrowed) = (0usize, 0usize);
     // n / high / med / low are computed after same-concept suppression (below).
@@ -762,10 +763,6 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         );
         std::fs::write(entry_dir.join(format!("{}.html", p.id)), html)?;
 
-        if !first_search {
-            search.push_str(",\n");
-        }
-        first_search = false;
         let mut keys = search_keys(&p.g.candidates, &p.display);
         // On an official-headword (matched) entry, make the official English gloss
         // searchable too — it is already searchable on official-only pages, so
@@ -797,33 +794,39 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }) {
             collect_source_aliases(official_cell_pairs(e), &mut aliases, &mut alias_seen);
         }
-        // search.json row schema — one 13-element positional array per entry,
-        // emitted identically by THREE loops (generated / official-only / raw)
-        // and read by SEARCH_JS + the random-page script. Keep all five sides
-        // in lock-step:
+        // Search row schema — one 13-element positional array per entry,
+        // emitted identically by THREE loops (generated / official-only / raw),
+        // written into first-letter shards by `write_search_index` (issue #71),
+        // and read by SEARCH_JS + the spotlight/random widgets. Keep all five
+        // sides in lock-step:
         //   0 id · 1 display · 2 gloss (truncated 70) · 3 pos code ·
         //   4 status O/N/R · 5 confidence V/S/N · 6 keys [[key,rank],…]
         //   (rank 1-5 = candidate deep-link anchor, 6 = gloss-token sentinel,
         //   no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
         //   10 quality label · 11 proto ancestor · 12 source aliases
         //   [[lang,word,[folds]],…] (issue #31).
-        let _ = write!(
-            search,
-            "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
-            p.id,
-            json_str(&p.display),
-            json_str(&truncate(&p.g.set.gloss, 70)),
-            json_str(p.g.set.pos.code()),
-            json_str(if p.matched.is_some() { "O" } else { "N" }),
-            json_str(conf_letter(p.g.confidence)),
-            keys_json(&keys),
-            p.g.n_langs,
-            p.g.n_branches,
-            if p.g.set.borrowed { 1 } else { 0 },
-            json_str(quality_label(meta)),
-            json_str(&meta.ancestor),
-            source_aliases_json(&aliases),
-        );
+        let gloss70 = truncate(&p.g.set.gloss, 70);
+        search_rows.push(SearchRow {
+            id: p.id,
+            head: format!(
+                "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                p.id,
+                json_str(&p.display),
+                json_str(&gloss70),
+                json_str(p.g.set.pos.code()),
+                json_str(if p.matched.is_some() { "O" } else { "N" }),
+                json_str(conf_letter(p.g.confidence)),
+                keys_json(&keys),
+                p.g.n_langs,
+                p.g.n_branches,
+                if p.g.set.borrowed { 1 } else { 0 },
+                json_str(quality_label(meta)),
+                json_str(&meta.ancestor),
+            ),
+            aliases: source_aliases_json(&aliases),
+            core: true,
+            buckets: search_row_buckets(&p.display, &gloss70, &keys, &aliases),
+        });
         rows.push(HomeRow {
             // sort the home list by coverage (n_langs) so the best-attested show first
             freq: p.g.n_langs as f32 + p.g.n_branches as f32 / 10.0,
@@ -894,28 +897,29 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let mut alias_seen: std::collections::HashSet<(String, String)> =
             std::collections::HashSet::new();
         collect_source_aliases(official_cell_pairs(e), &mut aliases, &mut alias_seen);
-        if !first_search {
-            search.push_str(",\n");
-        }
-        first_search = false;
         // Same 13-element row schema as the generated loop above.
-        let _ = write!(
-            search,
-            "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
-            oid,
-            json_str(isv),
-            json_str(&truncate(&e.english, 70)),
-            json_str(e.pos.code()),
-            json_str("O"),
-            json_str("V"),
-            keys_json(&keys),
-            meta.n_langs,
-            meta.n_branches,
-            if meta.borrowed { 1 } else { 0 },
-            json_str(quality_label(meta)),
-            json_str(&meta.ancestor),
-            source_aliases_json(&aliases),
-        );
+        let gloss70 = truncate(&e.english, 70);
+        search_rows.push(SearchRow {
+            id: *oid,
+            head: format!(
+                "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                oid,
+                json_str(isv),
+                json_str(&gloss70),
+                json_str(e.pos.code()),
+                json_str("O"),
+                json_str("V"),
+                keys_json(&keys),
+                meta.n_langs,
+                meta.n_branches,
+                if meta.borrowed { 1 } else { 0 },
+                json_str(quality_label(meta)),
+                json_str(&meta.ancestor),
+            ),
+            aliases: source_aliases_json(&aliases),
+            core: true,
+            buckets: search_row_buckets(isv, &gloss70, &keys, &aliases),
+        });
         rows.push(HomeRow {
             freq: 0.5,
             id: *oid,
@@ -929,7 +933,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     }
 
     // Raw Slavic Wiktionary lemmas (issue #34, PR-2): a THIRD, SITE-ONLY loop,
-    // after the generated and official-only loops and before search.json closes.
+    // after the generated and official-only loops, before the search index is
+    // written as shards.
     // Every low-evidence dictionary word that no generated/official page already
     // covers gets a page + search row, badged as a raw attestation. These entries
     // are NEVER verification-grade: this loop touches neither `lemma_sink`/
@@ -1040,28 +1045,29 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                     &mut aliases,
                     &mut alias_seen,
                 );
-                if !first_search {
-                    search.push_str(",\n");
-                }
-                first_search = false;
                 // Same 13-element row schema as the generated loop above.
-                let _ = write!(
-                    search,
-                    "[{},{},{},{},{},{},{},{},{},{},{},{},{}]",
+                let gloss70 = truncate(&gloss, 70);
+                search_rows.push(SearchRow {
                     id,
-                    json_str(&display),
-                    json_str(&truncate(&gloss, 70)),
-                    json_str(&lemma.pos),
-                    json_str("R"),
-                    json_str("N"),
-                    keys_json(&keys),
-                    1,
-                    1,
-                    0,
-                    json_str(quality_label(&meta)),
-                    json_str(&meta.ancestor),
-                    source_aliases_json(&aliases),
-                );
+                    head: format!(
+                        "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                        id,
+                        json_str(&display),
+                        json_str(&gloss70),
+                        json_str(&lemma.pos),
+                        json_str("R"),
+                        json_str("N"),
+                        keys_json(&keys),
+                        1,
+                        1,
+                        0,
+                        json_str(quality_label(&meta)),
+                        json_str(&meta.ancestor),
+                    ),
+                    aliases: source_aliases_json(&aliases),
+                    core: false,
+                    buckets: search_row_buckets(&display, &gloss70, &keys, &aliases),
+                });
                 raw_rendered += 1;
             }
             println!(
@@ -1090,9 +1096,14 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }
     }
 
-    search.push_str("\n]\n");
-
-    std::fs::write(out_dir.join("search.json"), search)?;
+    let (shard_count, browse_count) = write_search_index(out_dir, &search_rows)?;
+    println!(
+        "search index: {} rows into {shard_count} first-letter shards + {browse_count} core browse rows (issue #71).",
+        search_rows.len()
+    );
+    // The monolithic search.json is retired; remove a stale copy so old
+    // clients can't silently read a frozen index.
+    let _ = std::fs::remove_file(out_dir.join("search.json"));
     std::fs::write(out_dir.join("wiktionary.css"), css())?;
     std::fs::write(out_dir.join(".nojekyll"), "")?;
 
@@ -2032,7 +2043,8 @@ pub fn run_coverage(out: &Path) -> Result<()> {
     let _ = writeln!(
         md,
         "\n> Correctness check: this `rendered-raw` count must equal the number of \
-         `R`-status rows in a fresh `export`'s `search.json`."
+         distinct `R`-status rows across a fresh `export`'s `search/` shards \
+         (rows are deliberately listed in several shards — dedup by id)."
     );
     let _ = writeln!(
         md,
@@ -3723,9 +3735,325 @@ fn home_page(
         ok = status_pill(MatchStatus::OfficialMatch),
         warn = status_pill(MatchStatus::DiffersFromOfficial),
         info = status_pill(MatchStatus::NoOfficialEntry),
-        js = SEARCH_JS,
+        js = search_js(),
     );
     page("Medžuslovjansky generator", &body, 0)
+}
+
+// ---------------------------------------------------------------------------
+// Sharded search index (issue #71). The monolithic search.json grew to 44 MB,
+// so the index is written as first-letter shards: a query fetches a few-KB
+// manifest plus exactly one shard. A row is listed in the shard of the folded
+// first letter of EVERY string it can be found by (display, keys, gloss
+// segments, source aliases in both scripts) — that multi-bucket listing is
+// what keeps one-fetch lookups complete. Hot buckets split by second letter.
+// ---------------------------------------------------------------------------
+
+/// One staged search row. `head` is the 13-element row WITHOUT the trailing
+/// aliases element or closing bracket; `aliases` is element 12's JSON. The
+/// split lets browse/spotlight files reuse the row bytes without the alias
+/// payload that dominates the index size.
+struct SearchRow {
+    id: usize,
+    head: String,
+    aliases: String,
+    /// O/N rows feed browse.json (filter-browse, substring fallback) and the
+    /// spotlight sample; R rows are reachable through queries only.
+    core: bool,
+    /// (first, second-or-'_') folded letters of every searchable string.
+    buckets: std::collections::BTreeSet<(char, char)>,
+}
+
+impl SearchRow {
+    fn full(&self) -> String {
+        format!("{},{}]", self.head, self.aliases)
+    }
+    fn no_alias(&self) -> String {
+        format!("{},[]]", self.head)
+    }
+}
+
+/// The client search fold, defined ONCE here and injected into SEARCH_JS as
+/// `__SEARCH_FOLD__` — the exporter's bucketing and the browser's query fold
+/// can never drift (closes #60 for the search page; the JS additionally
+/// NFD-strips combining marks, which agrees with these pairs on every
+/// precomposed letter). Latin diacritics fold to base letters; Cyrillic passes
+/// through, giving Cyrillic queries their own shard alphabet.
+const CLIENT_FOLD_PAIRS: &[(char, &str)] = &[
+    ('á', "a"),
+    ('à', "a"),
+    ('â', "a"),
+    ('ā', "a"),
+    ('ǎ', "a"),
+    ('å', "a"),
+    ('ä', "a"),
+    ('ą', "a"),
+    ('ă', "a"),
+    ('ã', "a"),
+    ('é', "e"),
+    ('è', "e"),
+    ('ê', "e"),
+    ('ë', "e"),
+    ('ē', "e"),
+    ('ě', "e"),
+    ('ę', "e"),
+    ('ė', "e"),
+    ('í', "i"),
+    ('ì', "i"),
+    ('î', "i"),
+    ('ï', "i"),
+    ('ī', "i"),
+    ('ó', "o"),
+    ('ò', "o"),
+    ('ô', "o"),
+    ('ö', "o"),
+    ('õ', "o"),
+    ('ō', "o"),
+    ('ŏ', "o"),
+    ('ȯ', "o"),
+    ('ő', "o"),
+    ('ø', "o"),
+    ('ú', "u"),
+    ('ù', "u"),
+    ('û', "u"),
+    ('ü', "u"),
+    ('ū', "u"),
+    ('ů', "u"),
+    ('ų', "u"),
+    ('ű', "u"),
+    ('ý', "y"),
+    ('ÿ', "y"),
+    ('ỳ', "y"),
+    ('č', "c"),
+    ('ć', "c"),
+    ('ç', "c"),
+    ('š', "s"),
+    ('ś', "s"),
+    ('ş', "s"),
+    ('ž', "z"),
+    ('ź', "z"),
+    ('ż', "z"),
+    ('đ', "d"),
+    ('ď', "d"),
+    ('ť', "t"),
+    ('ţ', "t"),
+    ('ň', "n"),
+    ('ń', "n"),
+    ('ñ', "n"),
+    ('ľ', "l"),
+    ('ĺ', "l"),
+    ('ł', "l"),
+    ('ř', "r"),
+    ('ŕ', "r"),
+    ('ß', "ss"),
+    ('æ', "ae"),
+    ('œ', "oe"),
+];
+
+/// Rust twin of the injected JS fold: lowercase, strip combining marks, fold
+/// per [`CLIENT_FOLD_PAIRS`].
+fn client_fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.to_lowercase().chars() {
+        if ('\u{0300}'..='\u{036F}').contains(&c) {
+            continue;
+        }
+        match CLIENT_FOLD_PAIRS.iter().find(|(f, _)| *f == c) {
+            Some((_, r)) => out.push_str(r),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+/// The shard bucket of one searchable string: its first folded alphanumeric
+/// letter, plus the second (or '_' when the string has only one) for
+/// hot-bucket splits. None for strings with no letters at all.
+fn search_bucket_pair(s: &str) -> Option<(char, char)> {
+    let f = client_fold(s);
+    let mut it = f.chars().filter(|c| c.is_alphanumeric());
+    let b1 = it.next()?;
+    Some((b1, it.next().unwrap_or('_')))
+}
+
+/// Every string a row can be found by → its bucket-pair set: the display
+/// headword, every search key (candidate forms/folds + gloss tokens), every
+/// gloss segment (the client's rank-55 exact-segment match splits on `,;`),
+/// and every source alias, verbatim and folded (Cyrillic verbatim aliases give
+/// the row a Cyrillic bucket, so `пластинка` is a one-shard query).
+fn search_row_buckets(
+    display: &str,
+    gloss: &str,
+    keys: &[(String, usize)],
+    aliases: &[SourceAlias],
+) -> std::collections::BTreeSet<(char, char)> {
+    let mut b = std::collections::BTreeSet::new();
+    let mut add = |s: &str| {
+        if let Some(p) = search_bucket_pair(s) {
+            b.insert(p);
+        }
+    };
+    add(display);
+    for (k, _) in keys {
+        add(k);
+    }
+    for seg in gloss.split([',', ';']) {
+        add(seg.trim());
+    }
+    for (_, word, folds) in aliases {
+        add(word);
+        for f in folds {
+            add(f);
+        }
+    }
+    b
+}
+
+/// Shard-key → file basename: ASCII alphanumerics keep their letter, anything
+/// else is `uXXXX` hex — stable, URL-safe, collision-free per key.
+fn shard_file_name(key: &str) -> String {
+    let mut name = String::new();
+    for c in key.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            name.push(c);
+        } else {
+            let _ = write!(name, "u{:04x}", c as u32);
+        }
+    }
+    format!("{name}.json")
+}
+
+/// Buckets larger than this (serialized bytes) split by second letter.
+const SHARD_SPLIT_BUDGET: usize = 1_500_000;
+
+/// Write the sharded search index under `out_dir/search/`: per-letter shard
+/// files, `manifest.json` (key → file, loaded eagerly by the client),
+/// `browse.json` (core O/N rows without aliases — empty-query filter browse
+/// and the substring fallback), and `spotlight.json` (a deterministic sample
+/// of high-confidence rows for the random-word widgets). Ends with a
+/// completeness self-check: every bucket pair of every row must RESOLVE (the
+/// client's key2→key1 rule) to a shard that contains the row — a violation is
+/// a hard error, never a silently unfindable page.
+fn write_search_index(out_dir: &Path, rows: &[SearchRow]) -> Result<(usize, usize)> {
+    let dir = out_dir.join("search");
+    std::fs::create_dir_all(&dir)?;
+    // Group row indices by first letter (deduped per bucket).
+    let mut by1: BTreeMap<char, Vec<usize>> = BTreeMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        let mut seen = std::collections::BTreeSet::new();
+        for &(b1, _) in &r.buckets {
+            if seen.insert(b1) {
+                by1.entry(b1).or_default().push(i);
+            }
+        }
+    }
+    // Decide splits, produce key → row-index lists.
+    let mut shards: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    let mut splits: Vec<char> = Vec::new();
+    for (b1, idxs) in &by1 {
+        let bytes: usize = idxs.iter().map(|&i| rows[i].full().len() + 2).sum();
+        if bytes > SHARD_SPLIT_BUDGET {
+            splits.push(*b1);
+            for &i in idxs {
+                let mut seen = std::collections::BTreeSet::new();
+                for &(p1, p2) in &rows[i].buckets {
+                    if p1 == *b1 && seen.insert(p2) {
+                        shards.entry(format!("{b1}{p2}")).or_default().push(i);
+                    }
+                }
+            }
+        } else {
+            shards.insert(b1.to_string(), idxs.clone());
+        }
+    }
+    // Write shard files + manifest.
+    let mut manifest_shards = serde_json::Map::new();
+    for (key, idxs) in &shards {
+        let file = shard_file_name(key);
+        let mut body = String::from("[\n");
+        for (n, &i) in idxs.iter().enumerate() {
+            if n > 0 {
+                body.push_str(",\n");
+            }
+            body.push_str(&rows[i].full());
+        }
+        body.push_str("\n]\n");
+        std::fs::write(dir.join(&file), &body)?;
+        manifest_shards.insert(
+            key.clone(),
+            serde_json::json!({ "f": file, "n": idxs.len() }),
+        );
+    }
+    // Core browse file (no aliases) + deterministic spotlight sample.
+    let core: Vec<&SearchRow> = rows.iter().filter(|r| r.core).collect();
+    let mut browse = String::from("[\n");
+    for (n, r) in core.iter().enumerate() {
+        if n > 0 {
+            browse.push_str(",\n");
+        }
+        browse.push_str(&r.no_alias());
+    }
+    browse.push_str("\n]\n");
+    std::fs::write(dir.join("browse.json"), &browse)?;
+    let step = (core.len() / 1024).max(1);
+    let mut spot = String::from("[\n");
+    for (n, r) in core.iter().step_by(step).enumerate() {
+        if n > 0 {
+            spot.push_str(",\n");
+        }
+        spot.push_str(&r.no_alias());
+    }
+    spot.push_str("\n]\n");
+    std::fs::write(dir.join("spotlight.json"), &spot)?;
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "totalRows": rows.len(),
+        "browse": "browse.json",
+        "spotlight": "spotlight.json",
+        "splits": splits.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+        "shards": manifest_shards,
+    });
+    let mut mbytes = serde_json::to_vec(&manifest)?;
+    mbytes.push(b'\n');
+    std::fs::write(dir.join("manifest.json"), mbytes)?;
+
+    // Completeness self-check (loud; the client resolution rule, mirrored).
+    let shard_ids: BTreeMap<&String, std::collections::HashSet<usize>> = shards
+        .iter()
+        .map(|(k, idxs)| (k, idxs.iter().map(|&i| rows[i].id).collect()))
+        .collect();
+    for r in rows {
+        for &(b1, b2) in &r.buckets {
+            let k2 = format!("{b1}{b2}");
+            let k1 = b1.to_string();
+            let hit = shard_ids
+                .get(&k2)
+                .or_else(|| shard_ids.get(&k1))
+                .is_some_and(|ids| ids.contains(&r.id));
+            anyhow::ensure!(
+                hit,
+                "search shard completeness violated: row {} bucket ({b1},{b2}) resolves to no shard containing it",
+                r.id
+            );
+        }
+    }
+    Ok((shards.len(), core.len()))
+}
+
+/// SEARCH_JS with the generated fold map injected (computed once).
+fn search_js() -> &'static str {
+    static JS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JS.get_or_init(|| {
+        let mut map = String::from("{");
+        for (i, (c, r)) in CLIENT_FOLD_PAIRS.iter().enumerate() {
+            if i > 0 {
+                map.push(',');
+            }
+            let _ = write!(map, "{}:{}", json_str(&c.to_string()), json_str(r));
+        }
+        map.push('}');
+        SEARCH_JS.replace("__SEARCH_FOLD__", &map)
+    })
 }
 
 /// Deduplicated searchable keys for one entry: every ranked candidate's form
@@ -3856,15 +4184,34 @@ fn source_aliases_json(aliases: &[SourceAlias]) -> String {
 // Typing shows a top-8 dropdown; Enter (or the full-results link) goes to
 // search.html?q, which lists every match.
 const SEARCH_JS: &str = r#"
-let IDX=null;
-async function ensure(){ if(IDX)return IDX; const r=await fetch(SITE_BASE+'search.json'); IDX=await r.json(); return IDX; }
+// Sharded index (issue #71): a few-KB manifest loads on demand, then each
+// query fetches exactly one first-letter shard. browse.json (core rows, no
+// aliases) backs empty-query filter browsing, the substring fallback, and the
+// random-word widgets via spotlight.json.
+let MANIFEST=null, SHARDS={}, BROWSE=null, SPOT=null, NOTE='';
+async function j(p){ const r=await fetch(SITE_BASE+p); return await r.json(); }
+async function manifest(){ if(!MANIFEST) MANIFEST=await j('search/manifest.json'); return MANIFEST; }
+async function browseRows(){ if(!BROWSE){ var m=await manifest(); BROWSE=await j('search/'+m.browse); } return BROWSE; }
+async function spotRows(){ if(!SPOT){ var m=await manifest(); SPOT=await j('search/'+m.spotlight); } return SPOT; }
+async function shardFor(sf){ var m=await manifest();
+  var letters=''; for(var i=0;i<sf.length&&letters.length<2;i++){ if(/[\p{L}\p{N}]/u.test(sf[i]))letters+=sf[i]; }
+  if(!letters)return null;
+  var k2=letters.length>1?letters:letters+'_', k1=letters[0];
+  var k=m.shards[k2]?k2:(m.shards[k1]?k1:null); if(!k)return null;
+  if(!SHARDS[k]) SHARDS[k]=await j('search/'+m.shards[k].f);
+  return SHARDS[k]; }
 var q=document.getElementById('q'), out=document.getElementById('results'), pageRes=document.getElementById('page-results');
 var STR={V:['vysoka','conf-high'],S:['srědnja','conf-med'],N:['nizka','conf-low']};
 var POS={noun:'imennik',proper_noun:'vlastno imę',verb:'glagol',adj:'pridavnik',adv:'narěčje',num:'čislovnik',pron:'zaimennik'};
 function posLabel(p){return POS[p]||p||'';}
 function strBadge(e){ var s=STR[e[5]]||STR.N; return "<span class='reliability "+s[1]+"'>"+s[0]+"</span>"; }
 function closeDropdown(){ if(out){ out.style.display='none'; out.innerHTML=''; } }
-function fold(x){ return (x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d'); }
+// The fold map is GENERATED by the exporter (CLIENT_FOLD_PAIRS) so client
+// folding can never drift from shard bucketing (#60); NFD-stripping agrees
+// with the map on every precomposed letter and additionally cleans combining
+// marks typed separately.
+var FOLDMAP=__SEARCH_FOLD__;
+function fold(x){ x=(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); var o=''; for(var i=0;i<x.length;i++){ var c=x[i]; o+=(FOLDMAP[c]!==undefined?FOLDMAP[c]:c); } return o; }
 // International committee columns (de/nl/eo) rank below the 12 Slavic cognates.
 var INTL={de:1,nl:1,eo:1};
 // Best source-word alias match for the query (issue #31 dictionary evidence:
@@ -3885,9 +4232,9 @@ function filters(){ return {
   langs:parseInt((document.getElementById('f-langs')||{}).value||'0',10)||0
 }; }
 function pass(e,f){ if(f.pos&&e[3]!==f.pos)return false; if(f.status&&e[4]!==f.status)return false; if(f.conf&&e[5]!==f.conf)return false; if(f.borrowed!==''&&String(e[9]||0)!==f.borrowed)return false; if(f.langs&&Number(e[7]||0)<f.langs)return false; return true; }
-function scoreAll(raw){
-  var s=(raw||'').trim().toLowerCase(), ftr=filters(); var showAll=pageRes&&!s, s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
-  for(var i=0;i<IDX.length;i++){ var e=IDX[i]; if(!pass(e,ftr))continue; var f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[6]||[];
+function scoreRows(ROWS,raw,showAll){
+  var s=(raw||'').trim().toLowerCase(), ftr=filters(); var s2=s.replace(/^to\s+/,''), sf=fold(s2), hits=[];
+  for(var i=0;i<ROWS.length;i++){ var e=ROWS[i]; if(!pass(e,ftr))continue; var f=e[1].toLowerCase(), g=e[2].toLowerCase(), ks=e[6]||[];
     var gs=g.split(/[,;]\s*/), ff=fold(f), sc=showAll?1:0, anchor=0, srclab='';
     if(!showAll){
       if(f===s||f===s2)sc=100; else if(ff===sf)sc=90;
@@ -3903,18 +4250,41 @@ function scoreAll(raw){
     if(sc>0)hits.push([sc,e,anchor,srclab]); if(hits.length>5000)break; }
   hits.sort(function(a,b){return b[0]-a[0] || a[1][1].localeCompare(b[1][1]);}); return hits;
 }
+// One query end-to-end: resolve + fetch the query's shard, score it, and when
+// the shard yields little, widen with a curated-substring pass over the core
+// browse rows (dedup by id; shard hits win). Empty query on the search page =
+// filter browse over the core rows (raw attestations need a typed query).
+async function searchFor(raw){
+  NOTE='';
+  var s=(raw||'').trim().toLowerCase();
+  if(pageRes&&!s){ if(filters().status==='R')NOTE='Surove atestacije sųt dostupne prěz zapyt (napiši slovo), ne prěz prěgled.';
+    return scoreRows(await browseRows(),raw,true); }
+  var s2=s.replace(/^to\s+/,''), sf=fold(s2);
+  var rows=await shardFor(sf)||[];
+  var hits=scoreRows(rows,raw,false);
+  var m=await manifest();
+  if(s2.length===1&&m.splits.indexOf(sf[0])>=0)NOTE='Jedna bukva: pokazane sųt samo jednobukvene formy — napiši ješče bukvu.';
+  if(hits.length<8&&s2.length>=3){
+    var extra=scoreRows(await browseRows(),raw,false), have={};
+    for(var i=0;i<hits.length;i++)have[hits[i][1][0]]=1;
+    for(var k=0;k<extra.length;k++){ if(!have[extra[k][1][0]])hits.push(extra[k]); }
+    hits.sort(function(a,b){return b[0]-a[0] || a[1][1].localeCompare(b[1][1]);});
+  }
+  return hits;
+}
 function eh(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function hitHTML(e,a,src){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+eh(e[10]||'')+"</span>"; if(e[11])meta+=" <span class='ha'>"+eh(e[11])+"</span>"; meta+=" <span class='hl'>"+(e[7]||0)+" jęz. / "+(e[8]||0)+" vět.</span>"; if(src)meta+=" <span class='hsrc' title='Slovnikovy dokaz: perevod komiteta / kognat'>"+eh(src)+"</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+eh(e[1])+"</b> <span class='hp'>"+eh(posLabel(e[3]))+"</span> <span class='hg'>"+eh(e[2])+"</span> "+meta+"</a>"; }
 async function run(showDropdown){
-  await ensure(); var v=q?q.value:''; var hits=scoreAll(v);
+  var v=q?q.value:''; var hits=await searchFor(v);
+  var note=NOTE?"<div class='muted nohit'>"+eh(NOTE)+"</div>":'';
   // The search page has full results below the filters, so never reopen the
   // compact header dropdown there. Filter changes also pass showDropdown=false.
   if(out){ if(showDropdown && !pageRes && v.trim()){ var h=hits.slice(0,8).map(function(x){return hitHTML(x[1],x[2],x[3]);}).join('');
       if(!h)h="<div class='muted nohit'>Ničto ne najdeno.</div>";
       else if(hits.length>8)h+="<a class='hit more' href='"+SITE_BASE+"search.html?q="+encodeURIComponent(v.trim())+"'>Vse "+hits.length+" rezultatov -></a>";
-      out.innerHTML=h; out.style.display='block'; } else closeDropdown(); }
+      out.innerHTML=note+h; out.style.display='block'; } else closeDropdown(); }
   if(pageRes){ var c=document.getElementById('rescount'); if(c)c.textContent=hits.length;
-    pageRes.innerHTML=hits.slice(0,400).map(function(x){return hitHTML(x[1],x[2],x[3]);}).join('')||"<div class='muted'>Ničto ne najdeno.</div>"; }
+    pageRes.innerHTML=note+(hits.slice(0,400).map(function(x){return hitHTML(x[1],x[2],x[3]);}).join('')||"<div class='muted'>Ničto ne najdeno.</div>"); }
 }
 function goSearch(e){
   e.preventDefault(); var v=q?q.value.trim():''; closeDropdown(); if(q)q.blur();
@@ -3927,7 +4297,7 @@ if(q){ var t=null; q.addEventListener('input',function(){ clearTimeout(t); t=set
   q.addEventListener('keydown',function(ev){ if(ev.key==='Escape'){ closeDropdown(); q.blur(); } }); }
 ['f-pos','f-status','f-conf','f-borrowed','f-langs'].forEach(function(id){ var el=document.getElementById(id); if(el)el.addEventListener('input',function(){run(false);}); if(el)el.addEventListener('change',function(){run(false);}); });
 document.addEventListener('click',function(ev){ if(out&&!ev.target.closest('.hsearch'))closeDropdown(); });
-async function randomWord(){ await ensure(); if(!IDX.length)return; var pool=IDX.filter(function(e){return e[5]==='V'||e[4]==='O'}); if(!pool.length)pool=IDX; var e=pool[Math.floor(Math.random()*pool.length)];
+async function randomWord(){ var SP=await spotRows(); if(!SP.length)return; var pool=SP.filter(function(e){return e[5]==='V'||e[4]==='O'}); if(!pool.length)pool=SP; var e=pool[Math.floor(Math.random()*pool.length)];
   var el=document.getElementById('spotlight'); if(!el)return; var box=document.getElementById('spotbox'); if(box)box.style.display='';
   el.innerHTML="<a class='spotlight-word' href='"+SITE_BASE+"entry/"+e[0]+".html'>"+eh(e[1])+"</a><div class='muted'>"+eh(posLabel(e[3]))+" · "+eh(e[2])+"</div><div class='spot-strength'>"+strBadge(e)+" "+eh(e[10]||'')+"</div>"; }
 var rb=document.getElementById('randbtn'); if(rb) rb.addEventListener('click',randomWord);
@@ -5245,10 +5615,11 @@ fn page(title: &str, body: &str, depth: usize) -> String {
            <main>{body}</main>\
          </div>\
          <footer class='site-footer'>Mašinno generovane rekonstrukcije — ne oficialny standard bez prověrky. Dokazy: interslavic-dictionary.com, Wiktionary (CC BY-SA). <a href='{REPO_URL}'>Izvorny kod</a>.</footer>\
-         <script>{SEARCH_JS}</script>\
+         <script>{search_js}</script>\
          <script>{TOC_JS}</script>\
          </body></html>",
-        title = esc(title)
+        title = esc(title),
+        search_js = search_js()
     )
 }
 
@@ -5837,7 +6208,7 @@ fn featured_page(rows: &[SiteEntryMeta], build: &BuildMeta) -> String {
 }
 
 fn random_page() -> String {
-    let body = r#"<article class='entry'><h1 class='firstHeading'>Speciaľno:Slučajno</h1><p>Ta statična strana koristi lokalny <code>search.json</code> i izbere slučajnu stranu zapisa bez servera.</p><p id='random-target' class='notice'>Nakladajě sę…</p><script>document.addEventListener('DOMContentLoaded',function(){ensure().then(function(idx){if(!idx.length)return;var eh=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};var e=idx[Math.floor(Math.random()*idx.length)];var a='entry/'+e[0]+'.html';document.getElementById('random-target').innerHTML='<a href="'+a+'">'+eh(e[1])+'</a> — '+eh(e[2])+'<br><a href="'+a+'">Idi</a>';});});</script></article>"#;
+    let body = r#"<article class='entry'><h1 class='firstHeading'>Speciaľno:Slučajno</h1><p>Ta statična strana koristi lokalny <code>search/spotlight.json</code> i izbere slučajnu stranu zapisa bez servera.</p><p id='random-target' class='notice'>Nakladajě sę…</p><script>document.addEventListener('DOMContentLoaded',function(){spotRows().then(function(idx){if(!idx.length)return;var eh=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};var e=idx[Math.floor(Math.random()*idx.length)];var a='entry/'+e[0]+'.html';document.getElementById('random-target').innerHTML='<a href="'+a+'">'+eh(e[1])+'</a> — '+eh(e[2])+'<br><a href="'+a+'">Idi</a>';});});</script></article>"#;
     page("Speciaľno:Slučajno", body, 0)
 }
 
@@ -6729,7 +7100,7 @@ function render(tok,recs,nts,key){{\
 }
 
 fn datasets_page(coverage: &str) -> String {
-    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search.json'>search.json</a></td><td>Klientsky indeks iskanja.</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost, prědȯk.</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov s kalibrovanoju věrojetnostju i kȯšikom (predlog/pregled).</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom i kalibrovanoju věrojetnostju.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
     page("Fajly za dostavanje", &body, 0)
 }
 
@@ -7476,6 +7847,94 @@ mod tests {
         assert_eq!(plan.xref.get("sl", "delo"), Some(42));
         assert_eq!(plan.xref.get("pl", "xyz"), None);
         assert_eq!(plan.xref.get("pl", ""), None);
+    }
+
+    /// The client fold is generated from CLIENT_FOLD_PAIRS (injected as
+    /// __SEARCH_FOLD__), so Rust bucketing and JS query folding share one
+    /// definition (#60/#71). Pin its semantics: Latin diacritics fold to base
+    /// letters, đ/ł included; Cyrillic passes through for its own shards.
+    #[test]
+    fn client_fold_and_buckets_are_stable() {
+        assert_eq!(client_fold("Čech"), "cech");
+        assert_eq!(client_fold("kråtȯky"), "kratoky");
+        assert_eq!(client_fold("vođa"), "voda");
+        assert_eq!(client_fold("łapeć"), "lapec");
+        assert_eq!(client_fold("пластинка"), "пластинка");
+        assert_eq!(client_fold("вода́"), "вода"); // combining mark stripped
+        assert_eq!(search_bucket_pair("rěka"), Some(('r', 'e')));
+        assert_eq!(search_bucket_pair("s"), Some(('s', '_')));
+        assert_eq!(search_bucket_pair("пластинка"), Some(('п', 'л')));
+        assert_eq!(search_bucket_pair("…—"), None);
+        assert_eq!(shard_file_name("vo"), "vo.json");
+        assert_eq!(shard_file_name("п"), "u043f.json");
+        assert_eq!(shard_file_name("s_"), "s_.json");
+    }
+
+    /// write_search_index end-to-end on synthetic rows: manifest + shard
+    /// resolution (two-letter split for a hot bucket, one-letter otherwise),
+    /// browse/spotlight carry only core rows, and the completeness self-check
+    /// accepts the layout.
+    #[test]
+    fn search_index_shards_resolve_completely() {
+        fn row(id: usize, display: &str, gloss: &str, core: bool) -> SearchRow {
+            let keys: Vec<(String, usize)> = Vec::new();
+            let aliases: Vec<SourceAlias> =
+                vec![("ru".into(), "пример".into(), vec![format!("primer{id}")])];
+            SearchRow {
+                id,
+                head: format!(
+                    "[{},{},{},\"noun\",\"N\",\"N\",[],1,1,0,\"\",\"\"",
+                    id,
+                    json_str(display),
+                    json_str(gloss)
+                ),
+                aliases: source_aliases_json(&aliases),
+                core,
+                buckets: search_row_buckets(display, gloss, &keys, &aliases),
+            }
+        }
+        let mut rows: Vec<SearchRow> = vec![
+            row(1, "voda", "water", true),
+            row(2, "rěka", "river", true),
+            row(3, "gramplastinka", "gramophone record", false),
+        ];
+        // A hot bucket: enough s-rows to exceed the split budget.
+        for i in 0..2100 {
+            let mut r = row(1000 + i, &format!("slovo{i}"), &"x".repeat(700), false);
+            r.aliases = "[]".into();
+            r.buckets = search_row_buckets(&format!("slovo{i}"), "", &[], &[]);
+            rows.push(r);
+        }
+        let dir = std::env::temp_dir().join(format!("shard-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (shards, browse) = write_search_index(&dir, &rows).unwrap();
+        assert!(shards >= 4, "expected multiple shards, got {shards}");
+        assert_eq!(browse, 2); // only the core rows
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("search/manifest.json")).unwrap())
+                .unwrap();
+        let sh = manifest["shards"].as_object().unwrap();
+        // Hot 's' bucket split by second letter; 'v' stayed single-letter.
+        assert!(manifest["splits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s == "s"));
+        assert!(sh.contains_key("sl") && !sh.contains_key("s") && sh.contains_key("v"));
+        // A Cyrillic alias gives the row a Cyrillic shard (пример → п…).
+        assert!(sh.keys().any(|k| k.starts_with('п')));
+        // The raw row is reachable through its own bucket but not in browse.
+        let v_file = sh["v"]["f"].as_str().unwrap();
+        let v_rows: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("search").join(v_file)).unwrap())
+                .unwrap();
+        assert!(v_rows.as_array().unwrap().iter().any(|r| r[0] == 1));
+        let browse_rows: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("search/browse.json")).unwrap())
+                .unwrap();
+        assert!(browse_rows.as_array().unwrap().iter().all(|r| r[0] != 3));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The chip lookup chain: cognate xref beats the raw cross-reference beats
