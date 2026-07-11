@@ -244,9 +244,14 @@ fn finish_set(
     })
 }
 
-/// The consonant skeleton used to cluster internationalisms across languages.
-/// Drops vowels and the inconsistent glide `j` (kompjuter ≍ komputer) and folds
-/// c→k, so the same Graeco-Latin root clusters regardless of local spelling.
+/// The skeleton used to cluster internationalisms across languages: the
+/// diacritic-folding [`ortho::ascii_skeleton`] (which PRESERVES vowels and
+/// does NOT fold c→k) minus the inconsistent glide `j` (kompjuter ≍
+/// komputer). Cross-shape adaptations that differ in a vowel or ending (aloe
+/// ≠ aloes ≠ aloa) therefore stay separate nodes and only merge through a
+/// shared etymon edge. (The comment here used to claim vowel-dropping and
+/// c→k folding — that describes `ortho::consonant_key`, not this key;
+/// issue #86 item 3.)
 fn intl_key(latin: &str) -> String {
     ortho::ascii_skeleton(latin).replace('j', "")
 }

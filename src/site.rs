@@ -495,6 +495,24 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         official -= demoted;
     }
 
+    // ---- Official-fact treatment for MATCHED entries (issue #86) ----
+    // An entry whose candidate reproduces an official lemma is a verified
+    // dictionary fact, not a prediction: the calibrated p is the PRIOR
+    // P(matches an official decision) — for these entries the match already
+    // resolved, so displaying "nizka p≈0.14" above "rekonstrukcija ju točno
+    // reproduktuje" was contradictory (2,020 official words rendered nizka).
+    // Give matched entries the same posture as official-only pages:
+    // Confidence::High flows to the search-row letter (V), the home-sidebar
+    // counts and meta.conf; the raw score stays untouched (it is a ranking
+    // key); the calibrated prior moves to a display-only transparency line in
+    // the provenance section (meta.prior below). Runs AFTER the homograph
+    // dedup so demoted entries (matched cleared) keep their calibrated bucket.
+    for p in prepared.iter_mut() {
+        if p.matched.is_some() {
+            p.g.confidence = Confidence::High;
+        }
+    }
+
     // Same-concept suppression: after the official representative is chosen,
     // collapse the remaining duplicate pages that share a folded form AND a gloss
     // token with a stronger set (numbers tagged noun vs num, `jaky` "strong,
@@ -659,7 +677,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         langs.dedup();
         let wiki_categories =
             wiktionary_category_paths_for_members(&p.g.set.members, enrich.as_ref());
-        metas.push(entry_meta(
+        // A matched entry is an official fact: no prediction probability
+        // (`prob` = None, like official-only pages — entries.json emits null,
+        // matching the API posture). The calibrated PRIOR is kept separately
+        // for the provenance transparency line only (issue #86).
+        let prior = calibration.as_ref().map(|c| c.probability(p.g.score));
+        let mut meta = entry_meta(
             p.id,
             &p.display,
             match &p.matched {
@@ -670,7 +693,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.status,
             p.g.confidence,
             p.g.score,
-            calibration.as_ref().map(|c| c.probability(p.g.score)),
+            if p.matched.is_some() { None } else { prior },
             p.g.n_langs,
             p.g.n_branches,
             p.g.set.borrowed,
@@ -679,7 +702,11 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             ancestor,
             langs,
             wiki_categories,
-        ));
+        );
+        if p.matched.is_some() {
+            meta.prior = prior;
+        }
+        metas.push(meta);
     }
     for (oid, e) in &official_only_records {
         let input = build_input(e);
@@ -843,6 +870,19 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             ),
         };
         let meta = meta_by_id.get(&p.id).expect("generated entry meta");
+        // Razumlivost basis (issue #86 defect 2): a MATCHED entry unions the
+        // corpus cognate membership with the committee's own sameInLanguages
+        // attestation of the matched official row — either basis alone
+        // under-reads one tail (aloe: corpus=ru → 52% where same_in "v z j"
+        // implies ~99%; vojevodstvo: same_in-only would crater a corpus-backed
+        // ~99% to 0%). Non-matched entries keep the corpus basis. DISPLAY
+        // ONLY: sameInLanguages never feeds extraction/grouping/evidence.
+        let razum_codes: Vec<String> = match p.matched.as_ref().and_then(|(_, isv, _)| {
+            official_by_fold.get(&crate::orthography::to_standard(&isv.to_lowercase()))
+        }) {
+            Some(e) => union_razum_codes(&meta.languages, &e.same_in_langs()),
+            None => meta.languages.clone(),
+        };
         // Predok infobox link to the proto-lemma reflex page (issue #73b),
         // gated on THIS entry's membership — the target page is guaranteed
         // to list the entry (never a slug-coincidence lexeme).
@@ -881,6 +921,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             &derivation,
             &wiki_top,
             meta,
+            &razum_codes,
             &wiki_bottom,
             &proto_link,
         );
@@ -927,9 +968,11 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         //   (rank 1-5 = candidate deep-link anchor, 6 = gloss-token sentinel,
         //   no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
         //   10 quality label · 11 proto ancestor · 12 razumlivost % (integer
-        //   0-100, issue #79; basis = cognate members on generated rows, the
-        //   attesting language on raw rows, the committee's sameInLanguages
-        //   on official-only rows — null there when that column is empty) ·
+        //   0-100, issue #79; basis = cognate members on generated rows —
+        //   UNIONED with the matched official row's sameInLanguages on
+        //   matched rows (issue #86) — the attesting language on raw rows,
+        //   the committee's sameInLanguages on official-only rows — null
+        //   there when that column is empty) ·
         //   13 source aliases [[lang,word,[folds]],…]
         //   (issue #31; MUST stay last — SearchRow splits head/aliases on it).
         let gloss70 = truncate(&p.g.set.gloss, 70);
@@ -949,7 +992,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 if p.g.set.borrowed { 1 } else { 0 },
                 json_str(quality_label(meta)),
                 json_str(&meta.ancestor),
-                razum_pct(&meta.languages),
+                razum_pct(&razum_codes),
             ),
             aliases: source_aliases_json(&aliases),
             core: true,
@@ -2715,6 +2758,10 @@ fn corpus_entry_page(
     derivation: &str,
     wiki_top: &str,
     meta: &SiteEntryMeta,
+    // Razumlivost basis codes (issue #86): the caller unions corpus cognate
+    // membership with the matched official row's sameInLanguages; equals
+    // `meta.languages` for non-matched entries. Display-only.
+    razum_codes: &[String],
     wiki_bottom: &str,
     // Prebuilt "(rekonstrukcija)" Predok link to the proto-lemma reflex page
     // (issue #73b), empty when no proto page exists for this ancestor.
@@ -2784,10 +2831,19 @@ fn corpus_entry_page(
         "<tr><th>Opomba</th><td>{}</td></tr>",
         official_note
     );
-    // Generated page: razumlivost over the cognate-set membership.
+    // Generated page: razumlivost over the cognate-set membership; on a
+    // MATCHED page the caller unioned in the official row's sameInLanguages
+    // (issue #86), and the tooltip names the combined basis.
     let razum = {
-        let codes: Vec<&str> = meta.languages.iter().map(String::as_str).collect();
-        razum_row(&codes, RAZUM_TITLE)
+        let codes: Vec<&str> = razum_codes.iter().map(String::as_str).collect();
+        razum_row(
+            &codes,
+            if official.is_some() {
+                RAZUM_TITLE_MATCHED
+            } else {
+                RAZUM_TITLE
+            },
+        )
     };
     let entry_card = entry_infobox(meta, &razum, &info_rows, proto_link);
     let freq_chip = official_disp
@@ -3675,6 +3731,14 @@ fn corpus_home(
     let mut list = String::from("<table class='wikitable'><thead><tr><th>Kandidat</th><th>Čęst rěči</th><th>Smysl</th><th>Sila dogadki</th><th>Srodne slova</th></tr></thead><tbody>");
     for r in rows.iter().take(400) {
         let langs = (r.freq as usize).max(1);
+        // Official words (matched + official-only rows both carry
+        // OfficialMatch) state the fact instead of a guess-strength number
+        // (issue #86) — same treatment as the entry infobox badge.
+        let strength = if matches!(r.status, MatchStatus::OfficialMatch) {
+            "<span class='reliability conf-high'>oficialno</span>".to_string()
+        } else {
+            strength_cell(r.conf, r.prob, r.score)
+        };
         let _ = write!(
             list,
             "<tr><td><a href='entry/{}.html'><b>{}</b></a></td><td>{}</td><td>{}</td><td>{}</td><td class='muted'>{}</td></tr>",
@@ -3682,7 +3746,7 @@ fn corpus_home(
             esc(&r.form),
             esc(&pos_code_label(&r.pos)),
             esc(&truncate(&r.gloss, 50)),
-            strength_cell(r.conf, r.prob, r.score),
+            strength,
             langs
         );
     }
@@ -5369,9 +5433,15 @@ struct SiteEntryMeta {
     conf: Confidence,
     score: f32,
     /// Calibrated P(matches an official decision) for generated entries
-    /// (issue #77); `None` for official-only (a fact, not a prediction), raw
-    /// attestations, and exports without a fitted calibrator.
+    /// (issue #77); `None` for official words — both matched (issue #86) and
+    /// official-only — which are facts, not predictions, plus raw
+    /// attestations and exports without a fitted calibrator.
     prob: Option<f64>,
+    /// The calibrated PRIOR the generator assigned before the official match
+    /// resolved it; set ONLY for matched entries (issue #86). Display-only:
+    /// rendered as a muted transparency line in the provenance section, never
+    /// as a badge/probability claim.
+    prior: Option<f64>,
     n_langs: usize,
     n_branches: usize,
     borrowed: bool,
@@ -5457,6 +5527,7 @@ fn entry_meta(
         conf,
         score,
         prob,
+        prior: None,
         n_langs,
         n_branches,
         borrowed,
@@ -6215,12 +6286,14 @@ fn borrowing_source(m: &SiteEntryMeta) -> String {
     }
 }
 
+/// Curation-worklist membership. Official dictionary words — matched AND
+/// official-only — are facts and can NEVER need review (issue #86: the old OR
+/// chain pulled 2,020 official-matched words in through its confidence /
+/// probability clauses). For everything else the old predicate's first clause
+/// (`official_lemma.is_none()`) already held, so membership is exactly "not an
+/// official word": every machine-only reconstruction remains curation work.
 fn needs_review(m: &SiteEntryMeta) -> bool {
-    m.official_lemma.is_none()
-        || matches!(m.conf, Confidence::Low)
-        || m.n_branches < 2
-        || m.n_langs < 3
-        || m.prob.is_some_and(|p| p < crate::calibrate::REVIEW_T)
+    m.official_lemma.is_none() && !m.official_only
 }
 
 fn language_portal_page(lang: &str, rows: &[SiteEntryMeta], all: &[SiteEntryMeta]) -> String {
@@ -6375,6 +6448,10 @@ fn write_borrowing_subpages(out_dir: &Path, rows: &[SiteEntryMeta]) -> Result<()
 }
 
 fn write_needs_review_subpages(out_dir: &Path, rows: &[SiteEntryMeta]) -> Result<()> {
+    // Same membership rule as the hub page: official words (matched or
+    // official-only) can never appear on a review worklist (issue #86) — the
+    // per-axis filters below only slice the review set.
+    let rows: Vec<SiteEntryMeta> = rows.iter().filter(|m| needs_review(m)).cloned().collect();
     let groups: [(&str, &str, Vec<SiteEntryMeta>); 4] = [
         (
             "nizka-uverjenost",
@@ -6988,6 +7065,27 @@ const RAZUM_TITLE: &str = "dolja govoriteljev slovjanskyh językov s poznatym sr
 /// constant ~99%).
 const RAZUM_TITLE_OFFICIAL: &str = "dolja govoriteljev slovjanskyh językov, v ktoryh slovo je isto po oficialnom slovniku (sameInLanguages) — ne izměrjena razumlivosť; izvor populacij: voting machine (steen)";
 
+/// The MATCHED-entry variant of [`RAZUM_TITLE`] (issue #86): the basis is the
+/// union of the corpus cognate membership and the matched official row's own
+/// sameInLanguages attestation — either basis alone misreads one tail.
+const RAZUM_TITLE_MATCHED: &str = "dolja govoriteljev slovjanskyh językov s poznatym srodnym slovom — po srodnyh slovah v korpusu i po oficialnom sameInLanguages; ne izměrjena razumlivosť; izvor populacij: voting machine (steen)";
+
+/// The razumlivost basis for a MATCHED entry (issue #86): the union of the
+/// corpus cognate membership and the matched official row's sameInLanguages
+/// expansion. Sorted + deduped so the basis is deterministic. Display-only —
+/// this never feeds extraction, grouping, evidence counts or the vote.
+fn union_razum_codes(corpus_langs: &[String], same_in: &[&'static str]) -> Vec<String> {
+    let mut codes: Vec<String> = corpus_langs.to_vec();
+    for c in same_in {
+        if !codes.iter().any(|x| x == c) {
+            codes.push(c.to_string());
+        }
+    }
+    codes.sort();
+    codes.dedup();
+    codes
+}
+
 /// Razumlivost overall percent for a language-code list, as the integer the
 /// search row carries in element 12 (issue #79).
 fn razum_pct(langs: &[String]) -> u32 {
@@ -7045,12 +7143,14 @@ fn entry_infobox(m: &SiteEntryMeta, razum: &str, extra_rows: &str, proto_link: &
                 &m.ancestor
             })
         });
-    // Calibrated reliability badge (issue #77). Official-only pages state the
-    // fact ("oficialno" — not a prediction, no p); raw attestation pages keep
-    // no badge row, as before.
+    // Calibrated reliability badge (issue #77). Official words state the
+    // fact ("oficialno" — not a prediction, no p): official-only pages AND
+    // matched entries (issue #86 — the calibrated prior moved to the
+    // provenance transparency line); raw attestation pages keep no badge row,
+    // as before.
     let reliability = if m.raw {
         String::new()
-    } else if m.official_only {
+    } else if m.official_only || m.official_lemma.is_some() {
         "<tr><th>Uvěrjenost</th><td><span class='reliability conf-high'>oficialno</span></td></tr>"
             .to_string()
     } else {
@@ -7192,11 +7292,25 @@ fn references_block(m: &SiteEntryMeta) -> String {
 }
 
 fn provenance_block(m: &SiteEntryMeta, build: &BuildMeta) -> String {
+    // Matched entries: the calibrated PRIOR the generator assigned before the
+    // official match resolved it — a muted transparency line, deliberately in
+    // the provenance section and not the infobox badge (issue #86: the badge
+    // states the fact "oficialno"; this line documents what the model thought
+    // beforehand).
+    let prior_row = m
+        .prior
+        .filter(|_| m.official_lemma.is_some() && !m.official_only)
+        .map(|p| {
+            format!(
+                "<tr><th>Priorna ocěna</th><td><span class='muted'>Priorna kalibrovana ocěna generatora: p≈{p:.2} (prěd sravnjenjem s oficialnym slovnikom)</span></td></tr>"
+            )
+        })
+        .unwrap_or_default();
     format!(
         "<section><h2 id='provenance'>Istorija i metadany</h2><table class='wikitable compact-table'>\
          <tr><th>Generacija</th><td>{}</td></tr><tr><th>Git</th><td><code>{}</code></td></tr>\
          <tr><th>Tip</th><td>{}</td></tr><tr><th>Kvaliteta</th><td>{}</td></tr>\
-         <tr><th>Ocěna</th><td>{:.2}</td></tr><tr><th>Dokaz</th><td>{} językov / {} větvy</td></tr>\
+         <tr><th>Ocěna</th><td>{:.2}</td></tr>{prior_row}<tr><th>Dokaz</th><td>{} językov / {} větvy</td></tr>\
          <tr><th>Popraviti</th><td><a href='{}'>Otvori problem na GitHub za tu stranu</a></td></tr></table></section>",
         esc(&build.generated),
         esc(&build.git),
@@ -7332,6 +7446,9 @@ fn entries_json(metas: &[SiteEntryMeta]) -> String {
         if i > 0 {
             s.push_str(",\n");
         }
+        // `prob` is null for ALL official words — official-only AND matched
+        // (issue #86): a verified dictionary fact carries no prediction
+        // probability, mirroring the API's lemma records.
         let prob = m
             .prob
             .map(|p| format!("{p:.3}"))
@@ -9162,6 +9279,137 @@ mod tests {
         assert_eq!(plan.xref.get("sl", "delo"), Some(42));
         assert_eq!(plan.xref.get("pl", "xyz"), None);
         assert_eq!(plan.xref.get("pl", ""), None);
+    }
+
+    /// Test metas for the official-fact-treatment invariants (issue #86).
+    fn meta_for(
+        conf: Confidence,
+        prob: Option<f64>,
+        prior: Option<f64>,
+        official_only: bool,
+        official_lemma: Option<&str>,
+        langs: &[&str],
+    ) -> SiteEntryMeta {
+        let mut m = entry_meta(
+            1,
+            "aloe",
+            "aloe",
+            "noun",
+            if official_lemma.is_some() {
+                MatchStatus::OfficialMatch
+            } else {
+                MatchStatus::NoOfficialEntry
+            },
+            conf,
+            0.30,
+            prob,
+            langs.len(),
+            1,
+            true,
+            official_only,
+            official_lemma.map(|s| s.to_string()),
+            "grc ἀλόη".to_string(),
+            langs.iter().map(|s| s.to_string()).collect(),
+            Vec::new(),
+        );
+        m.prior = prior;
+        m
+    }
+
+    /// Issue #86 defect 1: official dictionary words — matched AND
+    /// official-only — are facts. They never land on review worklists no
+    /// matter what the (now-irrelevant) confidence/probability say, while
+    /// machine-only reconstructions remain curation work.
+    #[test]
+    fn official_words_never_need_review() {
+        let matched = meta_for(
+            Confidence::High,
+            None,
+            Some(0.14),
+            false,
+            Some("aloe"),
+            &["ru"],
+        );
+        assert!(!needs_review(&matched));
+        let official_only = meta_for(Confidence::High, None, None, true, Some("aloe"), &["ru"]);
+        assert!(!needs_review(&official_only));
+        // A machine-only reconstruction stays on the worklist even at high
+        // confidence (the old first clause `official_lemma.is_none()`).
+        let generated = meta_for(
+            Confidence::High,
+            Some(0.73),
+            None,
+            false,
+            None,
+            &["ru", "pl"],
+        );
+        assert!(needs_review(&generated));
+    }
+
+    /// Issue #86 defect 1: the matched infobox states the fact ("oficialno",
+    /// no p≈ prior), like official-only pages; the calibrated prior surfaces
+    /// only as the muted provenance transparency line. Generated entries keep
+    /// the calibrated badge + p≈ and get no prior line.
+    #[test]
+    fn matched_meta_gets_the_official_fact_treatment() {
+        let matched = meta_for(
+            Confidence::High,
+            None,
+            Some(0.14),
+            false,
+            Some("aloe"),
+            &["ru"],
+        );
+        let box_html = entry_infobox(&matched, "", "", "");
+        assert!(box_html.contains(">oficialno</span>"), "{box_html}");
+        assert!(!box_html.contains("p≈"), "{box_html}");
+        let build = BuildMeta {
+            git: "test".into(),
+            generated: "0 UNIX".into(),
+            total_entries: 1,
+            lemma_total: 1,
+        };
+        let prov = provenance_block(&matched, &build);
+        assert!(
+            prov.contains("Priorna kalibrovana ocěna generatora: p≈0.14"),
+            "{prov}"
+        );
+        // Generated entry: calibrated badge with p≈, no prior line.
+        let generated = meta_for(Confidence::Low, Some(0.14), None, false, None, &["ru"]);
+        let box_html = entry_infobox(&generated, "", "", "");
+        assert!(box_html.contains("nizka"), "{box_html}");
+        assert!(box_html.contains("p≈0.14"), "{box_html}");
+        assert!(!provenance_block(&generated, &build).contains("Priorna"));
+        // Search-row letter: the fact treatment sets g.confidence High for
+        // matched entries, so conf_letter must yield "V" for them.
+        assert_eq!(conf_letter(Confidence::High), "V");
+    }
+
+    /// Issue #86 defect 2: the razumlivost basis for a matched entry is the
+    /// UNION of corpus members and the official row's sameInLanguages — an
+    /// aloe-like case (corpus = ru only, committee says "v z j") must read
+    /// ≈99%, not ru's 52% share. An empty sameInLanguages leaves the corpus
+    /// basis untouched (and official-only pages keep their same_in-only
+    /// basis — no union with translation cells, which would re-saturate).
+    #[test]
+    fn matched_razum_union_basis() {
+        let members = vec!["ru".to_string()];
+        // "v z j" expands to every modern CSV language across the branches.
+        let same_in: Vec<&'static str> = crate::lang::official_slavic_cols()
+            .iter()
+            .filter(|l| l.modern)
+            .map(|l| l.code)
+            .collect();
+        let union = union_razum_codes(&members, &same_in);
+        assert!(union.contains(&"ru".to_string()));
+        assert!(union.contains(&"pl".to_string()));
+        assert!(union.contains(&"bg".to_string()));
+        let pct = razum_pct(&union);
+        assert!(pct >= 95, "union basis should read ≈99%, got {pct}");
+        // Corpus basis alone (ru) is far lower — the defect the union fixes.
+        assert!(razum_pct(&members) < 60);
+        // Empty same_in: the corpus basis is unchanged.
+        assert_eq!(union_razum_codes(&members, &[]), members);
     }
 
     /// The client fold is generated from CLIENT_FOLD_PAIRS (injected as
