@@ -441,6 +441,13 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
             });
             // The reconstruction is authoritative for the form; place it first.
             pc.score = 0.99;
+            // Supported by the whole cognate set (issue #79 razumlivost).
+            pc.langs = {
+                let mut l: Vec<String> = set.members.iter().map(|m| m.lang.clone()).collect();
+                l.sort();
+                l.dedup();
+                l
+            };
             candidates.insert(0, pc);
         }
     }
