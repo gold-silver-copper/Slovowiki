@@ -122,7 +122,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
         let html = entry_page(id, entry, &g, &evidence, calibration.as_ref());
         std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
-        // search index row (13-element schema shared with the corpus path).
+        // search index row (14-element schema shared with the corpus path).
         let statuschar = match g.match_status {
             MatchStatus::OfficialMatch => "O",
             MatchStatus::DiffersFromOfficial => "D",
@@ -153,10 +153,18 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             }
         }
         let gloss70 = truncate(&entry.english, 70);
+        // Razumlivost (element 12) from the meaning's own source-cell
+        // languages — the legacy path has no cognate-set meta.
+        let razum = {
+            let mut l: Vec<String> = input.forms.iter().map(|f| f.lang_code.clone()).collect();
+            l.sort();
+            l.dedup();
+            razum_pct(&l)
+        };
         search_rows.push(SearchRow {
             id,
             head: format!(
-                "[{},{},{},{},{},{},{},1,1,0,{},{}",
+                "[{},{},{},{},{},{},{},1,1,0,{},{},{}",
                 id,
                 json_str(&form),
                 json_str(&gloss70),
@@ -166,6 +174,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
                 keys_json(&keys),
                 json_str(""),
                 json_str(""),
+                razum,
             ),
             aliases: "[]".to_string(),
             core: true,
@@ -836,7 +845,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }) {
             collect_source_aliases(official_cell_pairs(e), &mut aliases, &mut alias_seen);
         }
-        // Search row schema — one 13-element positional array per entry,
+        // Search row schema — one 14-element positional array per entry,
         // emitted identically by THREE loops (generated / official-only / raw),
         // written into first-letter shards by `write_search_index` (issue #71),
         // and read by SEARCH_JS + the spotlight/random widgets. Keep all five
@@ -845,13 +854,14 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         //   4 status O/N/R · 5 confidence V/S/N · 6 keys [[key,rank],…]
         //   (rank 1-5 = candidate deep-link anchor, 6 = gloss-token sentinel,
         //   no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
-        //   10 quality label · 11 proto ancestor · 12 source aliases
-        //   [[lang,word,[folds]],…] (issue #31).
+        //   10 quality label · 11 proto ancestor · 12 razumlivost % (integer
+        //   0-100, issue #79) · 13 source aliases [[lang,word,[folds]],…]
+        //   (issue #31; MUST stay last — SearchRow splits head/aliases on it).
         let gloss70 = truncate(&p.g.set.gloss, 70);
         search_rows.push(SearchRow {
             id: p.id,
             head: format!(
-                "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                "[{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 p.id,
                 json_str(&p.display),
                 json_str(&gloss70),
@@ -864,6 +874,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 if p.g.set.borrowed { 1 } else { 0 },
                 json_str(quality_label(meta)),
                 json_str(&meta.ancestor),
+                razum_pct(&meta.languages),
             ),
             aliases: source_aliases_json(&aliases),
             core: true,
@@ -940,12 +951,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let mut alias_seen: std::collections::HashSet<(String, String)> =
             std::collections::HashSet::new();
         collect_source_aliases(official_cell_pairs(e), &mut aliases, &mut alias_seen);
-        // Same 13-element row schema as the generated loop above.
+        // Same 14-element row schema as the generated loop above.
         let gloss70 = truncate(&e.english, 70);
         search_rows.push(SearchRow {
             id: *oid,
             head: format!(
-                "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                "[{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 oid,
                 json_str(isv),
                 json_str(&gloss70),
@@ -958,6 +969,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 if meta.borrowed { 1 } else { 0 },
                 json_str(quality_label(meta)),
                 json_str(&meta.ancestor),
+                razum_pct(&meta.languages),
             ),
             aliases: source_aliases_json(&aliases),
             core: true,
@@ -1064,9 +1076,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 );
                 std::fs::write(entry_dir.join(format!("{id}.html")), html)?;
 
-                // Search row (13 elements; schema documented at the generated
+                // Search row (14 elements; schema documented at the generated
                 // loop). Status char 'R'; the folds of the display headword are
-                // keys; e[12] carries the verbatim attested spelling (Cyrillic
+                // keys; e[13] carries the verbatim attested spelling (Cyrillic
                 // пластинка) + its Latin fold so a query in either script finds
                 // the page via the client aliasMatch.
                 let mut keys: Vec<(String, usize)> = Vec::new();
@@ -1090,12 +1102,13 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                     &mut aliases,
                     &mut alias_seen,
                 );
-                // Same 13-element row schema as the generated loop above.
+                // Same 14-element row schema as the generated loop above; the
+                // razumlivost element covers the single attesting language.
                 let gloss70 = truncate(&gloss, 70);
                 search_rows.push(SearchRow {
                     id,
                     head: format!(
-                        "[{},{},{},{},{},{},{},{},{},{},{},{}",
+                        "[{},{},{},{},{},{},{},{},{},{},{},{},{}",
                         id,
                         json_str(&display),
                         json_str(&gloss70),
@@ -1108,6 +1121,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                         0,
                         json_str(quality_label(&meta)),
                         json_str(&meta.ancestor),
+                        razum_pct(&meta.languages),
                     ),
                     aliases: source_aliases_json(&aliases),
                     core: false,
@@ -1188,6 +1202,13 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 ancestor: p.g.set.etymon.clone(),
                 n_langs: p.g.n_langs,
                 n_branches: p.g.n_branches,
+                langs: {
+                    let mut l: Vec<String> =
+                        p.g.set.members.iter().map(|m| m.lang.clone()).collect();
+                    l.sort();
+                    l.dedup();
+                    l
+                },
                 gloss: p.g.set.gloss.clone(),
             });
         }
@@ -3800,10 +3821,11 @@ fn home_page(
 // what keeps one-fetch lookups complete. Hot buckets split by second letter.
 // ---------------------------------------------------------------------------
 
-/// One staged search row. `head` is the 13-element row WITHOUT the trailing
-/// aliases element or closing bracket; `aliases` is element 12's JSON. The
-/// split lets browse/spotlight files reuse the row bytes without the alias
-/// payload that dominates the index size.
+/// One staged search row. `head` is the 14-element row WITHOUT the trailing
+/// aliases element or closing bracket; `aliases` is element 13's JSON (the
+/// aliases must stay LAST so this split keeps working). The split lets
+/// browse/spotlight files reuse the row bytes without the alias payload that
+/// dominates the index size.
 struct SearchRow {
     id: usize,
     head: String,
@@ -4057,7 +4079,8 @@ fn write_search_index(out_dir: &Path, rows: &[SearchRow]) -> Result<(usize, usiz
     spot.push_str("\n]\n");
     std::fs::write(dir.join("spotlight.json"), &spot)?;
     let manifest = serde_json::json!({
-        "schema": 1,
+        // 2 = 14-element rows (razumlivost at 12, aliases moved to 13; #79).
+        "schema": 2,
         "totalRows": rows.len(),
         "browse": "browse.json",
         "spotlight": "spotlight.json",
@@ -4266,7 +4289,7 @@ function fold(x){ x=(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 // International committee columns (de/nl/eo) rank below the 12 Slavic cognates.
 var INTL={de:1,nl:1,eo:1};
 // Best source-word alias match for the query (issue #31 dictionary evidence:
-// verbatim committee/cognate spellings, e[12]). Ranks exact source word high
+// verbatim committee/cognate spellings, e[13]). Ranks exact source word high
 // (just under the ISV headword), then transliteration/fold, then prefix; the
 // international columns weigh less. Returns [score,'lang word'] so the hit can
 // show why it matched.
@@ -4296,7 +4319,7 @@ function scoreRows(ROWS,raw,showAll){
         else if(f.indexOf(s2)>=0)sc=40; else if(g.indexOf(s2)>=0)sc=20; }
       // A Slavic source/cognate match (committee evidence) outranks a mere
       // form/gloss substring and annotates the hit with the matched word.
-      var am=aliasMatch(e[12]||[],s2,sf); if(am[0]>sc){ sc=am[0]; anchor=0; srclab=am[1]; } else if(am[0]>0&&am[0]===sc){ srclab=am[1]; }
+      var am=aliasMatch(e[13]||[],s2,sf); if(am[0]>sc){ sc=am[0]; anchor=0; srclab=am[1]; } else if(am[0]>0&&am[0]===sc){ srclab=am[1]; }
     }
     if(sc>0)hits.push([sc,e,anchor,srclab]); if(hits.length>5000)break; }
   hits.sort(function(a,b){return b[0]-a[0] || a[1][1].localeCompare(b[1][1]);}); return hits;
@@ -4324,7 +4347,7 @@ async function searchFor(raw){
   return hits;
 }
 function eh(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function hitHTML(e,a,src){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+eh(e[10]||'')+"</span>"; if(e[11])meta+=" <span class='ha'>"+eh(e[11])+"</span>"; meta+=" <span class='hl'>"+(e[7]||0)+" jęz. / "+(e[8]||0)+" vět.</span>"; if(src)meta+=" <span class='hsrc' title='Slovnikovy dokaz: perevod komiteta / kognat'>"+eh(src)+"</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+eh(e[1])+"</b> <span class='hp'>"+eh(posLabel(e[3]))+"</span> <span class='hg'>"+eh(e[2])+"</span> "+meta+"</a>"; }
+function hitHTML(e,a,src){ var meta="<span class='hs'>"+strBadge(e)+"</span> <span class='hq'>"+eh(e[10]||'')+"</span>"; if(e[11])meta+=" <span class='ha'>"+eh(e[11])+"</span>"; meta+=" <span class='hl'>"+(e[7]||0)+" jęz. / "+(e[8]||0)+" vět.</span>"; if(e[12]!=null)meta+=" <span class='hrz' title='razumlivosť: dolja govoriteljev slovjanskyh językov s poznatym srodnym slovom (po atestaciji)'>"+e[12]+"%</span>"; if(src)meta+=" <span class='hsrc' title='Slovnikovy dokaz: perevod komiteta / kognat'>"+eh(src)+"</span>"; return "<a class='hit' href='"+SITE_BASE+"entry/"+e[0]+".html"+(a?('#cand-'+a):'')+"'><b>"+eh(e[1])+"</b> <span class='hp'>"+eh(posLabel(e[3]))+"</span> <span class='hg'>"+eh(e[2])+"</span> "+meta+"</a>"; }
 async function run(showDropdown){
   var v=q?q.value:''; var hits=await searchFor(v);
   var note=NOTE?"<div class='muted nohit'>"+eh(NOTE)+"</div>":'';
@@ -4480,11 +4503,20 @@ fn alternatives_block(candidates: &[Candidate]) -> String {
     }
     // Always show the ranked forms (the top one is the headword); this is now a
     // primary section, so even a single-candidate entry lists its form + score.
-    let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th>Ocěna</th><th>Větvi</th></tr></thead><tbody>");
+    let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th title='rangovy ključ (syrova ocěna), ne věrojętnosť'>Ocěna</th><th title='");
+    s.push_str(RAZUM_TITLE);
+    s.push_str("'>Razumlivosť</th><th>Větvi</th></tr></thead><tbody>");
     for (i, c) in candidates.iter().enumerate() {
+        // Per-candidate razumlivost from its own cluster membership (issue
+        // #79); an em-dash when the membership is unknown.
+        let razum = if c.langs.is_empty() {
+            "—".to_string()
+        } else {
+            format!("{}%", razum_pct(&c.langs))
+        };
         let _ = write!(
             s,
-            "<tr id='cand-{}' class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td>{}</td></tr>",
+            "<tr id='cand-{}' class='{}'><td>{}</td><td><span class='mention'>{}</span></td><td><span class='pill {}'>{}</span></td><td class='score'>{:.3}</td><td class='score'>{}</td><td>{}</td></tr>",
             i + 1,
             if i == 0 { "top-candidate" } else { "" },
             i + 1,
@@ -4492,6 +4524,7 @@ fn alternatives_block(candidates: &[Candidate]) -> String {
             source_class(c.source),
             esc(c.source.label()),
             c.score,
+            razum,
             c.branch_coverage
         );
     }
@@ -6684,6 +6717,37 @@ fn entry_tabs(m: &SiteEntryMeta) -> String {
     )
 }
 
+/// The razumlivost row-label / chip tooltip (issue #79): what the number is —
+/// and is not — plus the population source.
+const RAZUM_TITLE: &str = "dolja govoriteljev slovjanskyh językov s poznatym srodnym slovom (po atestaciji) — ne izměrjena razumlivosť; izvor populacij: voting machine (steen)";
+
+/// Razumlivost overall percent for a language-code list, as the integer the
+/// search row carries in element 12 (issue #79).
+fn razum_pct(langs: &[String]) -> u32 {
+    let codes: Vec<&str> = langs.iter().map(String::as_str).collect();
+    crate::lang::razumlivost(&codes).overall.round() as u32
+}
+
+/// Three compact per-branch coverage bars for a [`crate::lang::Razumlivost`]
+/// value, labeled V/Z/J (East/West/South) with the full branch label as the
+/// tooltip. Deliberately NOT under an html id "razumlivost" — that id belongs
+/// to the committee intelligibility strip.
+fn razum_bars(r: &crate::lang::Razumlivost) -> String {
+    let bar = |label: &str, branch: Branch, v: f32| {
+        format!(
+            "<span class='razb' title='{}: {v:.0}%'>{label}<span class='razt'><span class='razf' style='width:{:.0}%'></span></span></span>",
+            branch.label(),
+            v.clamp(0.0, 100.0),
+        )
+    };
+    format!(
+        "{}{}{}",
+        bar("V", Branch::East, r.east),
+        bar("Z", Branch::West, r.west),
+        bar("J", Branch::South, r.south),
+    )
+}
+
 fn entry_infobox(m: &SiteEntryMeta, extra_rows: &str) -> String {
     let root = ancestor_slug(m)
         .map(|sl| format!("<a href='../root/{sl}.html'>{}</a>", esc(&m.ancestor)))
@@ -6717,10 +6781,22 @@ fn entry_infobox(m: &SiteEntryMeta, extra_rows: &str) -> String {
             m.conf.label(),
         )
     };
+    // Speaker-weighted cognate coverage (issue #79): honest on all three page
+    // kinds — generated (cognate members), official-only (committee cells) and
+    // raw (the single attesting language).
+    let razum = {
+        let codes: Vec<&str> = m.languages.iter().map(String::as_str).collect();
+        let r = crate::lang::razumlivost(&codes);
+        format!(
+            "<tr><th title='{RAZUM_TITLE}'>Razumlivosť</th><td><b>{:.0}%</b> {}</td></tr>",
+            r.overall,
+            razum_bars(&r),
+        )
+    };
     format!(
         "<aside class='entry-infobox'><table class='wikitable compact-table'><caption>{}</caption>\
          <tr><th>Čęst rěči</th><td>{}</td></tr><tr><th>Stav</th><td>{}</td></tr>{reliability}\
-         <tr><th>Kvaliteta</th><td>{}</td></tr><tr><th>Dokaz</th><td>{} jęz. / {} vět.</td></tr>\
+         <tr><th>Kvaliteta</th><td>{}</td></tr><tr><th>Dokaz</th><td>{} jęz. / {} vět.</td></tr>{razum}\
          <tr><th>Tip</th><td>{}</td></tr><tr><th>Predok</th><td>{}</td></tr>{extra_rows}<tr><th>ID</th><td>{}</td></tr></table></aside>",
         esc(&m.title),
         esc(&pos_code_label(&m.pos)),
@@ -7048,6 +7124,9 @@ struct ProposalRow {
     ancestor: String,
     n_langs: usize,
     n_branches: usize,
+    /// Attesting language codes (sorted, deduped) for the razumlivost column
+    /// (issue #79). Display-only; NOT written to novel-words.tsv.
+    langs: Vec<String>,
     gloss: String,
 }
 
@@ -7075,12 +7154,13 @@ fn proposals_page(
             .unwrap_or_default();
         let _ = write!(
             rows,
-            "<tr><td><a href='entry/{}.html'>{}</a>{}</td><td>{}</td><td>{:.2}</td><td class='mention'>{}</td><td>{} / {}</td><td>{}</td></tr>",
+            "<tr><td><a href='entry/{}.html'>{}</a>{}</td><td>{}</td><td>{:.2}</td><td class='score'>{}%</td><td class='mention'>{}</td><td>{} / {}</td><td>{}</td></tr>",
             r.id,
             esc(&r.form),
             note,
             esc(&r.pos),
             r.prob,
+            razum_pct(&r.langs),
             esc(&r.ancestor),
             r.n_langs,
             r.n_branches,
@@ -7103,8 +7183,9 @@ fn proposals_page(
          <p class='lede'>Slova, ktore stroj pravilno izvodi iz slovjanskogo dokaza, ale ktoryh <b>něma</b> v oficialnom slovniku — kandidaty za novu leksiku.</p>\
          <p>{cal_note}</p>\
          <p><b>{n_propose}</b> predloženj (p≥{propose_t:.1}) + <b>{n_review}</b> k pregledu (p≥{review_t:.1}); polny spisok: <a href='novel-words.tsv'>novel-words.tsv</a>. Kuratorske noty prihodęt iz <code>data/curation-notes.json</code>.</p>\
-         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th>p</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
-         <p class='muted'>Pokazano najviše 600 predlogov; polny spisok v TSV. Mašinove rekonstrukcije, ne normativna leksika.</p></article>"
+         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th>p</th><th title='{razum_title}'>razumlivosť</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
+         <p class='muted'>Pokazano najviše 600 predlogov; polny spisok v TSV. Mašinove rekonstrukcije, ne normativna leksika.</p></article>",
+        razum_title = RAZUM_TITLE,
     );
     page("Predloženja novyh slov — medžuslovjansky", &body, 0)
 }
@@ -7597,7 +7678,12 @@ tr:target{background:#fff3bf;outline:2px solid #f0c000}
 .spot-strength{margin-top:.45rem;font-size:.9em;color:var(--muted)}
 .portal-box button{margin-top:.4rem;padding:.3rem .7rem;border:1px solid var(--link);background:var(--link);color:#fff;border-radius:2px;cursor:pointer;font-size:.9em}
 .portal-box button:hover{background:#447ff5}
-.hit .hs,.hit .ha,.hit .hl{font-size:.85em;white-space:nowrap}.hit .ha,.hit .hl{color:var(--muted)}
+.hit .hs,.hit .ha,.hit .hl,.hit .hrz{font-size:.85em;white-space:nowrap}.hit .ha,.hit .hl,.hit .hrz{color:var(--muted)}
+
+/* Razumlivost (issue #79): compact per-branch coverage bars + search chip. */
+.razb{display:inline-flex;align-items:center;gap:.2em;margin-left:.45em;font-size:.8em;color:var(--muted);white-space:nowrap}
+.razt{display:inline-block;width:2.4em;height:.55em;background:var(--th);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.razf{display:block;height:100%;background:#a7c4ee}
 .wiki-main-list .wikitable td:nth-child(4){white-space:nowrap}
 @media (max-width:720px){main,.site-footer{padding-left:.8rem;padding-right:.8rem;border-left:none;border-right:none}.wikitable{font-size:.9em}}
 
@@ -8007,8 +8093,9 @@ mod tests {
 
     /// write_search_index end-to-end on synthetic rows: manifest + shard
     /// resolution (two-letter split for a hot bucket, one-letter otherwise),
-    /// browse/spotlight carry only core rows, and the completeness self-check
-    /// accepts the layout.
+    /// browse/spotlight carry only core rows, the 14-element row shape
+    /// (aliases last, razumlivost at 12; #79), and the completeness
+    /// self-check accepts the layout.
     #[test]
     fn search_index_shards_resolve_completely() {
         fn row(id: usize, display: &str, gloss: &str, core: bool) -> SearchRow {
@@ -8018,7 +8105,7 @@ mod tests {
             SearchRow {
                 id,
                 head: format!(
-                    "[{},{},{},\"noun\",\"N\",\"N\",[],1,1,0,\"\",\"\"",
+                    "[{},{},{},\"noun\",\"N\",\"N\",[],1,1,0,\"\",\"\",0",
                     id,
                     json_str(display),
                     json_str(gloss)
@@ -8065,10 +8152,26 @@ mod tests {
             serde_json::from_slice(&std::fs::read(dir.join("search").join(v_file)).unwrap())
                 .unwrap();
         assert!(v_rows.as_array().unwrap().iter().any(|r| r[0] == 1));
+        // Written row shape (schema 2, #79): 14 elements, razumlivost integer
+        // at 12, aliases array LAST at 13.
+        let voda = v_rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r[0] == 1)
+            .unwrap();
+        assert_eq!(voda.as_array().unwrap().len(), 14, "{voda}");
+        assert!(voda[12].is_u64(), "{voda}");
+        assert!(voda[13].is_array(), "{voda}");
+        assert_eq!(manifest["schema"], 2);
         let browse_rows: serde_json::Value =
             serde_json::from_slice(&std::fs::read(dir.join("search/browse.json")).unwrap())
                 .unwrap();
         assert!(browse_rows.as_array().unwrap().iter().all(|r| r[0] != 3));
+        // no_alias rows keep the same shape with an empty aliases tail.
+        let b0 = &browse_rows.as_array().unwrap()[0];
+        assert_eq!(b0.as_array().unwrap().len(), 14, "{b0}");
+        assert!(b0[13].as_array().unwrap().is_empty(), "{b0}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

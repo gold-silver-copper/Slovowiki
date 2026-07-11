@@ -66,6 +66,13 @@ pub fn generate(
     if let Some(o) = overrides.lookup(&input.gloss) {
         let mut c = Candidate::new(o.official.clone(), CandidateSource::ManualOverride, 0.99);
         c.confidence = Confidence::High;
+        // The override rests on the meaning's whole evidence row (issue #79).
+        c.langs = {
+            let mut l: Vec<String> = input.forms.iter().map(|f| f.lang_code.clone()).collect();
+            l.sort();
+            l.dedup();
+            l
+        };
         c.warnings.push(format!("Ručna korektura: {}", o.reason));
         candidates.insert(0, c);
         overridden = true;

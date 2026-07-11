@@ -124,6 +124,21 @@ pub fn generate_oracle(
                     pc.score = round3(score);
                     pc.confidence = Confidence::from_score(pc.score);
                     pc.branch_coverage = (l.desc_membership * 3.0).round() as u8;
+                    // Supporting languages (issue #79 razumlivost): the modern
+                    // primary reflexes sharing the reconstruction's consonant
+                    // root — the same filter that fed the yer resolver above.
+                    pc.langs = input
+                        .forms
+                        .iter()
+                        .filter(|f| f.modern && f.primary)
+                        .filter(|f| {
+                            ortho::shares_consonant_root(
+                                &ortho::consonant_key(&f.norm.latin),
+                                &recon_key,
+                            )
+                        })
+                        .map(|f| f.lang_code.clone())
+                        .collect();
                     pc.trace.insert(
                         0,
                         RuleStep::new(

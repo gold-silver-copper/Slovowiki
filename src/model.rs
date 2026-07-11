@@ -146,6 +146,9 @@ pub struct Candidate {
     pub confidence: Confidence,
     /// How many Slavic branches (0-3) attest the form this candidate rests on.
     pub branch_coverage: u8,
+    /// Language codes of the cognate cluster supporting THIS candidate (the
+    /// razumlivost display score, issue #79). Empty = membership unknown.
+    pub langs: Vec<String>,
     pub trace: Vec<RuleStep>,
     pub evidence: Vec<Evidence>,
     pub warnings: Vec<String>,
@@ -159,6 +162,7 @@ impl Candidate {
             source,
             score,
             branch_coverage: 0,
+            langs: Vec::new(),
             trace: Vec::new(),
             evidence: Vec::new(),
             warnings: Vec::new(),

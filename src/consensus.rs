@@ -407,6 +407,9 @@ pub fn generate_oracle(
         };
         let mut cand = Candidate::new(form, source, round3(score));
         cand.branch_coverage = branch_coverage as u8;
+        // This candidate's own cluster membership (issue #79) — until now it
+        // survived only as the comma-joined string in trace[0].
+        cand.langs = g.langs.iter().map(|f| f.lang_code.clone()).collect();
 
         trace.insert(
             0,
@@ -490,6 +493,7 @@ pub fn generate_oracle(
             let score = (min_primary - 0.02 - 0.01 * candidates.len() as f32).clamp(0.03, 0.5);
             let mut cand =
                 Candidate::new(form, CandidateSource::MajorityModernSlavic, round3(score));
+            cand.langs = langs.iter().map(|f| f.lang_code.clone()).collect();
             let support = langs.len();
             trace.insert(
                 0,
@@ -1478,28 +1482,6 @@ const SUBGROUPS: &[&[&str]] = &[
     &["bg", "mk"],
 ];
 
-/// Relative speaker weights, used only as a population tie-break (§4.3).
-fn pop_weight(code: &str) -> f32 {
-    match code {
-        "ru" => 1.0,
-        "pl" => 0.44,
-        "uk" => 0.42,
-        "cs" => 0.10,
-        "be" => 0.10,
-        "sr" => 0.09,
-        "bg" => 0.08,
-        "sk" => 0.05,
-        "hr" => 0.05,
-        // Serbo-Croatian macro-code (English Wiktionary's `sh`): the combined
-        // sr+hr+bs speaker base.
-        "sh" => 0.17,
-        "bs" => 0.03,
-        "sl" => 0.02,
-        "mk" => 0.02,
-        _ => 0.0,
-    }
-}
-
 /// §4.3: Σ over subgroups of (present members agreeing / present members). A
 /// form attested across all six subgroups scores 6.0; ½ votes fall out
 /// naturally from intra-subgroup splits.
@@ -1523,8 +1505,13 @@ fn subgroup_score(langs: &[&SourceForm], present: &BTreeMap<&str, &SourceForm>) 
     total
 }
 
+// The §4.3 tie-break weights themselves live in the lang.rs registry
+// (crate::lang::pop_weight) since issue #79; behavior is identical.
 fn population_weight(langs: &[&SourceForm]) -> f32 {
-    langs.iter().map(|f| pop_weight(&f.lang_code)).sum()
+    langs
+        .iter()
+        .map(|f| crate::lang::pop_weight(&f.lang_code))
+        .sum()
 }
 
 /// Heuristic: does this form look like a Graeco-Latin internationalism? Uses
