@@ -67,11 +67,20 @@ pub fn generate_oracle(
                     .map(|f| f.norm.latin.clone())
                     .filter(|r| ortho::shares_consonant_root(&ortho::consonant_key(r), &recon_key))
                     .collect();
+                // Stem-class-aware citation endings (issue #76), flag-gated.
+                // The linker's own internal derivations stay stem_class-blind
+                // so the rung cannot feed back into link confidences.
+                let stem_class = if cfg.proto_stem_class_endings {
+                    l.entry.stem_class.as_deref()
+                } else {
+                    None
+                };
                 let mut pc = crate::proto::generate_with_reflexes(
                     &l.entry.word,
                     input.pos,
                     input.gender,
                     &reflexes,
+                    stem_class,
                 );
                 // Prefix-stripped link: re-attach the Interslavic prefix onto the
                 // derived bare root (*prostirati → prostirati → råzprostirati).

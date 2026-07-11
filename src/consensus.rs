@@ -132,6 +132,11 @@ pub struct ConsensusConfig {
     /// consonant position by ≥2 g-preserving cognates (ru/pl/South). ISV has
     /// no g→h rule [RULE_SPEC §2].
     pub spirantization_repair: bool,
+    /// Stem-class-aware citation endings in the proto engine (issue #76): a
+    /// masculine n-stem keeps the archaic nominative in the reconstruction
+    /// (*kamy) but the dictionary cites the extended oblique stem (kamenj);
+    /// the Wiktionary declension category supplies the class.
+    pub proto_stem_class_endings: bool,
 }
 
 impl ConsensusConfig {
@@ -164,6 +169,7 @@ impl ConsensusConfig {
             derivational_suffixes: false,
             loan_hiatus: false,
             spirantization_repair: false,
+            proto_stem_class_endings: false,
         }
     }
 
@@ -198,6 +204,10 @@ impl ConsensusConfig {
             derivational_suffixes: true,
             loan_hiatus: true,
             spirantization_repair: true,
+            // Stem-class-aware citation endings (issue #76): kept — categorical
+            // in the official CSV and +0.07pp exact (11 fixed / 0 broken,
+            // sign-test p = 0.0026), gaining on dev and holdout alike.
+            proto_stem_class_endings: true,
             // Rejected by the benchmark (regress accuracy in the consensus path):
             y_recovery: false,
             adj_longform_rep: false,
@@ -231,6 +241,7 @@ impl ConsensusConfig {
             derivational_suffixes: true,
             loan_hiatus: true,
             spirantization_repair: true,
+            proto_stem_class_endings: true,
         }
     }
 }
