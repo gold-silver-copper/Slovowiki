@@ -604,6 +604,35 @@ mod tests {
         assert_eq!(sets.iter().filter(|s| !s.borrowed).count(), 1); // only *voda
     }
 
+    /// Issue #66: en.wiktionary files sh lemmas in EITHER script; a Cyrillic
+    /// sh member must normalize to Latin, and no candidate surface may carry
+    /// Cyrillic letters.
+    #[test]
+    fn cyrillic_sh_members_normalize_to_latin() {
+        let set = CognateSet {
+            proto: String::new(),
+            etymon: "ota بخشش".into(),
+            borrowed: true,
+            pos: Pos::Noun,
+            gloss: "baksheesh".into(),
+            members: vec![
+                le("bg", "бакшиш", "noun", "", "ota بخشش"),
+                le("mk", "бакшиш", "noun", "", "ota بخشش"),
+                le("ru", "бакшиш", "noun", "", "tr bahşiş"),
+                le("sh", "бакшиш", "noun", "", "ota بخشش"),
+            ],
+        };
+        let g = generate_set(set, &ConsensusConfig::production());
+        assert_eq!(g.form(), "bakšiš");
+        for c in &g.candidates {
+            assert!(
+                !c.form.chars().any(crate::normalize::is_cyrillic_char),
+                "cyrillic leaked into candidate: {}",
+                c.form
+            );
+        }
+    }
+
     #[test]
     fn intl_key_ignores_the_j_glide() {
         // kompjuter and komputer must share an internationalism key.

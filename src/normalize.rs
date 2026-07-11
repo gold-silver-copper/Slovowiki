@@ -82,12 +82,59 @@ pub fn to_phonemic_latin(lang_code: &str, form: &str) -> String {
         .map(|l| l.script)
         .unwrap_or(Script::Latin);
     let lower = form.trim().to_lowercase();
-    let s = match script {
-        Script::Cyrillic => translit_cyrillic(lang_code, &lower),
-        Script::Latin => translit_latin(lang_code, &lower),
+    // Dispatch on the word's ACTUAL script, not only the registry default:
+    // en.wiktionary files some languages in either alphabet (the sh macro-code
+    // carries 5k+ Cyrillic lemmas although lang.rs rightly defaults it to
+    // Latin), and a few words carry Cyrillic homoglyph typos inside Latin
+    // spellings. Any Cyrillic content routes through the Cyrillic
+    // transliterator, which maps Cyrillic and passes Latin through — otherwise
+    // raw Cyrillic leaks into "phonemic Latin" and from there into generated
+    // headwords (issue #66: бакшиш, trbuх). The registry script remains the
+    // dispatch for pure-Latin words.
+    let s = if lower.chars().any(is_cyrillic_char) {
+        translit_cyrillic(lang_code, &lower)
+    } else {
+        match script {
+            Script::Cyrillic => translit_cyrillic(lang_code, &lower),
+            Script::Latin => translit_latin(lang_code, &lower),
+        }
     };
     // Final tidy: collapse whitespace, strip stray marks.
     s.trim().to_string()
+}
+
+/// Cyrillic proper plus the historic/extended blocks used by OCS material.
+pub fn is_cyrillic_char(c: char) -> bool {
+    ('\u{0400}'..='\u{052F}').contains(&c) || ('\u{A640}'..='\u{A69F}').contains(&c)
+}
+
+/// Fold Cyrillic homoglyph typos inside Proto-Slavic reconstruction notation.
+/// en.wiktionary etymologies occasionally carry look-alike Cyrillic letters
+/// typed into Latin reconstruction names (`*klоръ` for `*klopъ`, `*derьmо`
+/// for `*derьmo`); left unfolded they flow through the proto engine into
+/// generated headwords and ancestor displays (issue #66). Maps ONLY the
+/// unambiguous lowercase visual twins; the yers `ь`/`ъ` are legitimate proto
+/// notation and are never touched.
+pub fn fold_proto_homoglyphs(s: &str) -> String {
+    if !s.chars().any(is_cyrillic_char) {
+        return s.to_string();
+    }
+    s.chars()
+        .map(|c| match c {
+            'а' => 'a',
+            'е' => 'e',
+            'о' => 'o',
+            'р' => 'p',
+            'с' => 'c',
+            'у' => 'y',
+            'х' => 'x',
+            'і' => 'i',
+            'ј' => 'j',
+            'к' => 'k',
+            'ѕ' => 's',
+            other => other,
+        })
+        .collect()
 }
 
 /// Language-aware Cyrillic → phonemic Latin.
@@ -393,5 +440,29 @@ mod tests {
     fn iotated_vowels_after_vowel_keep_j() {
         assert!(tr("ru", "моя").contains('j'), "{}", tr("ru", "моя"));
         assert_eq!(tr("ru", "яблоко"), "jabloko"); // word-initial я
+    }
+
+    /// Issue #66: sh defaults to Latin in the registry, but en.wiktionary files
+    /// it in either alphabet — dispatch must follow the word's actual script so
+    /// Cyrillic never leaks through as "phonemic Latin".
+    #[test]
+    fn cyrillic_content_routes_through_cyrillic_translit() {
+        assert_eq!(tr("sh", "бакшиш"), "bakšiš");
+        assert_eq!(tr("sh", "трбух"), "trbuh");
+        assert_eq!(tr("sh", "међа"), "međa");
+        assert_eq!(tr("sh", "trbuh"), "trbuh"); // pure Latin path unchanged
+        assert_eq!(tr("sr", "вода"), "voda"); // Cyrillic-registry langs unchanged
+    }
+
+    /// Issue #66: homoglyph typos in proto notation fold to their Latin twins;
+    /// the yers ь/ъ are legitimate proto letters and must survive.
+    #[test]
+    fn proto_homoglyphs_fold_but_yers_survive() {
+        use super::fold_proto_homoglyphs as f;
+        assert_eq!(f("*klоръ"), "*klopъ"); // Cyrillic о,р in the source
+        assert_eq!(f("*derьmо"), "*derьmo");
+        assert_eq!(f("*puхъkavъ"), "*puxъkavъ");
+        assert_eq!(f("*bujаti"), "*bujati");
+        assert_eq!(f("*voda"), "*voda"); // pure Latin untouched
     }
 }

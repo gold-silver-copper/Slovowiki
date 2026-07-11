@@ -16,6 +16,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 31785,boulder,noun,balvan,balvan,valun
 24502,banjo,noun,bandžo,bandžo,bendžo
 36391,bankrupt (insolvent person),noun,bankrot,bankrot,bankrut
+24515,bar (tavern),noun,bar,bar,bȯr
 24538,baron,noun,baron,baron,baran
 20334,badger,noun,barsuk,barsuk,jazvec
 24545,barge,noun,barža,barža,čȯln
@@ -89,6 +90,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 1900,"get, receive",verb,dostati,dostati,dastac
 2511,"get, receive, obtain",verb,dostavati,dostavati,dastavac
 1902,rain,noun,dȯžď,dožd,dȯždž
+17339,ladder,noun,drabina,drabina,lěstva
 35839,preciousness,noun,drågocěnnosť,dragocennost,dragocenosť
 20373,dragon,noun,drakon,drakon,zmij
 442,scratch,verb,drapnųti,drapnuti,drapnųc
@@ -197,6 +199,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 36274,coconut,noun,kokos,kokos,kokoš
 26596,"hen, chicken",noun,kokoška,kokoška,kokoš
 37354,"cola, coke",noun,kola,kola,kolo
+2242,coma,noun,koma,koma,kom
 26627,comfortably,adv,komfortno,komfortno,komfortne
 35965,competence,noun,kompetentnosť,kompetentnost,kompetencija
 4378,completeness,noun,kompletnosť,kompletnost,pȯlnota
@@ -424,7 +427,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 18311,"crawl, creep",verb,popȯlzati,popolzati,popolezati
 18313,"crawl, creep",verb,popȯlzti,popolzti,popolezti
 21434,"defect, vice",noun,porok,porok,vada
-33241,sow,verb,posějati,posejati,posijati
+33241,sow,verb,posějati,posejati,posěti
 36509,laughing stock,noun,posměšišče,posmešišče,pasmešyšča
 6019,"advise, counsel",verb,posȯvětovati,posovetovati,posavetovati
 21747,"decide, decree",verb,postanoviti,postanoviti,pastanavic
@@ -618,6 +621,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 2961,"alert, anxiety, disquiet",noun,trevoga,trevoga,tryvoga
 1466,three,num,tri,tri,trje
 5997,"sidewalk, trottoir, pavement (footway)",noun,trotuar,trotuar,trotoar
+1055,"last, continue, endure, go on",verb,trvati,trvati,trajati
 30927,pumpkin,noun,tykva,tykva,tyky
 17095,"take away, remove",verb,udaliti,udaliti,udaljiti
 21184,boa,noun,udav,udav,boa
@@ -636,7 +640,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 5453,dry up,verb,usȯhnųti,usohnuti,ushnuti
 35232,constitutional,adj,ustavny,ustavny,konstytucijny
 1650,concession,noun,ustųpka,ustupka,ustupak
-23664,"console, comfort",verb,utěšati,utešati,tešiti
+23664,"console, comfort",verb,utěšati,utešati,těšiti
 13414,wipe,verb,utirati,utirati,brysati
 5188,attention,noun,uvaga,uvaga,uvaha
 30958,"immortalise, immortalize",verb,uvěkověčiti,uvekovečiti,ovekovečiti
@@ -697,7 +701,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 3438,ask,verb,zapytati,zapytati,zapytac
 21244,"infect, contaminate",verb,zaražati,zaražati,zaražac
 25,register,verb,zaregistrovati,zaregistrovati,registrovati
-19407,sob,verb,zarydati,zarydati,zaridati
 33240,sow,verb,zasějati,zasejati,zasěti
 15210,"flag, ensign, banner (flag)",noun,zastava,zastava,znamę
 21828,find (sbd. at home),verb,zastavati,zastavati,zastavac

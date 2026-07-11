@@ -156,7 +156,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 35724,Bavarian,adj,bavarsky,bavarskij,bavarsky
 20335,basilisk,noun,bazilisk,bazylišek,bazilisk
 20336,vigil,noun,bděńje,bdenie,bdenje
-20338,be awake,verb,bděti,bditi,bdeti
+20338,be awake,verb,bděti,bditi,bděti
 2443,poor,adj,bědny,bednyj,bědny
 24576,crural,adj,bedreny,bedrennyj,bedreny
 20345,fluent,adj,běgly,beglyj,begly
@@ -679,6 +679,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 25892,densely,adv,gųsto,gęsto,gųsto
 5308,"dense, thick",adj,gųsty,gęsty,gųsty
 22385,Guatemalan,adj,gvatemaľsky,gvatemalskij,gvatemalsky
+17397,flexible,adj,gybky,gibkij,gybky
 25525,caron,noun,haček,gaček,haček
 22456,Haiti,noun,Haiti,gaiti,haiti
 25910,hallucination,noun,halucinacija,gallucinacija,halucinacija
@@ -1913,6 +1914,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 3671,meadow,noun,poljana,polana,poljana
 3614,field,noun,polje,pole,polje
 2935,Polish,adj,poljsky,polskij,poljsky
+1082,fill,verb,pȯlniti,plniti,pȯlniti
 21003,"adult, of age",adj,pȯlnolětny,povnolitnij,polnoletny
 18301,full moon,noun,pȯlnoluńje,polnolunie,pȯlnolunje
 3141,full,adj,pȯlny,polnyj,pȯlny
@@ -2481,7 +2483,6 @@ id,gloss,pos,official,baseline_pred,final_pred
 36729,"trash can, garbage can, dustbin",noun,smetnik,smietnik,smetnik
 26370,spruce,noun,smrěk,smrk,smrěk
 2070,death,noun,smŕť,smert,smŕt
-34939,"mortal, deadly, lethal, fatal",adj,smŕteljny,smertelnyj,smrteljny
 12382,"mortal, deadly, lethal, fatal, death",adj,smŕtny,smertnyj,smŕtny
 12384,"deadly, lethal",adj,smŕtonosny,smertonosnyj,smrtonosny
 12389,supply,verb,snabděti,snabditi,snabdeti
@@ -2926,7 +2927,7 @@ id,gloss,pos,official,baseline_pred,final_pred
 23953,"harmful, nasty",adj,vrědny,vrednyj,vrědny
 2330,weather,noun,vrěmę,vrijeme,vrěmę
 31361,heather,noun,vrěs,vros,vrěs
-31362,"shriek, screech, squeal, yell",noun,vrěsk,vrask,vresk
+31362,"shriek, screech, squeal, yell",noun,vrěsk,vrask,vrěsk
 22644,spindle,noun,vrěteno,vereteno,vrěteno
 22561,boil (intr.),verb,vrěti,vriti,vrěti
 3076,"top, peak, summit, apex, tip (extremity)",noun,vŕh,verh,vŕh
