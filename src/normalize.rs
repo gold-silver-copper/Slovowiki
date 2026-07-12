@@ -297,6 +297,11 @@ fn translit_cyrillic(lang: &str, s: &str) -> String {
             'с' => "s",
             'т' => "t",
             'у' => "u",
+            // Rusyn ӱ (the *o reflex in newly closed syllables, кӱнь<конь):
+            // /ü/, nearest phonemic-Latin vowel "u". Unmapped it leaked
+            // Cyrillic into a generated display headword once the issue-#86
+            // chain lemmas made rue singleton sets visible (script census).
+            'ӱ' => "u",
             'ў' => "v",
             'ф' => "f",
             'х' => "h", // ISV writes *x as h
@@ -538,6 +543,25 @@ mod tests {
         assert_eq!(tr("sh", "међа"), "međa");
         assert_eq!(tr("sh", "trbuh"), "trbuh"); // pure Latin path unchanged
         assert_eq!(tr("sr", "вода"), "voda"); // Cyrillic-registry langs unchanged
+                                              // Rusyn ӱ maps (issue #86 chain lemmas surfaced rue singletons whose
+                                              // displays leaked it as Cyrillic).
+        assert_eq!(tr("rue", "вӱсямнадцять"), "vusamnadcat");
+        assert!(!tr("rue", "вӱсямнадцять")
+            .chars()
+            .any(super::is_cyrillic_char));
+    }
+
+    /// Issue #86: the Greek etymon transliteration used by corpus::etymon_key
+    /// — romanization values, polytonic diacritics stripped, self-consistent
+    /// with Latin spellings of the same roots.
+    #[test]
+    fn greek_translit_aligns_with_latin_spellings() {
+        use super::translit_greek as g;
+        assert_eq!(g("ἀλόη"), "aloe");
+        assert_eq!(g("ᾰ̓λόη"), "aloe"); // vrachy + combining psili
+        assert_eq!(g("φιλοσοφία"), "philosophia");
+        assert_eq!(g("θέατρον"), "theatron");
+        assert_eq!(g("ὥρα"), "ora");
     }
 
     /// Issue #66: homoglyph typos in proto notation fold to their Latin twins;
