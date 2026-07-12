@@ -113,7 +113,10 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                         noun_gender
                             .entry(forms::form_key(isv))
                             .and_modify(|known| {
-                                if *known != c {
+                                // Once conflicting senses make the key
+                                // ambiguous, later rows must not restore a
+                                // concrete gender.
+                                if *known != ' ' && *known != c {
                                     *known = ' ';
                                 }
                             })
@@ -1003,6 +1006,27 @@ mod tests {
                 "mixed-gender homograph {word} must not inherit the first CSV row's gender"
             );
         }
+        assert!(
+            check_text(&index, "dobry družba")
+                .iter()
+                .all(|r| r.agreement.is_none()),
+            "a valid masculine reading of družba must not be rejected"
+        );
+
+        // Ambiguity is absorbing rather than dependent on row order: m/f/m
+        // must remain ambiguous after the final masculine row.
+        let dodatok: Vec<OfficialEntry> = entries
+            .iter()
+            .filter(|e| e.isv == "dodatȯk")
+            .cloned()
+            .collect();
+        assert_eq!(dodatok.len(), 3);
+        let reordered = vec![dodatok[0].clone(), dodatok[2].clone(), dodatok[1].clone()];
+        let reordered_index = build_index(&reordered, None);
+        assert_eq!(
+            reordered_index.noun_gender.get(&forms::form_key("dodatȯk")),
+            Some(&' ')
+        );
     }
 
     #[test]
