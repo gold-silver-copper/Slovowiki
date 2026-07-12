@@ -999,32 +999,48 @@ mod tests {
     fn homographic_noun_genders_abstain_from_agreement() {
         let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
         let index = build_index(&entries, None);
-        for word in ["dodatȯk", "družba", "led"] {
+        // Cover exact/case-folded homographs and genuine standard-orthography
+        // collisions (Bělorus/Běloruś, plȯť/plot, spust/spusť).
+        for word in ["Bělorus", "dodatȯk", "družba", "led", "plȯť", "spust"] {
             assert_eq!(
                 index.noun_gender.get(&forms::form_key(word)),
                 Some(&' '),
                 "mixed-gender homograph {word} must not inherit the first CSV row's gender"
             );
         }
-        assert!(
-            check_text(&index, "dobry družba")
-                .iter()
-                .all(|r| r.agreement.is_none()),
-            "a valid masculine reading of družba must not be rejected"
-        );
+        for phrase in ["dobry družba", "dobry Bělorus", "dobra Běloruś"] {
+            assert!(
+                check_text(&index, phrase)
+                    .iter()
+                    .all(|r| r.agreement.is_none()),
+                "valid homograph reading must not be rejected: {phrase}"
+            );
+        }
 
-        // Ambiguity is absorbing rather than dependent on row order: m/f/m
-        // must remain ambiguous after the final masculine row.
-        let dodatok: Vec<OfficialEntry> = entries
+        // A synthetic m/f/m sequence proves ambiguity is absorbing without
+        // coupling the order-independence test to CSV row count or ordering.
+        let template = entries
             .iter()
-            .filter(|e| e.isv == "dodatȯk")
-            .cloned()
-            .collect();
-        assert_eq!(dodatok.len(), 3);
-        let reordered = vec![dodatok[0].clone(), dodatok[2].clone(), dodatok[1].clone()];
-        let reordered_index = build_index(&reordered, None);
+            .find(|e| e.isv == "družba")
+            .expect("noun fixture");
+        let synthetic: Vec<OfficialEntry> = [
+            crate::model::Gender::Masculine,
+            crate::model::Gender::Feminine,
+            crate::model::Gender::Masculine,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, gender)| {
+            let mut entry = template.clone();
+            entry.id = format!("synthetic-{i}");
+            entry.isv = "testova".to_string();
+            entry.noun_traits.gender = Some(gender);
+            entry
+        })
+        .collect();
+        let synthetic_index = build_index(&synthetic, None);
         assert_eq!(
-            reordered_index.noun_gender.get(&forms::form_key("dodatȯk")),
+            synthetic_index.noun_gender.get(&forms::form_key("testova")),
             Some(&' ')
         );
     }
