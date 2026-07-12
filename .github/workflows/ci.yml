@@ -54,3 +54,4 @@ jobs:
           echo "measured exact top-1 = ${exact}%"
           awk -v e="$exact" 'BEGIN { exit !(e + 0 >= 39.5) }' \
             || { echo "::error::exact top-1 ${exact}% fell below the 39.5% regression floor"; exit 1; }
+          git diff --exit-code -- data/score-calibration.json target/eval/methodology.md

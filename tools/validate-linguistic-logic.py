@@ -21,6 +21,29 @@ for entry in entries:
         )
 
 
+def normalized_pos(pos_raw: str):
+    if aspect(pos_raw):
+        return "verb"
+    value = pos_raw.strip().lower()
+    prefixes = [
+        (("adj",), "adj"), (("adv",), "adv"), (("num",), "num"),
+        (("pron",), "pron"), (("prep", "postp"), "prep"),
+        (("conj",), "conj"), (("intj",), "intj"),
+        (("particle", "prtcl"), "particle"), (("prefix",), "prefix"),
+        (("suffix",), "suffix"), (("phrase",), "phrase"),
+    ]
+    if value in {"proper noun", "proper_noun", "name"}:
+        return "proper_noun"
+    for starts, result in prefixes:
+        if value.startswith(starts):
+            return result
+    if value.startswith(("m.", "f.", "n.", "m/")) or value in {"m", "f", "n"}:
+        return "noun"
+    if value.startswith("v.") or value.startswith("v ") or value == "v":
+        return "verb"
+    return "other"
+
+
 def aspect(pos_raw: str):
     if "ipf./pf." in pos_raw:
         return "ipf/pf"
@@ -31,7 +54,8 @@ def aspect(pos_raw: str):
     return None
 
 
-expected_aspects = defaultdict(set)
+expected_senses = {}
+expected_aspects = {}
 official_spellings = set()
 with official_path.open(newline="") as handle:
     for row in csv.DictReader(handle):
@@ -40,9 +64,13 @@ with official_path.open(newline="") as handle:
             continue
         key = title.lower()
         official_spellings.add(key)
+        gloss = row["en"].strip()
+        sense_id = row["id"]
+        pos = normalized_pos(row["partOfSpeech"])
+        expected_senses[sense_id] = (key, gloss, pos)
         value = aspect(row["partOfSpeech"])
         if value:
-            expected_aspects[key].add(value)
+            expected_aspects[sense_id] = (key, gloss, pos, value)
 
 missing = sorted(
     title
@@ -51,21 +79,60 @@ missing = sorted(
 )
 assert not missing, ("exact official spellings missing from export", missing[:20], len(missing))
 
-for title, values in expected_aspects.items():
-    pages = [entry for entry in by_title[title] if entry["official"]]
-    assert pages, ("aspect lemma missing exact page", title)
-    expected = "ipf/pf" if "ipf/pf" in values or len(values) > 1 else next(iter(values))
-    assert any(page["aspect"] == expected for page in pages), (
-        "exact-spelling aspect mismatch", title, expected, [(p["id"], p["aspect"]) for p in pages]
+actual_senses = {}
+actual_entries = {}
+for entry in entries:
+    if not entry["official"]:
+        assert entry.get("official_id") is None, ("generated entry has official sense ID", entry["id"])
+        continue
+    sense_id = entry.get("official_id")
+    assert sense_id, ("official entry lacks source sense ID", entry["id"])
+    assert sense_id not in actual_senses, ("duplicate official source sense ID", sense_id)
+    actual_senses[sense_id] = (
+        entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"]
     )
+    actual_entries[sense_id] = entry
+assert actual_senses == expected_senses, (
+    "official source senses differ", list((expected_senses.items() ^ actual_senses.items()))[:20]
+)
+
+for sense_id, expected in expected_aspects.items():
+    entry = actual_entries[sense_id]
+    actual = (entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"], entry["aspect"])
+    assert actual == expected, ("official aspect sense mismatch", sense_id, expected, actual)
 
 by_id = {entry["id"]: entry for entry in entries}
+assert len(by_id) == len(entries), "duplicate entries.json IDs"
 lemmas = json.loads((root / "api/lemmas.json").read_text())["lemmas"]
 for row in lemmas:
-    entry = by_id.get(row[4])
+    entry_id = row[4]
+    if entry_id != 0:
+        assert entry_id in by_id, ("API lemma references missing entry", row[:6])
+    entry = by_id.get(entry_id)
     if row[2] == "generated" and entry is not None and not entry["official"]:
         assert row[3] is None, (
             "uncalibrated corpus lemma API probability", row[:6]
+        )
+
+for shard_path in sorted((root / "api/forms").glob("*.json")):
+    records = json.loads(shard_path.read_text()).get("records", {})
+    for analyses in records.values():
+        for row in analyses:
+            entry_id = row[2]
+            if entry_id != 0:
+                assert entry_id in by_id, (
+                    "API form references missing entry", shard_path.name, row[:5]
+                )
+
+historical_names = ("starocŕkovnoslovjansky", "starovȯstočnoslovjansky")
+for proto_path in sorted((root / "proto").glob("*.html")):
+    for section in proto_path.read_text().split("<section"):
+        if not any(name in section for name in historical_names):
+            continue
+        marker = section.find("proto-historical-hints")
+        assert marker >= 0, ("historical proto descendant is unlabeled", proto_path.name)
+        assert not any(name in section[:marker] for name in historical_names), (
+            "historical proto descendant appears as modern branch evidence", proto_path.name
         )
 
 proposal_lines = (root / "novel-words.tsv").read_text().splitlines()
@@ -75,7 +142,8 @@ assert proposal_lines == [proposal_header], (
 )
 
 print(
-    f"linguistic logic valid: {len(official_spellings)} exact official spellings, "
-    f"{len(expected_aspects)} aspect spellings, no historical confidence leaks, "
+    f"linguistic logic valid: {len(expected_senses)} official senses across "
+    f"{len(official_spellings)} spellings, {len(expected_aspects)} aspect senses, "
+    "no historical confidence leaks, "
     "no cross-domain probabilities/proposals"
 )

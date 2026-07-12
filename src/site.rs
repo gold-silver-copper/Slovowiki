@@ -316,13 +316,43 @@ struct StableEntryIds {
 }
 
 impl StableEntryIds {
-    fn load(path: &Path) -> Result<Self> {
+    fn load(path: &Path, official_entries: &[OfficialEntry]) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
         let value: serde_json::Value = serde_json::from_slice(&crate::dump::read_maybe_gz(path)?)?;
         let mut ids: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
+        let mut official_senses: std::collections::HashMap<
+            (String, String, String),
+            std::collections::VecDeque<String>,
+        > = std::collections::HashMap::new();
+        let mut official_by_title_gloss: std::collections::HashMap<(String, String), Vec<String>> =
+            std::collections::HashMap::new();
+        let mut official_meta_by_id: std::collections::HashMap<String, (String, String, String)> =
+            std::collections::HashMap::new();
+        for e in official_entries {
+            let title = e.isv.trim().to_lowercase();
+            let gloss = e.english.trim().to_lowercase();
+            official_senses
+                .entry((
+                    title.clone(),
+                    official_pos_code(e).to_string(),
+                    gloss.clone(),
+                ))
+                .or_default()
+                .push_back(e.id.clone());
+            official_by_title_gloss
+                .entry((title.clone(), gloss.clone()))
+                .or_default()
+                .push(e.id.clone());
+            official_meta_by_id.insert(
+                e.id.clone(),
+                (title, official_pos_code(e).to_string(), gloss),
+            );
+        }
+        let mut claimed_official_senses: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut high_water = 0usize;
         if let Some(rows) = value.as_array() {
             for row in rows {
@@ -341,8 +371,60 @@ impl StableEntryIds {
                 let ancestor = row.get("ancestor").and_then(|v| v.as_str()).unwrap_or("");
                 let n_langs = row.get("langs").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                 let n_branches = row.get("branches").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let sense_id = if official {
+                    let title_key = title.trim().to_lowercase();
+                    let gloss_key = gloss.trim().to_lowercase();
+                    let mut found = None;
+                    if let Some(queue) = official_senses.get_mut(&(
+                        title_key.clone(),
+                        pos.to_string(),
+                        gloss_key.clone(),
+                    )) {
+                        while let Some(candidate) = queue.pop_front() {
+                            if !claimed_official_senses.contains(&candidate) {
+                                found = Some(candidate);
+                                break;
+                            }
+                        }
+                    }
+                    // Older registries sometimes stored a derived display POS
+                    // that disagrees with today's source parser. Preserve the
+                    // permalink only when title+gloss identify exactly one
+                    // still-unclaimed authoritative row.
+                    if found.is_none() {
+                        let candidates: Vec<String> = official_by_title_gloss
+                            .get(&(title_key, gloss_key))
+                            .into_iter()
+                            .flatten()
+                            .filter(|id| !claimed_official_senses.contains(*id))
+                            .cloned()
+                            .collect();
+                        if candidates.len() == 1 {
+                            found = candidates.into_iter().next();
+                        }
+                    }
+                    if let Some(id) = &found {
+                        claimed_official_senses.insert(id.clone());
+                    }
+                    found
+                } else {
+                    None
+                };
+                let source_meta = sense_id
+                    .as_ref()
+                    .and_then(|source_id| official_meta_by_id.get(source_id));
+                let identity_title = source_meta.map(|m| m.0.as_str()).unwrap_or(title);
+                let identity_pos = source_meta.map(|m| m.1.as_str()).unwrap_or(pos);
+                let identity_gloss = source_meta.map(|m| m.2.as_str()).unwrap_or(gloss);
                 ids.entry(entry_identity(
-                    official, title, pos, gloss, ancestor, n_langs, n_branches,
+                    official,
+                    sense_id.as_deref(),
+                    identity_title,
+                    identity_pos,
+                    identity_gloss,
+                    ancestor,
+                    n_langs,
+                    n_branches,
                 ))
                 .or_default()
                 .push(id);
@@ -379,12 +461,14 @@ impl StableEntryIds {
     }
 }
 
-/// Official identities intentionally omit the gloss: evidence growth may turn
-/// an official-only page into a matched page, but its permalink must survive.
-/// Machine-only homographs include the gloss to avoid stealing one another's
-/// old id.
+/// Official identities retain exact scientific spelling and the dictionary
+/// sense gloss. Evidence growth may turn an official-only sense into a matched
+/// sense, but search folding must never let another spelling or homograph steal
+/// its permalink. Machine-only homographs also include their evidence identity.
+#[allow(clippy::too_many_arguments)]
 fn entry_identity(
     official: bool,
+    official_sense_id: Option<&str>,
     title: &str,
     pos: &str,
     gloss: &str,
@@ -392,10 +476,15 @@ fn entry_identity(
     n_langs: usize,
     n_branches: usize,
 ) -> String {
-    let title = crate::orthography::to_standard(&title.trim().to_lowercase());
+    let exact_title = title.trim().to_lowercase();
     if official {
-        format!("O\u{1f}{pos}\u{1f}{title}")
+        format!(
+            "O\u{1f}{}\u{1f}{pos}\u{1f}{exact_title}\u{1f}{}",
+            official_sense_id.unwrap_or("missing-source-id"),
+            gloss.trim().to_lowercase()
+        )
     } else {
+        let title = crate::orthography::to_standard(&exact_title);
         // The evidence signature separates otherwise identical generated
         // homographs (e.g. two didžej/DJ sets). If grouping changes that
         // signature, it is a genuinely different evidence page and must not
@@ -406,6 +495,41 @@ fn entry_identity(
             ancestor.trim().to_lowercase(),
         )
     }
+}
+
+fn official_pos_code(e: &OfficialEntry) -> &str {
+    if crate::aspect::aspect(&e.pos_raw).is_some() {
+        "verb"
+    } else {
+        e.pos.code()
+    }
+}
+
+/// Select an official sense only with positive lexical evidence. Exact/folded
+/// spelling is a candidate lookup, not enough by itself to establish identity.
+fn select_official_entry(
+    rows: &[usize],
+    official_entries: &[OfficialEntry],
+    pos: crate::model::Pos,
+    set_gloss: &str,
+) -> Option<usize> {
+    let set_tokens = crate::dump::gloss_tokens(set_gloss);
+    let set_compact = set_tokens.join("");
+    rows.iter()
+        .copied()
+        .filter(|&i| official_entries[i].pos == pos)
+        .map(|i| {
+            let gloss = crate::dump::gloss_tokens(&official_entries[i].english);
+            let overlap = set_tokens.iter().filter(|t| gloss.contains(t)).count();
+            // Wiktionaries vary compounds freely (fairy tale/fairytale,
+            // feather grass/feathergrass). Joined content-token equality is a
+            // positive semantic discriminator without admitting unrelated POS.
+            let compound_match = !set_compact.is_empty() && set_compact == gloss.join("");
+            (i, overlap, compound_match)
+        })
+        .filter(|(_, overlap, compound_match)| *overlap > 0 || *compound_match)
+        .max_by_key(|(_, overlap, compound_match)| (*overlap, *compound_match))
+        .map(|(i, _, _)| i)
 }
 
 /// Generate the static site from the Wiktionary cognate-set corpus. Every set of
@@ -480,7 +604,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             PathBuf::from(ENTRY_ID_REGISTRY)
         }
     };
-    let mut entry_ids = StableEntryIds::load(&previous_entries)?;
+    let mut entry_ids = StableEntryIds::load(&previous_entries, &official_entries)?;
 
     let entry_dir = out_dir.join("entry");
     let _ = std::fs::remove_dir_all(&entry_dir); // clear any stale pages
@@ -494,8 +618,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // n / high / med / low are computed after same-concept suppression (below).
     let (n, high, med, low);
     let mut lemma_total = 0usize;
-    // Folded spellings covered by any generated candidate, so official-only
-    // pages are emitted exactly for the rest.
+    // Official dictionary sense IDs represented by surviving generated pages,
+    // so every other sense receives its own official-only page.
     let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // First pass: generate every word, so ancestor families (shared proto stem
@@ -563,15 +687,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                         }
                         rows
                     };
-                    let set_gloss = crate::dump::gloss_tokens(&g.set.gloss);
-                    let entry = rows.iter().copied().max_by_key(|&i| {
-                        let e = &official_entries[i];
-                        let gloss = crate::dump::gloss_tokens(&e.english);
-                        (
-                            (e.pos == g.set.pos) as usize,
-                            set_gloss.iter().filter(|t| gloss.contains(t)).count(),
-                        )
-                    })?;
+                    let entry =
+                        select_official_entry(rows, &official_entries, g.set.pos, &g.set.gloss)?;
                     Some(OfficialMatch {
                         rank: rank + 1,
                         entry,
@@ -615,9 +732,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // official lemma: genuine homographs (`ja` = I / and / yes), redundant
     // same-meaning sets (`jedin` ×N, all "one"), or a borrowing colliding with a
     // native word (the French-borrowed *pisati* "piss" vs the native official
-    // *pisati* "write"). ~957 official headwords are affected. Each official lemma
-    // must be represented by exactly ONE set — the one whose gloss actually
-    // matches the official gloss (meaning, not form coincidence), tie-broken by
+    // *pisati* "write"). Each official dictionary sense may be represented by
+    // at most ONE set — the one whose POS and gloss positively match that row,
+    // tie-broken by
     // the set's score. The losing sets keep their own page but lose the official
     // badge, so no page ever headlines an official meaning it does not carry.
     // Display-only: the leakage-free benchmark scores `generate_set` per official
@@ -633,7 +750,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         for (i, p) in prepared.iter().enumerate() {
             if let Some(m) = p.matched {
                 let e = &official_entries[m.entry];
-                let key = e.isv.trim().to_lowercase();
+                let key = e.id.clone();
                 let win = match best.get(&key) {
                     Some(&j) => rank(p, &e.english) > rank(&prepared[j], &e.english),
                     None => true,
@@ -648,7 +765,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             let Some(m) = prepared[i].matched else {
                 continue;
             };
-            let key = official_entries[m.entry].isv.trim().to_lowercase();
+            let key = official_entries[m.entry].id.clone();
             if best.get(&key) != Some(&i) {
                 prepared[i].matched = None;
                 prepared[i].status = MatchStatus::NoOfficialEntry;
@@ -656,7 +773,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 demoted += 1;
             }
         }
-        println!("Deduped {demoted} homograph/duplicate official matches (one representative per lemma).");
+        println!("Deduped {demoted} duplicate official matches (one representative per dictionary sense).");
         official -= demoted;
     }
 
@@ -744,15 +861,31 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         } else {
             &p.g.set.proto
         };
-        let identity = entry_identity(
-            p.matched.is_some(),
-            &p.display,
-            p.g.set.pos.code(),
-            &p.g.set.gloss,
-            ancestor,
-            p.g.n_langs,
-            p.g.n_branches,
-        );
+        let identity = match p.matched {
+            Some(m) => {
+                let e = &official_entries[m.entry];
+                entry_identity(
+                    true,
+                    Some(&e.id),
+                    e.isv.trim(),
+                    official_pos_code(e),
+                    &e.english,
+                    ancestor,
+                    p.g.n_langs,
+                    p.g.n_branches,
+                )
+            }
+            None => entry_identity(
+                false,
+                None,
+                &p.display,
+                p.g.set.pos.code(),
+                &p.g.set.gloss,
+                ancestor,
+                p.g.n_langs,
+                p.g.n_branches,
+            ),
+        };
         p.id = entry_ids.alloc(&identity);
     }
 
@@ -832,7 +965,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     covered.clear();
     for p in prepared.iter().filter(|p| !p.suppressed) {
         if let Some(m) = p.matched {
-            covered.insert(official_entries[m.entry].isv.trim().to_lowercase());
+            covered.insert(official_entries[m.entry].id.clone());
         }
     }
     // Reserve official-only ids before rendering so all wiki indexes can see
@@ -844,14 +977,14 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         if isv.is_empty() || isv.contains('#') {
             continue;
         }
-        let exact = isv.to_lowercase();
-        if !covered.insert(exact) {
-            continue; // this exact spelling already has a generated/official page
+        if !covered.insert(e.id.clone()) {
+            continue; // this exact official sense already has a generated page
         }
         let entry_id = entry_ids.alloc(&entry_identity(
             true,
+            Some(&e.id),
             isv,
-            e.pos.code(),
+            official_pos_code(e),
             &e.english,
             "",
             0,
@@ -942,8 +1075,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             langs,
             wiki_categories,
         );
-        if p.matched.is_some() {
+        if let Some(m) = p.matched {
             meta.prior = prior;
+            meta.official_sense_id = Some(official_entries[m.entry].id.clone());
         }
         metas.push(meta);
     }
@@ -962,7 +1096,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             branches.insert(f.branch.label().to_string());
         }
         let wiki_categories = wiktionary_category_paths_for_input(&input, enrich.as_ref());
-        metas.push(entry_meta(
+        let mut meta = entry_meta(
             *oid,
             e.isv.trim(),
             &e.english,
@@ -983,41 +1117,36 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             String::new(),
             langs,
             wiki_categories,
-        ));
+        );
+        meta.official_sense_id = Some(e.id.clone());
+        metas.push(meta);
     }
     // Aspect metadata and bidirectional partner links (issue #75). Official
     // aspect/gloss data is appropriate on the display path; it never enters
     // candidate generation or the leakage-free benchmark path.
     let meta_pos: std::collections::HashMap<usize, usize> =
         metas.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
-    // Resolve every official row through its exact scientific-spelling page.
-    // A standard fold is not safe here: legti/lęgti and similar collisions can
-    // carry different meanings and opposite aspects.
-    let verb_page_by_exact: std::collections::HashMap<String, usize> = metas
-        .iter()
-        .filter(|m| m.official_lemma.is_some() && m.pos == "verb")
-        .map(|m| (m.title.to_lowercase(), m.id))
-        .collect();
-    let mut official_page_ids: std::collections::HashMap<&str, usize> =
+    // Resolve every official dictionary sense through the page allocated for
+    // that row. Exact spelling alone is insufficient: same-spelling homographs
+    // such as pasti (fall, pf.) / pasti (graze, ipf.) are separate senses.
+    let mut official_page_ids: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
+    for p in prepared.iter().filter(|p| !p.suppressed) {
+        if let Some(m) = p.matched {
+            official_page_ids.insert(official_entries[m.entry].id.clone(), p.id);
+        }
+    }
+    for (id, e) in &official_only_records {
+        official_page_ids.insert(e.id.clone(), *id);
+    }
     for e in &official_entries {
         let Some(aspect) = crate::aspect::aspect(&e.pos_raw) else {
             continue;
         };
-        let exact = e.isv.trim().to_lowercase();
-        let Some(&id) = verb_page_by_exact.get(&exact) else {
+        let Some(&id) = official_page_ids.get(&e.id) else {
             continue;
         };
-        official_page_ids.insert(e.id.as_str(), id);
-        let i = meta_pos[&id];
-        let current = metas[i].aspect.as_deref();
-        if current.is_some_and(|a| a != aspect.code()) {
-            metas[i].aspect = Some("ipf/pf".to_string());
-        } else {
-            metas[i]
-                .aspect
-                .get_or_insert_with(|| aspect.code().to_string());
-        }
+        metas[meta_pos[&id]].aspect = Some(aspect.code().to_string());
     }
     for pair in crate::aspect::detect_pairs(&official_entries) {
         let ipf = &official_entries[pair.imperfective];
@@ -2101,7 +2230,7 @@ struct CovPrepared {
     id: usize,
     g: crate::corpus::GeneratedWord,
     display: String,
-    matched: Option<(usize, String, String)>,
+    matched: Option<(usize, usize)>,
     suppressed: bool,
 }
 
@@ -2151,43 +2280,33 @@ fn build_corpus_render_index(
             continue;
         }
         id += 1;
-        let matched: Option<(usize, String, String)> = g
-            .candidates
-            .iter()
-            .take(5)
-            .enumerate()
-            .find_map(|(rank, c)| {
-                let lower = c.form.trim().to_lowercase();
-                let rows = if let Some(rows) = official_by_exact.get(&lower) {
-                    rows.as_slice()
-                } else {
-                    let rows = official_by_fold
-                        .get(&crate::orthography::to_standard(&lower))?
-                        .as_slice();
-                    let mut spellings = rows
-                        .iter()
-                        .map(|&i| official_entries[i].isv.trim().to_lowercase());
-                    let first = spellings.next()?;
-                    if spellings.any(|s| s != first) {
-                        return None;
-                    }
-                    rows
-                };
-                let set_gloss = crate::dump::gloss_tokens(&g.set.gloss);
-                let i = rows.iter().copied().max_by_key(|&i| {
-                    let e = &official_entries[i];
-                    let gloss = crate::dump::gloss_tokens(&e.english);
-                    (
-                        (e.pos == g.set.pos) as usize,
-                        set_gloss.iter().filter(|t| gloss.contains(t)).count(),
-                    )
-                })?;
-                let e = &official_entries[i];
-                Some((rank + 1, e.isv.trim().to_string(), e.english.clone()))
-            });
+        let matched: Option<(usize, usize)> =
+            g.candidates
+                .iter()
+                .take(5)
+                .enumerate()
+                .find_map(|(rank, c)| {
+                    let lower = c.form.trim().to_lowercase();
+                    let rows = if let Some(rows) = official_by_exact.get(&lower) {
+                        rows.as_slice()
+                    } else {
+                        let rows = official_by_fold
+                            .get(&crate::orthography::to_standard(&lower))?
+                            .as_slice();
+                        let mut spellings = rows
+                            .iter()
+                            .map(|&i| official_entries[i].isv.trim().to_lowercase());
+                        let first = spellings.next()?;
+                        if spellings.any(|s| s != first) {
+                            return None;
+                        }
+                        rows
+                    };
+                    let i = select_official_entry(rows, official_entries, g.set.pos, &g.set.gloss)?;
+                    Some((rank + 1, i))
+                });
         let display = matched
-            .as_ref()
-            .map(|(_, isv, _)| isv.clone())
+            .map(|(_, i)| official_entries[i].isv.trim().to_string())
             .unwrap_or_else(|| form.clone());
         prepared.push(CovPrepared {
             id,
@@ -2198,7 +2317,7 @@ fn build_corpus_render_index(
         });
     }
 
-    // Homograph / duplicate dedup: one representative per official lemma.
+    // Homograph / duplicate dedup: one representative per official sense.
     {
         let rank = |p: &CovPrepared, en: &str| -> (usize, i32) {
             let a = crate::dump::gloss_tokens(&p.g.set.gloss);
@@ -2208,10 +2327,11 @@ fn build_corpus_render_index(
         };
         let mut best: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
-            if let Some((_, isv, en)) = &p.matched {
-                let key = isv.trim().to_lowercase();
+            if let Some((_, entry)) = p.matched {
+                let e = &official_entries[entry];
+                let key = e.id.clone();
                 let win = match best.get(&key) {
-                    Some(&j) => rank(p, en) > rank(&prepared[j], en),
+                    Some(&j) => rank(p, &e.english) > rank(&prepared[j], &e.english),
                     None => true,
                 };
                 if win {
@@ -2220,10 +2340,10 @@ fn build_corpus_render_index(
             }
         }
         for (i, p) in prepared.iter_mut().enumerate() {
-            let Some((_, isv, _)) = p.matched.clone() else {
+            let Some((_, entry)) = p.matched else {
                 continue;
             };
-            let key = isv.trim().to_lowercase();
+            let key = official_entries[entry].id.clone();
             if best.get(&key) != Some(&i) {
                 p.matched = None;
                 p.display = p.g.form().to_string();
@@ -2235,8 +2355,8 @@ fn build_corpus_render_index(
     // a gloss token with a stronger set.
     {
         let gloss_of = |p: &CovPrepared| -> Vec<String> {
-            match &p.matched {
-                Some((_, _, en)) => crate::dump::gloss_tokens(en),
+            match p.matched {
+                Some((_, entry)) => crate::dump::gloss_tokens(&official_entries[entry].english),
                 None => crate::dump::gloss_tokens(&p.g.set.gloss),
             }
         };
@@ -2285,8 +2405,8 @@ fn build_corpus_render_index(
     // fold them into `isv_to_id`, so raw dedup mirrors the real export.
     covered.clear();
     for p in prepared.iter().filter(|p| !p.suppressed) {
-        if let Some((_, isv, _)) = &p.matched {
-            covered.insert(isv.trim().to_lowercase());
+        if let Some((_, entry)) = p.matched {
+            covered.insert(official_entries[entry].id.clone());
         }
     }
     let mut official_only = 0usize;
@@ -2296,7 +2416,7 @@ fn build_corpus_render_index(
         if isv.is_empty() || isv.contains('#') {
             continue;
         }
-        if !covered.insert(isv.to_lowercase()) {
+        if !covered.insert(e.id.clone()) {
             continue;
         }
         id += 1;
@@ -3895,7 +4015,10 @@ fn cognate_block(
             .set
             .members
             .iter()
-            .filter(|m| crate::corpus::branch_of(&m.lang) == Some(branch))
+            .filter(|m| {
+                crate::lang::lang_info(&m.lang).is_some_and(|info| info.modern)
+                    && crate::corpus::branch_of(&m.lang) == Some(branch)
+            })
             .collect();
         if items.is_empty() {
             continue;
@@ -3943,6 +4066,28 @@ fn cognate_block(
         s.push_str("</tbody></table></div>");
     }
     s.push_str("</div>");
+    let historical: Vec<&crate::dump::LemmaEntry> = g
+        .set
+        .members
+        .iter()
+        .filter(|m| crate::lang::lang_info(&m.lang).is_some_and(|info| !info.modern))
+        .collect();
+    if !historical.is_empty() {
+        s.push_str("<div class='historical-hints'><h4>Historijske podskazky</h4><p class='muted'>Te formy pomagajųt etimologiji, ale ne sųt moderne atestacije i ne povečšajųt pokrytje, razumlivost ili uvěrjenost.</p><table class='wikitable compact-table'><tbody>");
+        for m in historical {
+            let visible = crate::flavorize::flavorize_word(&m.lang, &m.pos, &m.word);
+            let _ = write!(
+                s,
+                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a></td><td class='muted'>{}</td></tr>",
+                esc(crate::lang::lang_name(&m.lang)),
+                esc(&m.word.replace(' ', "_")),
+                esc(&m.lang),
+                esc(&visible),
+                esc(&truncate(&source_display(&m.lang, &m.gloss), 32)),
+            );
+        }
+        s.push_str("</tbody></table></div>");
+    }
     s
 }
 
@@ -5926,6 +6071,9 @@ struct SiteEntryMeta {
     /// verification-grade, not in the forms API, cognate graph, or wiki indexes.
     raw: bool,
     official_lemma: Option<String>,
+    /// Authoritative dictionary row identity for official senses. This keeps
+    /// same-title/POS/gloss rows distinct across exports and API validation.
+    official_sense_id: Option<String>,
     /// Grammatical aspect for official verbs plus the bidirectional partner
     /// selected by the issue-75 deterministic 1:1 pairing model.
     aspect: Option<String>,
@@ -6014,6 +6162,7 @@ fn entry_meta(
         official_only,
         raw: false,
         official_lemma,
+        official_sense_id: None,
         aspect: None,
         aspect_partners: Vec::new(),
         ancestor,
@@ -7978,6 +8127,7 @@ fn contribute_page() -> String {
 /// attesting language-code SET, issue #73c), branches (branch count),
 /// `branch_pattern` (the exact branch combination "V"/"Z"/"J"/"V+Z"/…/
 /// "V+Z+J", null when no code resolves — issue #73c), borrowed, official,
+/// `official_id` (authoritative dictionary sense row, null otherwise),
 /// ancestor, aspect, and aspect_partners (`[{id,title},…]`; issue #75).
 /// `langs_list` + `branch_pattern` make any attestation-pattern
 /// query a jq one-liner (e.g. `.[] | select(.branch_pattern == "V+J")`).
@@ -8003,6 +8153,11 @@ fn entries_json(metas: &[SiteEntryMeta]) -> String {
         let pattern = branch_pattern(&m.languages)
             .map(|p| json_str(&p))
             .unwrap_or_else(|| "null".to_string());
+        let official_id = m
+            .official_sense_id
+            .as_ref()
+            .map(|id| json_str(id))
+            .unwrap_or_else(|| "null".to_string());
         let aspect = m
             .aspect
             .as_ref()
@@ -8014,8 +8169,8 @@ fn entries_json(metas: &[SiteEntryMeta]) -> String {
             .map(|(id, title)| format!("{{\"id\":{id},\"title\":{}}}", json_str(title)))
             .collect::<Vec<_>>()
             .join(",");
-        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"prob\":{},\"langs\":{},\"langs_list\":[{}],\"branches\":{},\"branch_pattern\":{},\"borrowed\":{},\"official\":{},\"ancestor\":{},\"aspect\":{},\"aspect_partners\":[{}]}}",
-            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), prob, m.n_langs, langs_list, m.n_branches, pattern, m.borrowed, m.official_lemma.is_some(), json_str(&m.ancestor), aspect, partners);
+        let _ = write!(s, "{{\"id\":{},\"title\":{},\"gloss\":{},\"pos\":{},\"quality\":{},\"confidence\":{},\"prob\":{},\"langs\":{},\"langs_list\":[{}],\"branches\":{},\"branch_pattern\":{},\"borrowed\":{},\"official\":{},\"official_id\":{},\"ancestor\":{},\"aspect\":{},\"aspect_partners\":[{}]}}",
+            m.id, json_str(&m.title), json_str(&m.gloss), json_str(&m.pos), json_str(quality_label(m)), json_str(m.conf.label()), prob, m.n_langs, langs_list, m.n_branches, pattern, m.borrowed, m.official_lemma.is_some(), official_id, json_str(&m.ancestor), aspect, partners);
     }
     s.push_str("\n]\n");
     s
@@ -8504,7 +8659,12 @@ fn proto_page(
             crate::lang::lang_info(code).map(|i| i.name).unwrap_or(code)
         }
         let mut by_branch: BTreeMap<u8, Vec<(String, String)>> = BTreeMap::new();
+        let mut historical_descendants: Vec<(String, String)> = Vec::new();
         for (code, form) in &e.descendants {
+            if crate::lang::lang_info(code).is_some_and(|info| !info.modern) {
+                historical_descendants.push((code.clone(), form.clone()));
+                continue;
+            }
             let key = match crate::corpus::branch_of(code) {
                 Some(Branch::East) => 0u8,
                 Some(Branch::West) => 1,
@@ -8544,15 +8704,30 @@ fn proto_page(
             desc.push_str("</tbody></table></div>");
         }
         let desc_block = if desc.is_empty() {
-            "<p class='muted'>Bez zapisanyh potomkov v proto-cache.</p>".to_string()
+            "<p class='muted'>Bez modernyh zapisanyh potomkov v proto-cache.</p>".to_string()
         } else {
             format!("<div class='branch-grid'>{desc}</div>")
         };
+        historical_descendants
+            .sort_by(|a, b| dname(&a.0).cmp(dname(&b.0)).then_with(|| a.1.cmp(&b.1)));
+        let mut historical = String::new();
+        if !historical_descendants.is_empty() {
+            historical.push_str("<div class='proto-historical-hints'><h4>Historijske podskazky</h4><p class='muted'>Te potomky pomagajųt etimologiji, ale ne sųt moderne atestacije.</p><table class='wikitable compact-table'><tbody>");
+            for (code, form) in &historical_descendants {
+                let _ = write!(
+                    historical,
+                    "<tr><td class='lc'>{}</td><td>{}</td></tr>",
+                    esc(dname(code)),
+                    esc(form),
+                );
+            }
+            historical.push_str("</tbody></table></div>");
+        }
         let _ = write!(
             sections,
             "<section><h2 id='p{i}'><span class='mention'>*{}</span></h2>\
              <table class='wikitable compact-table'><tbody>{info}</tbody></table>\
-             <h3>Atestovane potomky (Wiktionary)</h3>{desc_block}</section>",
+             <h3>Atestovane moderne potomky (Wiktionary)</h3>{desc_block}{historical}</section>",
             esc(&e.word),
         );
     }
@@ -8928,7 +9103,7 @@ function render(tok,recs,nts,key){{\
 }
 
 fn datasets_page(coverage: &str) -> String {
-    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost (kalibrovany kȯšik), <code>prob</code> = modelovo-specifična kalibrovana věrojętnosť (null bez sovmestimoj kalibracije i za oficialne/surove zapisy), prědȯk, <code>langs_list</code> = sortovany spis kodov atestujučih językov i <code>branch_pattern</code> = vzorec větvi (V/Z/J kombinacija, null bez větvi), <code>aspect</code> i <code>aspect_partners</code> za glagoly — vsako zapytanje po vzorcu atestacije je jedna jq-linija (issues #73, #75).</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='rules.json'>rules.json</a></td><td>Obratny indeks pravil: \u{201e}motor:id-pravila\u{201c} (motor = proto ili konsensus — id pravila ne je unikatny črěz motory) → spis id zapisov, ktoryh pokazany kandidat koristil to pravilo (vidi <a href='rules.html'>indeks pravil</a>; issue #73).</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov; samo zaglavje dokolě korpusny model ne imaje vlastnu holdout-validovanu kalibraciju.</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom, opcionalnoju modelovo-specifičnoju věrojetnostju i vidovymi partnerami glagolov (schema 3).</td></tr><tr><td><a href='api/aspect-pairs.json'>api/aspect-pairs.json</a></td><td>Produkcijny model glagolskyh par: oficialne i generovane ipf↔pf formy, stranice i pravilo.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
+    let body = format!("<article class='entry'><h1 class='firstHeading'>Fajly za dostavanje</h1><p class='lede'>Statične JSON fajly za raziskovanje i ponovno upotrěbljenje.</p><table class='wikitable'><tr><th>Fajl</th><th>Opis</th></tr><tr><td><a href='entries.json'>entries.json</a></td><td>Metadany zapisa: id, naslov, smysl, čęst rěči, uvěrjenost (kalibrovany kȯšik), <code>prob</code> = modelovo-specifična kalibrovana věrojętnosť (null bez sovmestimoj kalibracije i za oficialne/surove zapisy), <code>official_id</code> = id smysla v izvornom oficialnom slovniku (null za neoficialne), prědȯk, <code>langs_list</code> = sortovany spis kodov atestujučih językov i <code>branch_pattern</code> = vzorec větvi (V/Z/J kombinacija, null bez větvi), <code>aspect</code> i <code>aspect_partners</code> za glagoly — vsako zapytanje po vzorcu atestacije je jedna jq-linija (issues #73, #75).</td></tr><tr><td><a href='edges.json'>edges.json</a></td><td>Vęzi semantičnogo grafa.</td></tr><tr><td><a href='categories.json'>categories.json</a></td><td>Členstvo v kategorijah.</td></tr><tr><td><a href='roots.json'>roots.json</a></td><td>Členstvo v praslovjanskyh korenjah.</td></tr><tr><td><a href='rules.json'>rules.json</a></td><td>Obratny indeks pravil: \u{201e}motor:id-pravila\u{201c} (motor = proto ili konsensus — id pravila ne je unikatny črěz motory) → spis id zapisov, ktoryh pokazany kandidat koristil to pravilo (vidi <a href='rules.html'>indeks pravil</a>; issue #73).</td></tr><tr><td><a href='search/manifest.json'>search/manifest.json</a></td><td>Klientsky indeks iskanja: manifest + razděly po prvoj bukvě (search/*.json; vidi #71).</td></tr><tr><td><a href='novel-words.tsv'>novel-words.tsv</a></td><td>Predloženja novyh slov; samo zaglavje dokolě korpusny model ne imaje vlastnu holdout-validovanu kalibraciju.</td></tr><tr><td><a href='api/meta.json'>api/meta.json</a></td><td>Leksikalny API za stroje: šema, ličby, licencija, routing indeksa.</td></tr><tr><td><a href='api/lemmas.json'>api/lemmas.json</a></td><td>Vse lemmy s statusom, opcionalnoju modelovo-specifičnoju věrojetnostju i vidovymi partnerami glagolov (schema 3).</td></tr><tr><td><a href='api/aspect-pairs.json'>api/aspect-pairs.json</a></td><td>Produkcijny model glagolskyh par: oficialne i generovane ipf↔pf formy, stranice i pravilo.</td></tr><tr><td>api/forms/&lt;n&gt;.json</td><td>Fleksijny indeks (razděljeny; vidi <a href='api/agent-guide.md'>agent-guide.md</a> i <a href='forms.html'>Iskanje form</a>).</td></tr><tr><td><a href='build.json'>build.json</a></td><td>Metadany aktualnoj gradby (git, ličby).</td></tr></table>{coverage}</article>");
     page("Fajly za dostavanje", &body, 0)
 }
 
@@ -9127,7 +9302,7 @@ fn metrics_page(cal: Option<&crate::calibrate::Calibration>) -> String {
     calib.push_str("  <p>Podrobna kalibracija oficialno-redkovogo modela (decilna tablica, ECE i Brier) je v <code>methodology.md</code>. Korpusny model potrěbuje svoju vlastnu holdout-validovanu kalibraciju prěd publikovanjem věrojętnostij ili predloženj.</p>\n");
     let tail = r##"
   <h2 id='corpus'>Sajtovy pųť (corpus-eval)</h2>
-  <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,6% točno / 63,1% normalizovano</b> na ~7,4k zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
+  <p>Sajt koristi ne glavny proces, a svoj <b>put srodnyh množin</b> (<code>corpus::generate_set</code>), měrjeny odděljeno: <b>58,31% točno / 62,84% normalizovano</b> na 7&nbsp;398 zapisah s znanym prědkom. Više od glavne linije, potomu što ocěnjaje tȯlko slova, ktore sajt izvodi iz znanogo prědka. Komanda: <code>corpus-eval</code>.</p>
 
   <h2 id='proto'>Praslovjansky stroj (proto-eval)</h2>
   <p>Praslovjansky pravilny stroj izměrjeny izolovano od povęzanja, ranga i konsensusa:</p>
@@ -9808,6 +9983,75 @@ mod tests {
     }
 
     #[test]
+    fn historical_cognates_render_as_labeled_hints_not_branch_evidence() {
+        let member = |lang: &str, word: &str| crate::dump::LemmaEntry {
+            lang: lang.to_string(),
+            word: word.to_string(),
+            pos: "noun".to_string(),
+            gloss: "water".to_string(),
+            proto: "*voda".to_string(),
+            etymon: String::new(),
+            etymology: Vec::new(),
+            categories: Vec::new(),
+            topics: Vec::new(),
+            tags: Vec::new(),
+        };
+        let set = crate::corpus::CognateSet {
+            proto: "*voda".to_string(),
+            etymon: "*voda".to_string(),
+            borrowed: false,
+            pos: crate::model::Pos::Noun,
+            gloss: "water".to_string(),
+            members: vec![member("ru", "вода"), member("cu", "вода")],
+        };
+        let generated = crate::corpus::generate_set(set, &ConsensusConfig::production());
+        let html = cognate_block(&generated, None);
+        let historical = html.find("historical-hints").unwrap();
+        assert!(html[..historical].contains("rusky"), "{html}");
+        assert!(!html[..historical].contains("starocŕkov"), "{html}");
+        assert!(html[historical..].contains("starocŕkov"), "{html}");
+    }
+
+    #[test]
+    fn official_matching_requires_pos_and_gloss_evidence() {
+        let entries = crate::official::load(Path::new("data/official-isv.csv")).unwrap();
+        let rows: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.isv.trim() == "držati")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            select_official_entry(
+                &rows,
+                &entries,
+                crate::model::Pos::Noun,
+                "chills, trembling"
+            ),
+            None
+        );
+        let matched = select_official_entry(
+            &rows,
+            &entries,
+            crate::model::Pos::Verb,
+            "to shiver and tremble",
+        )
+        .unwrap();
+        assert_eq!(entries[matched].english, "shudder, shiver, tremble");
+
+        let bajka_rows: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.isv.trim() == "bajka")
+            .map(|(i, _)| i)
+            .collect();
+        let bajka =
+            select_official_entry(&bajka_rows, &entries, crate::model::Pos::Noun, "fairy tale")
+                .unwrap();
+        assert_eq!(entries[bajka].english, "fairytale");
+    }
+
+    #[test]
     fn headword_routes_exactly_and_abstains_on_ambiguous_folds() {
         let mut index = HeadwordIndex::default();
         index.insert("legti", 1);
@@ -9873,22 +10117,89 @@ mod tests {
 
     /// Issue #86: the committed compatibility registry keeps public official
     /// URLs stable when evidence growth reorders cognate sets. In particular,
-    /// aloe must remain entry/19717; official identity ignores changing gloss.
+    /// aloe must remain entry/19717 while exact official homographs stay distinct.
     #[test]
     fn stable_entry_ids_preserve_the_aloe_permalink() {
-        let mut ids = StableEntryIds::load(Path::new(ENTRY_ID_REGISTRY)).unwrap();
+        let official_entries = crate::official::load(Path::new("data/official-isv.csv")).unwrap();
+        let mut ids =
+            StableEntryIds::load(Path::new(ENTRY_ID_REGISTRY), &official_entries).unwrap();
         let key = entry_identity(
             true,
+            Some("24283"),
             "aloe",
             "noun",
-            "a changed gloss is irrelevant",
+            "aloe",
             "different evidence is irrelevant too",
             99,
             3,
         );
         assert_eq!(ids.alloc(&key), 19717);
+        let drzati_key =
+            entry_identity(true, Some("2617"), "dŕžati", "verb", "hold, keep", "", 0, 0);
+        assert_eq!(ids.alloc(&drzati_key), 1164);
+        assert_ne!(
+            drzati_key,
+            entry_identity(
+                true,
+                Some("25399"),
+                "držati",
+                "verb",
+                "shudder, shiver, tremble",
+                "",
+                0,
+                0,
+            )
+        );
+        let bug_key = entry_identity(true, Some("37054"), "Bug", "noun", "Bug", "", 0, 0);
+        assert_eq!(ids.alloc(&bug_key), 11);
+
+        let dokumentovati_first = entry_identity(
+            true,
+            Some("35297"),
+            "dokumentovati",
+            "verb",
+            "document",
+            "",
+            0,
+            0,
+        );
+        let dokumentovati_second = entry_identity(
+            true,
+            Some("37308"),
+            "dokumentovati",
+            "verb",
+            "document",
+            "",
+            0,
+            0,
+        );
+        assert_eq!(ids.alloc(&dokumentovati_first), 24784);
+        assert_ne!(dokumentovati_first, dokumentovati_second);
+        assert_ne!(
+            entry_identity(
+                true,
+                Some("5015"),
+                "pasti",
+                "verb",
+                "fall, tumble",
+                "",
+                0,
+                0,
+            ),
+            entry_identity(
+                true,
+                Some("5017"),
+                "pasti",
+                "verb",
+                "graze, pasture",
+                "",
+                0,
+                0,
+            ),
+        );
         let fresh = ids.alloc(&entry_identity(
             false,
+            None,
             "never-seen",
             "noun",
             "test",

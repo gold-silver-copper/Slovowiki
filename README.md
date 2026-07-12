@@ -55,11 +55,12 @@ from its **own** language's Wiktionary. Every entry page then shows, per cognate
 The cache is built by filtering the RU/PL/CS dumps to the ~70k cognate words that
 actually appear in the corpus (streamed in seconds), so the enrichment is
 committed and the site build stays self-contained.
-- `cargo run -- export` — generate the cognate-set site (~21.4k words after merging notation-variant and same-concept duplicates; falls back to the
+- `cargo run -- export` — generate the cognate-set site (~26.4k generated words plus
+  ~14.2k official-only sense pages after conservative deduplication; falls back to the
   dictionary-seeded site if the lemma cache is absent).
-- Independent validation: **~4.8k distinct official Interslavic lemmas are reproduced**
-  by a generated word (of ~21.4k), one representative page per lemma (homographs and
-  duplicate sets deduped), with no leakage from the dictionary into the generation.
+- Independent validation: **~4.2k official Interslavic senses are conservatively reproduced**
+  by a generated word (of ~26.4k), with same-spelling homographs kept as separate sense
+  pages and duplicate generated sets deduped, without dictionary leakage into generation.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
   **58.31% exact / 62.84% normalized** on 7,398 entries with a known ancestor.
 - `data/novel-words.tsv` — the novel-vocabulary proposal artifact regenerated
@@ -95,7 +96,7 @@ the official dictionary, **without ever showing the generator the answer**
 | mean normalized edit distance | 0.252 | **0.224** | −0.028 |
 
 The **site's** cognate-set path (`corpus::generate_set`) is benchmarked separately
-(`cargo run -- corpus-eval`): **58.6% exact / 63.1% normalized** on the ~7.4k entries
+(`cargo run -- corpus-eval`): **58.31% exact / 62.84% normalized** on 7,398 entries
 where a Proto-Slavic ancestor or internationalism is known — higher than the pipeline
 headline because it only scores words the site actually derives from a known ancestor.
 
@@ -191,7 +192,7 @@ Beyond the three-way badge, `target/eval/methodology.md` now carries a full
 **reliability table** (score decile → empirical match rate), **ECE** and **Brier**
 scores, plus an **isotonic recalibration** fit on the dev split and validated on
 the untouched holdout: holdout ECE drops from 0.195 (raw score, systematically
-overconfident) to **0.013** recalibrated. This map is valid only for the
+overconfident) to **0.0107** recalibrated. This map is valid only for the
 official-row pipeline candidate-score domain; the corpus site's distinct
 coverage score must not use it. The raw score remains the ranking key.
 
