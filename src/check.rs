@@ -1,11 +1,11 @@
 //! Text verification against the lexicon (issue #11 phase 3, `check-text`).
 //!
 //! Builds the same [`crate::forms::FormRecord`] index the site's API exports
-//! (official lemmas + their full paradigms, plus generated lemmas with their
-//! calibrated probability from the committed `data/novel-words.tsv`), then
+//! (official lemmas + their full paradigms, plus generated proposal lemmas when
+//! `data/novel-words.tsv` contains rows from a compatible calibrator), then
 //! tokenizes the input and classifies every token:
 //!
-//! `known-lemma` / `known-form` / `generated` (carries p) / `unknown` (with
+//! `known-lemma` / `known-form` / `generated` (carries p when proposals are enabled) / `unknown` (with
 //! nearest-lemma suggestions) — plus curated semantic-trap warnings from
 //! `data/semantic-notes.json`. Two-token keys (reflexive `X sę` verbs and
 //! two-word official lemmas) are found by a general bigram lookup; only
@@ -149,12 +149,12 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
     }
     if let Some(path) = novel_words_tsv {
         // The proposals file is a committed export artifact (`export` refreshes
-        // it). Degrade without it, but say so — otherwise generated words are
-        // silently reported as unknown and the caller can't tell why.
+        // it). It is intentionally header-only while corpus calibration is
+        // paused; a missing file is a separate reproducibility warning.
         let tsv = std::fs::read_to_string(path).unwrap_or_else(|e| {
             eprintln!(
-                "warning: no generated-word proposals ({}: {e}) — run `export` to regenerate; \
-                 generated words will be classified as unknown",
+                "warning: generated-word proposal artifact unavailable ({}: {e}); \
+                 generated corpus words will be classified as unknown",
                 path.display()
             );
             String::new()
