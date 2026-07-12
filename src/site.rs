@@ -3058,7 +3058,10 @@ fn corpus_entry_page(
     let native_conn = enrich
         .map(|e| enrich_connections_section(&enrich_members, e, xref, raw_xref, id))
         .unwrap_or_default();
-    let alternatives = alternatives_block(&g.candidates);
+    // On a matched page the top candidate is the official headword, so its
+    // reader-facing razumlivost uses the same combined basis as the infobox.
+    // Lower alternatives remain corpus-only hypotheses.
+    let alternatives = alternatives_block(&g.candidates, official.is_some().then_some(razum_codes));
     let word_formation = word_formation_block(derivation, family);
     let trace = trace_block(top);
     let foot = if official.is_some() {
@@ -4826,7 +4829,7 @@ fn entry_page(
     let etymology = etymology_block(g);
     let inflection = inflection_table_g(&top.form, pos_code, entry.noun_traits.gender);
     let evidence_html = evidence_block(evidence);
-    let alternatives = alternatives_block(&g.candidates);
+    let alternatives = alternatives_block(&g.candidates, None);
     let trace = trace_block(top);
     let calib = calibration_note(top.confidence, cal);
     let freq = entry
@@ -4896,22 +4899,31 @@ fn etymology_block(g: &Generation) -> String {
     s
 }
 
-fn alternatives_block(candidates: &[Candidate]) -> String {
+fn alternatives_block(candidates: &[Candidate], top_razum_codes: Option<&[String]>) -> String {
     if candidates.is_empty() {
         return "<p class='muted'>Bez kandidatov.</p>".to_string();
     }
     // Always show the ranked forms (the top one is the headword); this is now a
     // primary section, so even a single-candidate entry lists its form + score.
     let mut s = String::from("<table class='wikitable'><thead><tr><th>#</th><th>Forma</th><th>Izvor</th><th title='rangovy ključ (syrova ocěna), ne věrojętnosť'>Ocěna</th><th title='");
-    s.push_str(RAZUM_TITLE);
+    s.push_str(if top_razum_codes.is_some() {
+        RAZUM_TITLE_MATCHED
+    } else {
+        RAZUM_TITLE
+    });
     s.push_str("'>Razumlivosť</th><th>Větvi</th></tr></thead><tbody>");
     for (i, c) in candidates.iter().enumerate() {
         // Per-candidate razumlivost from its own cluster membership (issue
         // #79); an em-dash when the membership is unknown.
-        let razum = if c.langs.is_empty() {
+        let razum_codes = if i == 0 {
+            top_razum_codes.unwrap_or(&c.langs)
+        } else {
+            &c.langs
+        };
+        let razum = if razum_codes.is_empty() {
             "—".to_string()
         } else {
-            format!("{}%", razum_pct(&c.langs))
+            format!("{}%", razum_pct(razum_codes))
         };
         let _ = write!(
             s,
