@@ -1,51 +1,48 @@
 # Aspect-pair benchmark (aspect-eval)
 
-**Frozen reproducible denominator:** 1440 deterministic 1:1 same-gloss, morphologically-related official ipf↔pf pairs (ordered manifest `aspect-pairs.tsv`, FNV-1a-64 `5ab3e19ec5d758dd`). **Keep metrics:** both-correct (primary), either-correct, and pairing-correct (generated roots agree). **Leakage:** official aspect/gloss/root spelling selects the evaluation slice only; both baseline forms are independently generated from cognate cells, and pair repair sees only those generated forms plus their scores. The shared seeded hash holds out 432 pairs.
+**Frozen reproducible inventory:** 1440 deterministic 1:1 same-gloss, morphologically-related official ipf↔pf pairs (ordered manifest `aspect-pairs.tsv`, FNV-1a-64 `5ab3e19ec5d758dd`). **Scored denominator:** 1434 regular pairs; 6 closed suppletive pairs are production grammar but excluded from accuracy scoring so their held-out partner answers cannot leak. **Keep metrics:** both-correct (primary), either-correct, and consonant-root fingerprint consistency. **Leakage:** official aspect/gloss/root spelling selects the evaluation slice only; both baseline forms are independently generated from cognate cells, and pair repair sees only those generated forms plus their scores. The shared seeded hash holds out 431 scored pairs.
 
-| model | n | both correct | either correct | pairing correct |
+| model | n | both correct | either correct | fingerprint consistency |
 |---|---:|---:|---:|---:|
-| independent baseline | 1440 | 16.60% | 49.44% | 78.06% |
-| +core suffix repair | 1440 | 17.64% | 48.68% | 89.72% |
-| +prefix perfectivization | 1440 | 18.33% | 48.33% | 93.06% |
-| +secondary imperfectives and -ovati/-uje (production) | 1440 | 18.40% | 48.19% | 94.65% |
+| independent baseline | 1434 | 16.67% | 49.44% | 78.24% |
+| +core suffix repair | 1434 | 17.50% | 48.68% | 89.75% |
+| +prefix perfectivization (production) | 1434 | 17.92% | 48.61% | 90.86% |
+| +secondary imperfectives and -ovati→-ovyvati (experimental; holdout-flat) | 1434 | 17.99% | 48.47% | 92.47% |
 
-The secondary `-yva-/-iva-/-ava-` and `-ovati/-uje` families are controlled by `AspectConfig.secondary_imperfectives` and retained in production because the final rung improves both-correct over the prefix rung on dev and holdout. The production repair improves the declared primary **both-correct** metric with no breaks and improves root consistency (77 pairs remain unrepaired), but it lowers the secondary either-correct metric; the paired table below discloses that tradeoff rather than relabeling it as a universal accuracy gain.
+The secondary `-yva-/-iva-/-ava-` and `-ovati→-ovyvati` families are controlled by `AspectConfig.secondary_imperfectives`. They remain implemented but disabled in production because the rung is flat on holdout both-correct. The production prefix repair improves the declared primary **both-correct** metric with no breaks and improves consonant-root fingerprint consistency (131 pairs remain unrepaired), but it lowers the secondary either-correct metric. The `-ovati→-uje` present stem is exported and unit-tested grammar metadata, not part of this infinitive-pair accuracy metric; the paired table below discloses that tradeoff rather than relabeling it as a universal accuracy gain.
 
 
 ## Dev / holdout
 
-| model / split | n | both correct | either correct | pairing correct |
+| model / split | n | both correct | either correct | fingerprint consistency |
 |---|---:|---:|---:|---:|
-| baseline dev | 1008 | 17.06% | 50.00% | 77.78% |
-| baseline holdout | 432 | 15.51% | 48.15% | 78.70% |
-| production dev | 1008 | 18.95% | 48.71% | 94.54% |
-| production holdout | 432 | 17.13% | 46.99% | 94.91% |
+| baseline dev | 1003 | 17.15% | 50.05% | 77.97% |
+| baseline holdout | 431 | 15.55% | 48.03% | 78.89% |
+| suffix rung dev | 1003 | 18.05% | 49.35% | 89.63% |
+| suffix rung holdout | 431 | 16.24% | 47.10% | 90.02% |
+| prefix rung dev | 1003 | 18.44% | 49.25% | 90.73% |
+| prefix rung holdout | 431 | 16.71% | 47.10% | 91.18% |
+| secondary experimental dev | 1003 | 18.54% | 49.05% | 92.22% |
+| secondary experimental holdout | 431 | 16.71% | 47.10% | 93.04% |
+| production dev | 1003 | 18.44% | 49.25% | 90.73% |
+| production holdout | 431 | 16.71% | 47.10% | 91.18% |
 
 ## Paired significance vs independent baseline
 
 | metric | fixed | broke | two-sided sign-test p |
 |---|---:|---:|---:|
-| both correct | 26 | 0 | 0.0000 |
-| either correct | 3 | 21 | 0.0003 |
+| both correct | 18 | 0 | 0.0000 |
+| either correct | 3 | 15 | 0.0075 |
 
 ## Rule census
 
-- `closed-suppletive-pair`: 3
-- `independent-roots-agree`: 1124
-- `ipf-ati-to-pf-nuti`: 39
-- `ipf-jati-to-pf-iti`: 1
-- `ovati-to-secondary-ovyvati`: 2
+- `independent-roots-agree`: 1122
+- `ipf-ati-to-pf-nuti`: 59
+- `ipf-jati-to-pf-iti`: 2
 - `pf-iti-to-ipf-jati`: 88
 - `pf-nuti-to-ipf-ati`: 2
-- `prefix-perfectivization`: 77
-- `secondary-ipf-avati`: 13
-- `secondary-ipf-avati-reverse`: 1
-- `secondary-ipf-ivati`: 5
-- `secondary-ipf-ivati-reverse`: 2
-- `secondary-ipf-yvati`: 3
-- `secondary-ipf-yvati-reverse`: 2
-- `secondary-ovyvati-to-ovati`: 1
-- `unrepaired`: 77
+- `prefix-perfectivization`: 30
+- `unrepaired`: 131
 
 ## Changed-pair sample
 
@@ -54,23 +51,23 @@ The secondary `-yva-/-iva-/-ava-` and `-ovati/-uje` families are controlled by `
 - naduživati ↔ nadužiti: zneuživati / zlupotrebiti → zlupotrebjati / zlupotrebiti (pf-iti-to-ipf-jati)
 - zloupotrěbjati ↔ zloupotrěbiti: zneuživati / zlupotrebiti → zlupotrebjati / zlupotrebiti (pf-iti-to-ipf-jati)
 - sȯvŕšati ↔ sȯvŕšiti: dovršovati / soveršiti → soveršjati / soveršiti (pf-iti-to-ipf-jati)
-- nastavjati ↔ nastaviti: regulavac / nastaviti → regulavac / naregulavac (prefix-perfectivization)
+- nastavjati ↔ nastaviti: regulavac / nastaviti → regulavac / nastaviti (unrepaired)
 - dopušćati ↔ dopustiti: udelovati / dapuscic → udelovati / dapuscic (unrepaired)
 - odrađati ↔ odraditi: otgovarivati / odraditi → odradjati / odraditi (pf-iti-to-ipf-jati)
 - odčuđati ↔ odčuđiti: otčuždati / otdeliti → otčuždati / otčuždnųti (ipf-ati-to-pf-nuti)
 - sŕditi ↔ råzsŕditi: sŕditi / råzrditi → sŕditi / råzsŕditi (prefix-perfectivization)
 - obvěšćati ↔ obvěstiti: oznamovati / obhaneti → oznamovati / oznamovnųti (ipf-ati-to-pf-nuti)
-- prědstavati ↔ prědstati: postaviti sę / stati → stavati / stati (secondary-ipf-avati)
+- prědstavati ↔ prědstati: postaviti sę / stati → postaviti sę / stati (unrepaired)
 - odobrjati ↔ odobriti: shvalovati / odobriti → odobrjati / odobriti (pf-iti-to-ipf-jati)
-- uręđati ↔ uręditi: uporadočivati / usporadati → usporadivati / usporadati (secondary-ipf-ivati)
+- uręđati ↔ uręditi: uporadočivati / usporadati → uporadočivati / usporadati (unrepaired)
 - pytati ↔ spytati: pytati / spytac → pytati / spytati (prefix-perfectivization)
-- sprašati ↔ sprositi: sprašivati / požadati → sprašivati / posprašivati (prefix-perfectivization)
+- sprašati ↔ sprositi: sprašivati / požadati → sprašivati / sprašivnųti (ipf-ati-to-pf-nuti)
 - zapytyvati ↔ zapytati: pytati / zapytac → pytati / zapytati (prefix-perfectivization)
 - uvěrjati ↔ uvěriti: ujištovati / uveriti → uverjati / uveriti (pf-iti-to-ipf-jati)
 - ověrjati ↔ ověriti: overovati / podtverditi → podtverdjati / podtverditi (pf-iti-to-ipf-jati)
-- upȯlnomoćevati ↔ upȯlnomoćiti: zplnomonjovati / upolnomočiti → zplnomonjovati / uzplnomonjovati (prefix-perfectivization)
-- izběgati ↔ izběgti: unikac / vyhnout se → unikac / vyunikac (prefix-perfectivization)
-- bajati ↔ nabajati: bajiti / naboltati → bajiti / nabajiti (prefix-perfectivization)
+- upȯlnomoćevati ↔ upȯlnomoćiti: zplnomonjovati / upolnomočiti → zplnomonjovati / zplnomonjovnųti (ipf-ati-to-pf-nuti)
+- izběgati ↔ izběgti: unikac / vyhnout se → unikac / vyhnout se (unrepaired)
+- bajati ↔ nabajati: bajiti / naboltati → bajiti / naboltati (unrepaired)
 - vȯzkresati ↔ vȯzkresnųti: voskresati / vȯzkrisnųti → vȯzkrisati / vȯzkrisnųti (pf-nuti-to-ipf-ati)
 - odbivati ↔ odbiti: odražati / adbic → odražati / adbic (unrepaired)
 - vȯzrastati ↔ vȯzråsti: odrastati / vyrasti → odrastati / vyrasti (unrepaired)
@@ -78,14 +75,14 @@ The secondary `-yva-/-iva-/-ava-` and `-ovati/-uje` families are controlled by `
 - umoljati ↔ umoliti: prositi / umoliti → prositi / uprositi (prefix-perfectivization)
 - načinati ↔ načęti: počinjati / začęti → počinjati / začęti (unrepaired)
 - začinati ↔ začęti: počinjati / začęti → počinjati / začęti (unrepaired)
-- ostavjati ↔ ostaviti: zaveštavati / odkazati → zaveštavati / odzaveštavati (prefix-perfectivization)
-- urěkati ↔ urěkti: zaklinati / ureći → zaklinati / uzaklinati (prefix-perfectivization)
+- ostavjati ↔ ostaviti: zaveštavati / odkazati → zaveštavati / zaveštavnųti (ipf-ati-to-pf-nuti)
+- urěkati ↔ urěkti: zaklinati / ureći → zaklinati / zaklinnųti (ipf-ati-to-pf-nuti)
 - odkųšati ↔ odkųsiti: odgrizati / otkusiti → odgrizati / odgriznųti (ipf-ati-to-pf-nuti)
 - pozajmati ↔ pozajęti: zaimstvovati / požityčiti → požityčjati / požityčiti (pf-iti-to-ipf-jati)
-- prědavati ↔ prědati: vysilati / prědati → prědivati / prědati (secondary-ipf-ivati)
-- budovati ↔ izbudovati: stavjati / vibudovati → stavjati / vstavjati (prefix-perfectivization)
-- obrěmenjati ↔ obrěmeniti: zatežkavati / obremeniti → zatežkavati / obzatežkavati (prefix-perfectivization)
+- prědavati ↔ prědati: vysilati / prědati → vysilati / prědati (unrepaired)
+- budovati ↔ izbudovati: stavjati / vibudovati → stavjati / staviti (ipf-jati-to-pf-iti)
+- obrěmenjati ↔ obrěmeniti: zatežkavati / obremeniti → zatežkavati / zatežkavnųti (ipf-ati-to-pf-nuti)
 - obtęžati ↔ obtęžiti: obtažovati / obremeniti → obtažovati / obtažovnųti (ipf-ati-to-pf-nuti)
-- žegti ↔ izgorěti: paliti / izgoreti → paliti / izpaliti (prefix-perfectivization)
+- žegti ↔ izgorěti: paliti / izgoreti → paliti / izgoreti (unrepaired)
 - prskati ↔ prsknųti: praskati / lopnuti → praskati / prasknųti (ipf-ati-to-pf-nuti)
-- kalkulovati ↔ izkalkulovati: kalkulavac / viličic → kalkulavac / vkalkulavac (prefix-perfectivization)
+- kalkulovati ↔ izkalkulovati: kalkulavac / viličic → kalkulavac / viličic (unrepaired)

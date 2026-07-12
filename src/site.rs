@@ -1925,14 +1925,6 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 .map(|a| (m.id, (a.clone(), m.aspect_partners.clone())))
         })
         .collect();
-    let api_counts = crate::forms::write_api(
-        out_dir,
-        &form_records,
-        &lemma_records,
-        &aspect_api,
-        &build_meta.git,
-        &crate::forms::agent_guide(),
-    )?;
     let mut pair_json = String::from("{\"schema_version\":3,\"pairs\":[\n");
     for (n, (ipf_oid, pf_oid, ipf_page, pf_page, ipf, pf, prediction)) in
         aspect_pair_exports.iter().enumerate()
@@ -1965,7 +1957,17 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         );
     }
     pair_json.push_str("\n]}\n");
-    std::fs::write(out_dir.join("api/aspect-pairs.json"), pair_json)?;
+    std::fs::create_dir_all(out_dir.join("api"))?;
+    std::fs::write(out_dir.join("api/aspect-pairs.json"), &pair_json)?;
+    let api_counts = crate::forms::write_api(
+        out_dir,
+        &form_records,
+        &lemma_records,
+        &aspect_api,
+        pair_json.len(),
+        &build_meta.git,
+        &crate::forms::agent_guide(),
+    )?;
     println!(
         "api: {} form records / {} distinct keys / {} lemmas across {} shards ({} KB total, largest shard {} KB)",
         api_counts.records,

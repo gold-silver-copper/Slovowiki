@@ -105,6 +105,9 @@ fn roots_related(a: &str, b: &str) -> bool {
     a.ends_with(b) || b.ends_with(a) || ortho::shares_consonant_root(a, b)
 }
 
+/// Consonant-root fingerprint consistency, using the project's deliberately
+/// broad cognate heuristic (suffix containment or matching first consonants).
+/// This is not a claim of proven etymological identity.
 pub fn pairing_correct(imperfective: &str, perfective: &str) -> bool {
     roots_related(&consonant_key(imperfective), &consonant_key(perfective))
 }
@@ -129,10 +132,10 @@ impl AspectConfig {
         Self {
             suffix_repair: true,
             prefix_perfectivization: true,
-            // Kept by the dedicated ladder: with -ovati/-uje and the closed
-            // exceptions included, this rung improves the primary both-correct
-            // metric on dev and holdout.
-            secondary_imperfectives: true,
+            // Implemented and ladder-measured, but disabled: after lexical
+            // exceptions are excluded from scoring, the rung is flat on the
+            // held-out primary metric (house generalization rule).
+            secondary_imperfectives: false,
         }
     }
 
@@ -156,6 +159,15 @@ const SUPPLETIVE: &[(&str, &str)] = &[
 fn suppletive_pair(imperfective: &str, perfective: &str) -> Option<(&'static str, &'static str)> {
     SUPPLETIVE.iter().copied().find(|(i, p)| {
         ortho::normalized_match(imperfective, i) || ortho::normalized_match(perfective, p)
+    })
+}
+
+/// True for the closed lexical exceptions. `aspect-eval` excludes these rows
+/// from accuracy scoring: production may use documented lexical grammar, but a
+/// held-out benchmark must not receive its partner answer from that list.
+pub fn is_closed_suppletive_pair(imperfective: &str, perfective: &str) -> bool {
+    SUPPLETIVE.iter().any(|(i, p)| {
+        ortho::normalized_match(imperfective, i) && ortho::normalized_match(perfective, p)
     })
 }
 
@@ -258,7 +270,11 @@ pub fn reconcile_pair(ipf: &Candidate, pf: &Candidate, cfg: AspectConfig) -> Pai
         &[]
     };
     for prefix in prefixes {
-        if anchor_is_ipf && pf.form.starts_with(prefix) && !ipf.form.starts_with(prefix) {
+        let remainder = pf.form.strip_prefix(prefix).unwrap_or("");
+        if anchor_is_ipf
+            && !ipf.form.starts_with(prefix)
+            && prefix_hint_compatible(&ipf.form, remainder)
+        {
             let form = format!("{prefix}{}", ipf.form);
             let edit = ortho::normalized_edit_distance(&form, &pf.form);
             options.push((
@@ -281,6 +297,10 @@ pub fn reconcile_pair(ipf: &Candidate, pf: &Candidate, cfg: AspectConfig) -> Pai
             perfective: pf.form.clone(),
             rule: "unrepaired",
         })
+}
+
+fn prefix_hint_compatible(anchor: &str, remainder: &str) -> bool {
+    !remainder.is_empty() && ortho::normalized_edit_distance(anchor, remainder) <= 0.45
 }
 
 fn replace_suffix(word: &str, from: &str, to: &str) -> Option<String> {
@@ -350,6 +370,20 @@ mod tests {
         assert_eq!(aspect("v.tr. ipf."), Some(Aspect::Imperfective));
         assert_eq!(aspect("v.tr. pf."), Some(Aspect::Perfective));
         assert_eq!(aspect("v.tr. ipf./pf."), Some(Aspect::Biaspectual));
+    }
+
+    #[test]
+    fn prefix_transfer_requires_the_hint_remainder_to_share_the_anchor_root() {
+        use crate::model::CandidateSource;
+        let ipf = Candidate::new("kalkulavac".into(), CandidateSource::BranchConsensus, 0.8);
+        let pf = Candidate::new("viličic".into(), CandidateSource::BranchConsensus, 0.2);
+        let bad = reconcile_pair(&ipf, &pf, AspectConfig::production());
+        assert_ne!(bad.perfective, "vkalkulavac");
+
+        let ipf = Candidate::new("pisati".into(), CandidateSource::BranchConsensus, 0.8);
+        let pf = Candidate::new("zapisati".into(), CandidateSource::BranchConsensus, 0.2);
+        let good = reconcile_pair(&ipf, &pf, AspectConfig::production());
+        assert_eq!(good.perfective, "zapisati");
     }
 
     #[test]

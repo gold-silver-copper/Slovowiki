@@ -776,7 +776,7 @@ fn lemma_aspect_fields(r: &FormRecord, aspect_meta: &AspectMeta) -> (String, Str
     // Generated derivatives reuse their attested base's entry_id. Decorating
     // by id alone would therefore label derived nouns/adjectives as verbs.
     if r.pos != "verb" || !matches!(r.status, "official" | "official-only") {
-        return ("null".to_string(), "null".to_string());
+        return ("null".to_string(), "[]".to_string());
     }
     aspect_meta
         .get(&r.entry_id)
@@ -791,7 +791,7 @@ fn lemma_aspect_fields(r: &FormRecord, aspect_meta: &AspectMeta) -> (String, Str
             );
             (json_str(aspect), partners)
         })
-        .unwrap_or_else(|| ("null".to_string(), "null".to_string()))
+        .unwrap_or_else(|| ("null".to_string(), "[]".to_string()))
 }
 
 pub struct ApiCounts {
@@ -809,6 +809,7 @@ pub fn write_api(
     records: &[FormRecord],
     lemmas: &[FormRecord],
     aspect_meta: &AspectMeta,
+    extra_artifact_bytes: usize,
     git: &str,
     agent_guide: &str,
 ) -> anyhow::Result<ApiCounts> {
@@ -829,7 +830,7 @@ pub fn write_api(
             .or_default()
             .push(r);
     }
-    let (mut bytes, mut largest) = (0usize, 0usize);
+    let (mut bytes, mut largest) = (extra_artifact_bytes, 0usize);
     for n in 0..SHARDS {
         let mut s = format!(
             "{{\"schema_version\":{SCHEMA_VERSION},\"shard\":{n},\"license\":{},\"records\":{{",
@@ -1437,7 +1438,7 @@ mod tests {
         );
         assert_eq!(
             lemma_aspect_fields(&record("noun", "generated"), &meta),
-            ("null".to_string(), "null".to_string())
+            ("null".to_string(), "[]".to_string())
         );
     }
 

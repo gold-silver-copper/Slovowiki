@@ -37,6 +37,12 @@ jobs:
         run: |
           cargo run --release -- aspect-eval
           git diff --exit-code -- target/eval/aspect-pairs.md target/eval/aspect-pairs.tsv
+      - name: Aspect production-export guard
+        run: |
+          rm -rf /tmp/slovowiki-aspect-ci
+          cargo run --release -- export --out /tmp/slovowiki-aspect-ci
+          python3 tools/validate-aspect-export.py /tmp/slovowiki-aspect-ci
+          git diff --exit-code -- data/novel-words.tsv
       - name: Inflection full-corpus guard
         run: cargo run --release -- inflect-eval
       - name: Accuracy regression floor (exact top-1 must stay >= 39.5%)
