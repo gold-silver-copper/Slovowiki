@@ -92,7 +92,8 @@ for one entry).
 | `corpus-eval` | the site's cognate-set generation path |
 | `proto-eval` | the Proto-Slavic rule engine in isolation |
 | `derive-eval` | the word-formation layer vs a naive baseline |
-| `multiword-eval` | reflexive `X sę`, two-token collocations, aspect pairs |
+| `multiword-eval` | reflexive `X sę`, two-token collocations, historical aspect baseline |
+| `aspect-eval` | dedicated ipf↔pf ladder: both/either/pairing correctness, holdout, significance |
 | `evidence-eval` | root-absent recoverability + augmentation A/B |
 | `inflect-eval` | inflection census + RULE_SPEC §3 grammar invariants |
 | `synonym-eval` | synonym-inclusive accuracy (thesaurus-based) |
@@ -112,7 +113,7 @@ Contributor-relevant invariants, all CI-tested or verified:
 - **Single source**: HTML inflection tables and `api/forms/<n>.json` records
   are generated from the same cell getters in `src/forms.rs` — never bypass
   them (round-trip tests will catch drift).
-- **Wire format is frozen**: the fold table, the FNV-1a/1024 shard router and
+- **Wire format is frozen**: the fold table, the FNV-1a/2048 shard router and
   the record array layout are mirrored in client JS and documented in the
   agent guide. Changing any of them is a schema break: bump
   `forms::SCHEMA_VERSION`.

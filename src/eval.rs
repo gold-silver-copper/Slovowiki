@@ -1897,6 +1897,259 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Dedicated perfective↔imperfective benchmark (issue #75).
+///
+/// Gold aspect/gloss/root data defines the evaluation pairs only. Each member
+/// is first generated independently from its modern Slavic cognates. The pair
+/// repair receives only those two generated candidates and their measured
+/// scores; it never receives either official lemma.
+pub fn run_aspect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
+    use std::collections::BTreeMap;
+    let entries = official::load(official_path)?;
+    let pairs = crate::aspect::detect_pairs(&entries);
+    let mut manifest = String::from("imperfective_id\tperfective_id\timperfective\tperfective\n");
+    for pair in &pairs {
+        let ipf = &entries[pair.imperfective];
+        let pf = &entries[pair.perfective];
+        writeln!(
+            manifest,
+            "{}\t{}\t{}\t{}",
+            ipf.id,
+            pf.id,
+            ipf.isv.trim(),
+            pf.isv.trim()
+        )?;
+    }
+    let pair_hash = fnv1a(&manifest);
+    const EXPECTED_PAIRS: usize = 1_440;
+    const EXPECTED_MANIFEST_FNV: u64 = 0x5ab3_e19e_c5d7_58dd;
+    anyhow::ensure!(
+        pairs.len() == EXPECTED_PAIRS && pair_hash == EXPECTED_MANIFEST_FNV,
+        "aspect-pair benchmark slice drifted: got {} pairs / {pair_hash:016x}, expected {EXPECTED_PAIRS} / {EXPECTED_MANIFEST_FNV:016x}; inspect and explicitly re-register target/eval/aspect-pairs.tsv",
+        pairs.len(),
+    );
+    let proto = load_proto_index();
+    let cfg = ConsensusConfig::production();
+    let pct = |n: usize, d: usize| 100.0 * n as f64 / d.max(1) as f64;
+
+    #[derive(Default)]
+    struct Counts {
+        n: usize,
+        both: usize,
+        either: usize,
+        paired: usize,
+    }
+    let mut baseline = Counts::default();
+    let mut suffix = Counts::default();
+    let mut core = Counts::default();
+    let mut model = Counts::default();
+    let mut baseline_dev = Counts::default();
+    let mut baseline_holdout = Counts::default();
+    let mut suffix_dev = Counts::default();
+    let mut suffix_holdout = Counts::default();
+    let mut prefix_dev = Counts::default();
+    let mut prefix_holdout = Counts::default();
+    let mut secondary_dev = Counts::default();
+    let mut secondary_holdout = Counts::default();
+    let mut dev = Counts::default();
+    let mut holdout = Counts::default();
+    let mut fixed_both = 0usize;
+    let mut broke_both = 0usize;
+    let mut fixed_either = 0usize;
+    let mut broke_either = 0usize;
+    let mut rules: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut samples = Vec::new();
+    let mut lexical_exceptions = 0usize;
+
+    for pair in &pairs {
+        let ipf = &entries[pair.imperfective];
+        let pf = &entries[pair.perfective];
+        let (ipf_input, pf_input) = (build_input(ipf), build_input(pf));
+        let generate = |aspect_cfg| {
+            crate::aspect::generate_pair(&ipf_input, &pf_input, proto.as_ref(), &cfg, aspect_cfg)
+                .unwrap_or(crate::aspect::PairPrediction {
+                    imperfective: String::new(),
+                    perfective: String::new(),
+                    rule: "missing-candidate",
+                })
+        };
+        let independent = generate(crate::aspect::AspectConfig::baseline());
+        let suffix_repaired = generate(crate::aspect::AspectConfig {
+            suffix_repair: true,
+            prefix_perfectivization: false,
+            secondary_imperfectives: false,
+        });
+        let core_repaired = generate(crate::aspect::AspectConfig::production());
+        let repaired = generate(crate::aspect::AspectConfig::with_secondary_imperfectives());
+        // Exclude a lexical exception only when the production path actually
+        // consumed the closed list. Gold membership alone is insufficient:
+        // when neither generated candidate identifies the lexical pair, the
+        // production export still emits an ordinary (and potentially wrong)
+        // prediction, so the benchmark must score it.
+        if core_repaired.rule == "closed-suppletive-pair" {
+            lexical_exceptions += 1;
+            continue;
+        }
+        let (ipf_base, pf_base) = (
+            independent.imperfective.as_str(),
+            independent.perfective.as_str(),
+        );
+        *rules.entry(core_repaired.rule).or_default() += 1;
+
+        let score = |a: &str, b: &str, gi: &str, gp: &str| {
+            let i = ortho::normalized_match(a, gi);
+            let p = ortho::normalized_match(b, gp);
+            (i && p, i || p, crate::aspect::pairing_correct(a, b))
+        };
+        let b = score(ipf_base, pf_base, ipf.isv.trim(), pf.isv.trim());
+        let s = score(
+            &suffix_repaired.imperfective,
+            &suffix_repaired.perfective,
+            ipf.isv.trim(),
+            pf.isv.trim(),
+        );
+        let c = score(
+            &core_repaired.imperfective,
+            &core_repaired.perfective,
+            ipf.isv.trim(),
+            pf.isv.trim(),
+        );
+        let m = score(
+            &repaired.imperfective,
+            &repaired.perfective,
+            ipf.isv.trim(),
+            pf.isv.trim(),
+        );
+        let add = |c: &mut Counts, v: (bool, bool, bool)| {
+            c.n += 1;
+            c.both += v.0 as usize;
+            c.either += v.1 as usize;
+            c.paired += v.2 as usize;
+        };
+        add(&mut baseline, b);
+        add(&mut suffix, s);
+        add(&mut core, c);
+        add(&mut model, m);
+        let split_id = format!("{}:{}", ipf.id, pf.id);
+        let held = is_holdout_id(&split_id);
+        add(
+            if held {
+                &mut baseline_holdout
+            } else {
+                &mut baseline_dev
+            },
+            b,
+        );
+        add(
+            if held {
+                &mut suffix_holdout
+            } else {
+                &mut suffix_dev
+            },
+            s,
+        );
+        add(
+            if held {
+                &mut prefix_holdout
+            } else {
+                &mut prefix_dev
+            },
+            c,
+        );
+        add(
+            if held {
+                &mut secondary_holdout
+            } else {
+                &mut secondary_dev
+            },
+            m,
+        );
+        add(if held { &mut holdout } else { &mut dev }, c);
+        match (b.0, c.0) {
+            (false, true) => fixed_both += 1,
+            (true, false) => broke_both += 1,
+            _ => {}
+        }
+        match (b.1, c.1) {
+            (false, true) => fixed_either += 1,
+            (true, false) => broke_either += 1,
+            _ => {}
+        }
+        if core_repaired.rule != "independent-roots-agree" && samples.len() < 40 {
+            samples.push(format!(
+                "{} ↔ {}: {} / {} → {} / {} ({})",
+                ipf.isv.trim(),
+                pf.isv.trim(),
+                ipf_base,
+                pf_base,
+                core_repaired.imperfective,
+                core_repaired.perfective,
+                core_repaired.rule
+            ));
+        }
+    }
+
+    std::fs::create_dir_all(out_dir)?;
+    std::fs::write(out_dir.join("aspect-pairs.tsv"), &manifest)?;
+    let mut report = String::new();
+    writeln!(report, "# Aspect-pair benchmark (aspect-eval)\n")?;
+    writeln!(report, "**Frozen reproducible inventory:** {} deterministic 1:1 same-gloss, morphologically-related official ipf↔pf pairs (ordered manifest `aspect-pairs.tsv`, FNV-1a-64 `{pair_hash:016x}`). **Scored denominator:** {} regular pairs; {} closed suppletive predictions are excluded only when production actually fires the lexical rule, so unrecognized lexical pairs remain honest scored misses. **Keep metrics:** normalized both-correct (primary), normalized either-correct, and consonant-root fingerprint consistency. **Leakage:** official aspect/gloss/root spelling selects the evaluation slice only; both baseline forms are independently generated from cognate cells, and pair repair sees only those generated forms plus their scores. The shared seeded hash holds out {} scored pairs.\n", pairs.len(), baseline.n, lexical_exceptions, holdout.n)?;
+    writeln!(
+        report,
+        "| model | n | normalized both correct | normalized either correct | fingerprint consistency |"
+    )?;
+    writeln!(report, "|---|---:|---:|---:|---:|")?;
+    writeln!(
+        report,
+        "| independent baseline | {} | {:.2}% | {:.2}% | {:.2}% |",
+        baseline.n,
+        pct(baseline.both, baseline.n),
+        pct(baseline.either, baseline.n),
+        pct(baseline.paired, baseline.n)
+    )?;
+    writeln!(
+        report,
+        "| +core suffix repair | {} | {:.2}% | {:.2}% | {:.2}% |",
+        suffix.n,
+        pct(suffix.both, suffix.n),
+        pct(suffix.either, suffix.n),
+        pct(suffix.paired, suffix.n)
+    )?;
+    writeln!(
+        report,
+        "| +prefix perfectivization (production) | {} | {:.2}% | {:.2}% | {:.2}% |",
+        core.n,
+        pct(core.both, core.n),
+        pct(core.either, core.n),
+        pct(core.paired, core.n)
+    )?;
+    writeln!(
+        report,
+        "| +secondary imperfectives and -ovati→-ovyvati (experimental; holdout-flat) | {} | {:.2}% | {:.2}% | {:.2}% |",
+        model.n,
+        pct(model.both, model.n),
+        pct(model.either, model.n),
+        pct(model.paired, model.n)
+    )?;
+    let unrepaired = rules.get("unrepaired").copied().unwrap_or(0);
+    writeln!(report, "\nThe secondary `-yva-/-iva-/-ava-` and `-ovati→-ovyvati` families are controlled by `AspectConfig.secondary_imperfectives`. They remain implemented but disabled in production because the rung is flat on holdout normalized both-correct. The production prefix repair improves the declared primary **normalized both-correct** metric with no breaks and improves consonant-root fingerprint consistency ({unrepaired} pairs remain unrepaired), but it lowers the secondary normalized either-correct metric. The `-ovati→-uje` present stem is exported and unit-tested grammar metadata, not part of this infinitive-pair accuracy metric; the paired table below discloses that tradeoff rather than relabeling it as a universal accuracy gain.\n")?;
+    writeln!(report, "\n## Dev / holdout\n\n| model / split | n | normalized both correct | normalized either correct | fingerprint consistency |\n|---|---:|---:|---:|---:|\n| baseline dev | {} | {:.2}% | {:.2}% | {:.2}% |\n| baseline holdout | {} | {:.2}% | {:.2}% | {:.2}% |\n| suffix rung dev | {} | {:.2}% | {:.2}% | {:.2}% |\n| suffix rung holdout | {} | {:.2}% | {:.2}% | {:.2}% |\n| prefix rung dev | {} | {:.2}% | {:.2}% | {:.2}% |\n| prefix rung holdout | {} | {:.2}% | {:.2}% | {:.2}% |\n| secondary experimental dev | {} | {:.2}% | {:.2}% | {:.2}% |\n| secondary experimental holdout | {} | {:.2}% | {:.2}% | {:.2}% |\n| production dev | {} | {:.2}% | {:.2}% | {:.2}% |\n| production holdout | {} | {:.2}% | {:.2}% | {:.2}% |", baseline_dev.n, pct(baseline_dev.both, baseline_dev.n), pct(baseline_dev.either, baseline_dev.n), pct(baseline_dev.paired, baseline_dev.n), baseline_holdout.n, pct(baseline_holdout.both, baseline_holdout.n), pct(baseline_holdout.either, baseline_holdout.n), pct(baseline_holdout.paired, baseline_holdout.n), suffix_dev.n, pct(suffix_dev.both, suffix_dev.n), pct(suffix_dev.either, suffix_dev.n), pct(suffix_dev.paired, suffix_dev.n), suffix_holdout.n, pct(suffix_holdout.both, suffix_holdout.n), pct(suffix_holdout.either, suffix_holdout.n), pct(suffix_holdout.paired, suffix_holdout.n), prefix_dev.n, pct(prefix_dev.both, prefix_dev.n), pct(prefix_dev.either, prefix_dev.n), pct(prefix_dev.paired, prefix_dev.n), prefix_holdout.n, pct(prefix_holdout.both, prefix_holdout.n), pct(prefix_holdout.either, prefix_holdout.n), pct(prefix_holdout.paired, prefix_holdout.n), secondary_dev.n, pct(secondary_dev.both, secondary_dev.n), pct(secondary_dev.either, secondary_dev.n), pct(secondary_dev.paired, secondary_dev.n), secondary_holdout.n, pct(secondary_holdout.both, secondary_holdout.n), pct(secondary_holdout.either, secondary_holdout.n), pct(secondary_holdout.paired, secondary_holdout.n), dev.n, pct(dev.both, dev.n), pct(dev.either, dev.n), pct(dev.paired, dev.n), holdout.n, pct(holdout.both, holdout.n), pct(holdout.either, holdout.n), pct(holdout.paired, holdout.n))?;
+    writeln!(report, "\n## Paired significance vs independent baseline\n\n| metric | fixed | broke | two-sided sign-test p |\n|---|---:|---:|---:|\n| normalized both correct | {fixed_both} | {broke_both} | {:.4} |\n| normalized either correct | {fixed_either} | {broke_either} | {:.4} |", sign_test_p(fixed_both, broke_both), sign_test_p(fixed_either, broke_either))?;
+    writeln!(report, "\n## Rule census\n")?;
+    for (rule, n) in &rules {
+        writeln!(report, "- `{rule}`: {n}")?;
+    }
+    writeln!(report, "\n## Changed-pair sample\n")?;
+    for sample in &samples {
+        writeln!(report, "- {sample}")?;
+    }
+    let path = out_dir.join("aspect-pairs.md");
+    std::fs::write(&path, report)?;
+    println!("Aspect pairs: inventory {} / scored {}; baseline both {:.2}% / either {:.2}% / fingerprint {:.2}%; production both {:.2}% / either {:.2}% / fingerprint {:.2}%", pairs.len(), baseline.n, pct(baseline.both, baseline.n), pct(baseline.either, baseline.n), pct(baseline.paired, baseline.n), pct(core.both, core.n), pct(core.either, core.n), pct(core.paired, core.n));
+    println!("Wrote {}", path.display());
+    Ok(())
+}
+
 /// Agree a masculine-cited adjective with the head noun's gender (nom.sg):
 /// hard -y → -a / -o, soft -i → -a / -e — the stem already carries the
 /// softness (svěži→svěža, domašnji→domašnja; RULE_SPEC §3.2 O⇒E).
@@ -2752,32 +3005,25 @@ pub fn is_holdout_id(id: &str) -> bool {
     fnv1a(id) % 4 == 0
 }
 
-/// Complementary error function (Abramowitz & Stegun 7.1.26, |ε| ≤ 1.5e-7),
-/// enough precision for p-value reporting.
-fn erfc(x: f64) -> f64 {
-    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    let y = poly * (-x * x).exp();
-    if x >= 0.0 {
-        y
-    } else {
-        2.0 - y
-    }
-}
-
-/// Two-sided sign test (McNemar without correction terms) on the discordant
-/// pairs: `fixed` entries the new rung newly matches, `broke` entries it newly
-/// misses. Under H0 (the rule has no effect) the discordants are Binomial(n,½);
-/// normal approximation with continuity correction.
+/// Exact two-sided sign test on discordant pairs. Under H0 the smaller tail is
+/// Binomial(n, 1/2); compute its PMF at `m=min(fixed,broke)` in log space, then
+/// recur downward. This stays stable for both tiny and large ladder deltas.
 fn sign_test_p(fixed: usize, broke: usize) -> f64 {
     let n = fixed + broke;
     if n == 0 {
         return 1.0;
     }
-    let z = ((fixed as f64 - broke as f64).abs() - 1.0).max(0.0) / (n as f64).sqrt();
-    erfc(z / std::f64::consts::SQRT_2)
+    let m = fixed.min(broke);
+    let log_choose = (1..=m).fold(0.0, |acc, i| {
+        acc + ((n + 1 - i) as f64).ln() - (i as f64).ln()
+    });
+    let mut p = (log_choose - n as f64 * std::f64::consts::LN_2).exp();
+    let mut tail = p;
+    for k in (1..=m).rev() {
+        p *= k as f64 / (n - k + 1) as f64;
+        tail += p;
+    }
+    (2.0 * tail).min(1.0)
 }
 
 /// Deterministic xorshift64* PRNG for the bootstrap (seeded, reproducible).
@@ -3209,6 +3455,13 @@ mod tests {
         assert_eq!(agree_adjective("novy", None), "novy");
         // Non-adjectival tails pass through untouched.
         assert_eq!(agree_adjective("dom", Some(Gender::Feminine)), "dom");
+    }
+
+    #[test]
+    fn exact_sign_test_matches_binomial_tails() {
+        assert!((sign_test_p(18, 0) - 0.000_007_629_394_531_25).abs() < 1e-12);
+        assert_eq!(sign_test_p(0, 0), 1.0);
+        assert_eq!(sign_test_p(1, 1), 1.0);
     }
 
     #[test]
