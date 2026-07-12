@@ -1897,9 +1897,11 @@ mod tests {
             },
         );
         // Two hops, accent-insensitive: uk word ← zle-ort мѣсто ← orv → proto.
-        let (proto, etymon, class) =
-            resolve_chain(&map, &("zle-ort".into(), "мѣ́сто".into()));
-        assert_eq!((proto.as_str(), etymon.as_str(), class), ("*město", "", "inherited"));
+        let (proto, etymon, class) = resolve_chain(&map, &("zle-ort".into(), "мѣ́сто".into()));
+        assert_eq!(
+            (proto.as_str(), etymon.as_str(), class),
+            ("*město", "", "inherited")
+        );
         // One hop to a foreign etymon → borrowing.
         let (proto, etymon, class) = resolve_chain(&map, &("zlw-opl".into(), "aloes".into()));
         assert_eq!(
@@ -1908,7 +1910,10 @@ mod tests {
         );
         // Missing old-stage page → unresolved, both fields empty.
         let (proto, etymon, class) = resolve_chain(&map, &("orv".into(), "нѣтъ".into()));
-        assert_eq!((proto.as_str(), etymon.as_str(), class), ("", "", "unresolved"));
+        assert_eq!(
+            (proto.as_str(), etymon.as_str(), class),
+            ("", "", "unresolved")
+        );
     }
 
     #[test]
