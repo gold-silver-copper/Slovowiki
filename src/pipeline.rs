@@ -184,10 +184,7 @@ pub fn generate_oracle(
                         form: format!("*{}", l.entry.word),
                         normalized_form: l.entry.word.clone(),
                         relation: EvidenceRelation::ProtoSlavicAncestor,
-                        source_url: format!(
-                            "https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}",
-                            l.entry.word
-                        ),
+                        source_url: crate::enrich::proto_source_url(&l.entry.word),
                     });
                     if !l.entry.pbs.is_empty() {
                         pc.evidence.push(Evidence {

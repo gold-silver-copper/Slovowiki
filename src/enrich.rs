@@ -246,11 +246,55 @@ impl Xref {
     }
 }
 
-/// The native-Wiktionary URL for a word (e.g. `https://ru.wiktionary.org/wiki/вода`).
+/// Percent-encode one Wiktionary path/fragment component as UTF-8. Spaces in
+/// page titles use Wiktionary's conventional underscore spelling. Encoding is
+/// deliberately local (rather than applied to a complete URL) so delimiters
+/// such as the language-section `#` retain their structural meaning.
+fn wiki_component(value: &str, spaces_as_underscores: bool) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let value = value.trim();
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else if byte == b' ' && spaces_as_underscores {
+            out.push('_');
+        } else {
+            out.push('%');
+            out.push(HEX[(byte >> 4) as usize] as char);
+            out.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    out
+}
+
+/// The native-Wiktionary URL for a word.
 pub fn source_url(lang: &str, word: &str) -> String {
     format!(
         "https://{lang}.wiktionary.org/wiki/{}",
-        word.trim().replace(' ', "_")
+        wiki_component(word, true)
+    )
+}
+
+/// The English-Wiktionary page for an attested word, optionally anchored to a
+/// language section. Page and fragment identities are encoded independently.
+pub fn english_source_url(word: &str, section: Option<&str>) -> String {
+    let mut url = format!(
+        "https://en.wiktionary.org/wiki/{}",
+        wiki_component(word, true)
+    );
+    if let Some(section) = section.filter(|s| !s.trim().is_empty()) {
+        url.push('#');
+        url.push_str(&wiki_component(section, false));
+    }
+    url
+}
+
+/// The English-Wiktionary reconstruction page for a Proto-Slavic form.
+pub fn proto_source_url(proto: &str) -> String {
+    format!(
+        "https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}",
+        wiki_component(proto.trim_start_matches('*'), true)
     )
 }
 
@@ -623,14 +667,26 @@ mod tests {
     }
 
     #[test]
-    fn source_url_points_at_native_edition() {
+    fn source_urls_encode_page_and_fragment_identity() {
         assert_eq!(
             source_url("ru", "вода"),
-            "https://ru.wiktionary.org/wiki/вода"
+            "https://ru.wiktionary.org/wiki/%D0%B2%D0%BE%D0%B4%D0%B0"
         );
         assert_eq!(
             source_url("cs", "za slova"),
             "https://cs.wiktionary.org/wiki/za_slova"
+        );
+        assert_eq!(
+            english_source_url("#cząsteczka", Some("pl")),
+            "https://en.wiktionary.org/wiki/%23cz%C4%85steczka#pl"
+        );
+        assert_eq!(
+            english_source_url("kdo?", Some("cs")),
+            "https://en.wiktionary.org/wiki/kdo%3F#cs"
+        );
+        assert_eq!(
+            proto_source_url("*ľuby"),
+            "https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/%C4%BEuby"
         );
     }
 

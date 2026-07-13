@@ -3588,10 +3588,9 @@ fn raw_etymology_section(
     if !t.is_empty() {
         let _ = write!(
             cards,
-            "<div class='etym-src'><div class='src-head'><span class='lc'>anglijska Wiktionary · {}</span> <a class='ext' href='https://en.wiktionary.org/wiki/{}#{}'>{}↗</a></div><p class='etym-raw'>{}</p></div>",
+            "<div class='etym-src'><div class='src-head'><span class='lc'>anglijska Wiktionary · {}</span> <a class='ext' href='{}'>{}↗</a></div><p class='etym-raw'>{}</p></div>",
             esc(crate::lang::lang_name(&lemma.lang)),
-            esc(&lemma.word.replace(' ', "_")),
-            esc(&lemma.lang),
+            esc(&crate::enrich::english_source_url(&lemma.word, Some(&lemma.lang))),
             esc(&source_display(&lemma.lang, &lemma.word)),
             esc(t).replace('\n', "<br>")
         );
@@ -3816,10 +3815,9 @@ fn cognate_block(
             };
             let _ = write!(
                 s,
-                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a>{}{}</td><td class='muted'>{}</td></tr>",
+                "<tr><td class='lc'>{}</td><td><a href='{}'>{}</a>{}{}</td><td class='muted'>{}</td></tr>",
                 esc(&crate::lang::lang_name(&m.lang)),
-                esc(&m.word.replace(' ', "_")),
-                esc(&m.lang),
+                esc(&crate::enrich::english_source_url(&m.word, Some(&m.lang))),
                 esc(&visible_word),
                 native,
                 norm_note,
@@ -3841,10 +3839,9 @@ fn cognate_block(
             let visible = crate::flavorize::flavorize_word(&m.lang, &m.pos, &m.word);
             let _ = write!(
                 s,
-                "<tr><td class='lc'>{}</td><td><a href='https://en.wiktionary.org/wiki/{}#{}'>{}</a></td><td class='muted'>{}</td></tr>",
+                "<tr><td class='lc'>{}</td><td><a href='{}'>{}</a></td><td class='muted'>{}</td></tr>",
                 esc(crate::lang::lang_name(&m.lang)),
-                esc(&m.word.replace(' ', "_")),
-                esc(&m.lang),
+                esc(&crate::enrich::english_source_url(&m.word, Some(&m.lang))),
                 esc(&visible),
                 esc(&truncate(&source_display(&m.lang, &m.gloss), 32)),
             );
@@ -3865,7 +3862,8 @@ fn unified_etymology_section(
         )
     } else {
         format!(
-            "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{p}'>*{p}</a>. Niže sųt izvorne etimologije iz anglijskogo i narodnyh Wiktionary.</p>",
+            "<p>Iz praslovjanskogo <a class='mention' href='{url}'>*{p}</a>. Niže sųt izvorne etimologije iz anglijskogo i narodnyh Wiktionary.</p>",
+            url = esc(&crate::enrich::proto_source_url(&g.set.proto)),
             p = esc(g.set.proto.trim_start_matches('*')),
         )
     };
@@ -3921,10 +3919,9 @@ fn english_etymology_cards(members: &[crate::dump::LemmaEntry]) -> String {
         let visible_word = crate::flavorize::flavorize_word(&m.lang, &m.pos, &m.word);
         let _ = write!(
             rows,
-            "<div class='etym-src'><div class='src-head'><span class='lc'>anglijska Wiktionary · {}</span> <a class='ext' href='https://en.wiktionary.org/wiki/{}#{}'>{}↗</a></div>{}</div>",
+            "<div class='etym-src'><div class='src-head'><span class='lc'>anglijska Wiktionary · {}</span> <a class='ext' href='{}'>{}↗</a></div>{}</div>",
             esc(&crate::lang::lang_name(&m.lang)),
-            esc(&m.word.replace(' ', "_")),
-            esc(&m.lang),
+            esc(&crate::enrich::english_source_url(&m.word, Some(&m.lang))),
             esc(&visible_word),
             paras
         );
@@ -4231,11 +4228,7 @@ fn corpus_about(n: usize, lemma_total: usize, official: usize) -> String {
 
 fn build_input(entry: &OfficialEntry) -> MeaningInput {
     let forms = crate::consensus::source_forms_from_cells(&entry.cells, |code, form| {
-        format!(
-            "https://en.wiktionary.org/wiki/{}#{}",
-            form.replace(' ', "_"),
-            code
-        )
+        crate::enrich::english_source_url(form, Some(code))
     });
     let forms = crate::consensus::lemma_forms(forms, entry.pos);
     let (forms, reflexive) = crate::consensus::strip_reflexive(forms, entry.pos);
@@ -5051,8 +5044,8 @@ fn etymology_block(g: &Generation) -> String {
         return "<p class='muted'>Za sej smysl ne najdena praslovjanska rekonstrukcija; forma je iz medžuvětvovogo konsensusa.</p>".to_string();
     };
     let mut s = format!(
-        "<p>Iz praslovjanskogo <a class='mention' href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>*{}</a> <span class='muted'>(uvěrjenost povezanja {:.0}%)</span>.</p>",
-        esc(&r.word),
+        "<p>Iz praslovjanskogo <a class='mention' href='{}'>*{}</a> <span class='muted'>(uvěrjenost povezanja {:.0}%)</span>.</p>",
+        esc(&crate::enrich::proto_source_url(&r.word)),
         esc(&r.word),
         100.0 * r.confidence
     );
@@ -7746,7 +7739,7 @@ fn references_block(m: &SiteEntryMeta) -> String {
             let root = ancestor_slug(m)
                 .map(|sl| format!("; <a href='../root/{sl}.html'>korenj-strana</a>"))
                 .unwrap_or_default();
-            let _ = write!(rows, "<tr><th>Praslovjansky prědȯk</th><td><a href='https://en.wiktionary.org/wiki/Reconstruction:Proto-Slavic/{}'>*{}</a>{}</td><td>rekonstrukcija Wiktionary</td></tr>", esc(p), esc(p), root);
+            let _ = write!(rows, "<tr><th>Praslovjansky prědȯk</th><td><a href='{}'>*{}</a>{}</td><td>rekonstrukcija Wiktionary</td></tr>", esc(&crate::enrich::proto_source_url(p)), esc(p), root);
         }
     }
     rows.push_str("<tr><th>Srodne slova</th><td>anglijska Wiktionary + narodne Wiktionary</td><td>CC BY-SA; konkretne linky sųt v tablicah vyše</td></tr>");

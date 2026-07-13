@@ -476,11 +476,7 @@ pub fn generate_set(set: CognateSet, cfg: &ConsensusConfig) -> GeneratedWord {
                 skeleton,
                 flagged: false,
             },
-            source_url: format!(
-                "https://en.wiktionary.org/wiki/{}#{}",
-                m.word.replace(' ', "_"),
-                m.lang
-            ),
+            source_url: crate::enrich::english_source_url(&m.word, Some(&m.lang)),
             primary: first,
         });
     }

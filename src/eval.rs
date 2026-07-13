@@ -317,11 +317,7 @@ pub fn run_corpus_eval(official_path: &Path) -> Result<()> {
 
 fn build_input(entry: &OfficialEntry) -> MeaningInput {
     let forms: Vec<SourceForm> = consensus::source_forms_from_cells(&entry.cells, |code, form| {
-        format!(
-            "https://en.wiktionary.org/wiki/{}#{}",
-            form.replace(' ', "_"),
-            code
-        )
+        crate::enrich::english_source_url(form, Some(code))
     });
     let forms = consensus::lemma_forms(forms, entry.pos);
     let (forms, reflexive) = consensus::strip_reflexive(forms, entry.pos);
@@ -1364,7 +1360,7 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 }
                 if !add_cells.is_empty() {
                     let extra = consensus::source_forms_from_cells(&add_cells, |code, form| {
-                        format!("https://en.wiktionary.org/wiki/{}#{}", form, code)
+                        crate::enrich::english_source_url(form, Some(code))
                     });
                     let extra = consensus::lemma_forms(extra, e.pos);
                     input.forms.extend(extra);
@@ -1693,7 +1689,7 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         b_gen += 1;
         let make_input = |cells: &HashMap<String, String>, pos: Pos| -> MeaningInput {
             let forms = consensus::source_forms_from_cells(cells, |code, form| {
-                format!("https://en.wiktionary.org/wiki/{}#{}", form, code)
+                crate::enrich::english_source_url(form, Some(code))
             });
             let forms = consensus::lemma_forms(forms, pos);
             MeaningInput {
