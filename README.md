@@ -127,8 +127,8 @@ derivational-morphology pass (below) converted another +0.6pp of the
 endings/representative tail into matches.
 
 The Proto-Slavic rule engine is measured in isolation by a dedicated benchmark
-(`cargo run --release -- proto-eval`): on the 20.1% of words it confidently links
-to a reconstruction it derives the official lemma with **46.68% exact / 52.74%
+(`cargo run --release -- proto-eval`): on the 20.3% of words it confidently links
+to a reconstruction it derives the official lemma with **48.14% exact / 52.74%
 normalized** accuracy.
 
 **Inflection validation** (`cargo run --release -- inflect-eval`): every
