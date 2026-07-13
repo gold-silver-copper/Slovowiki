@@ -3,19 +3,19 @@
 Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive the form straight from the linked reconstruction and compare to the official lemma.
 
 - Benchmark entries with modern evidence: **16300**
-- Confidently linked to a Proto-Slavic entry: **3299** (20.2% coverage)
-- On the linked subset: **exact 46.71%**, **normalized 52.74%**
+- Confidently linked to a Proto-Slavic entry: **3301** (20.3% coverage)
+- On the linked subset: **exact 48.14%**, **normalized 52.74%**
 
 ## Proto-engine accuracy by POS (linked subset)
 
 | POS | linked | exact | normalized |
 |---|---:|---:|---:|
-| adj | 427 | 53.40% | 59.25% |
-| adv | 83 | 10.84% | 14.46% |
-| noun | 1828 | 50.00% | 58.26% |
-| num | 18 | 16.67% | 22.22% |
-| pron | 42 | 69.05% | 71.43% |
-| verb | 901 | 39.73% | 41.73% |
+| adj | 428 | 51.87% | 59.11% |
+| adv | 83 | 12.05% | 14.46% |
+| noun | 1828 | 52.46% | 58.26% |
+| num | 18 | 22.22% | 22.22% |
+| pron | 42 | 66.67% | 71.43% |
+| verb | 902 | 40.58% | 41.80% |
 
 ## Confident proto-engine errors (sample)
 
@@ -26,7 +26,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | willow | iva | vŕba | *vьrba | 0.96 |
 | ash, ashes | popel | pepel | *pepelъ | 0.96 |
 | to you (sg.), to thee | tobě | tebě | *tebě | 0.96 |
-| thin | tȯnky | tenky | *tьnъkъ | 0.96 |
+| thin | tȯnky | tėnky | *tьnъkъ | 0.96 |
 | fart | bzděti | pŕděti | *pьrděti | 0.95 |
 | lie down | legti | leći | *leťi | 0.95 |
 | find | najdti | najti | *najьti | 0.95 |
@@ -57,7 +57,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | flight | polet | let | *letъ | 0.89 |
 | four | četyri | četyre | *četyre | 0.88 |
 | cough | kašelj | kašȯlj | *kaš(ь)ľь | 0.88 |
-| elk, moose | loś | las | *olsь | 0.88 |
+| elk, moose | loś | låś | *olsь | 0.88 |
 | ant | mråvka | mråv | *morvъ | 0.88 |
 | caterpillar | gųsenica | vųsěnica | *ǫsěnica | 0.88 |
 | bosom | pazuha | pazduha | *pazduxa | 0.87 |
@@ -69,7 +69,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | make turbid | smųćati | mųtiti | *mǫtiti | 0.86 |
 | heron | čaplja | čapja | *čapľa | 0.85 |
 | chisel | dlåto | dlěto | *delto | 0.85 |
-| stupidity | durnosť | glupost | *glupostь | 0.85 |
+| stupidity | durnosť | gluposť | *glupostь | 0.85 |
 | needle | iglica | igla | *jьgъla | 0.85 |
 | moon | luna | měsęc | *měsęcь | 0.85 |
 | resistance | odpor | otpor | *otъporъ | 0.85 |
@@ -77,7 +77,7 @@ Isolates `proto::generate_with_reflexes` from linking/ranking/consensus: derive 
 | here | sde | tu | *tu | 0.85 |
 | lead | svinec | olovo | *olovo | 0.85 |
 | width | širokosť | širina | *širina | 0.85 |
-| today | tutdenj | dnes | *dьnьsь | 0.85 |
+| today | tutdenj | dnėś | *dьnьsь | 0.85 |
 | basis | zaklad | osnova | *osnova | 0.85 |
 | grain | žito | zŕno | *zьrno | 0.85 |
 | brotherhood | bratstvo | bratrstvo | *bratrьstvo | 0.85 |
