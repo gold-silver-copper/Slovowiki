@@ -106,7 +106,21 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
                         _ => ' ',
                     };
                     if c != ' ' {
-                        noun_gender.entry(forms::form_key(isv)).or_insert(c);
+                        // A spelling can name nouns of different genders
+                        // (`družba` friendship f. / best man m.). Agreement must
+                        // abstain instead of letting CSV order choose a gender
+                        // for every homograph (issue #89 B04/G12).
+                        noun_gender
+                            .entry(forms::form_key(isv))
+                            .and_modify(|known| {
+                                // Once conflicting senses make the key
+                                // ambiguous, later rows must not restore a
+                                // concrete gender.
+                                if *known != ' ' && *known != c {
+                                    *known = ' ';
+                                }
+                            })
+                            .or_insert(c);
                     }
                 }
             }
@@ -979,6 +993,56 @@ mod tests {
         let reps = check_text(&index, UNKNOWN_PROBE);
         assert!(reps.iter().any(|r| r.status == "unknown"));
         assert!(reps.iter().all(|r| r.agreement.is_none()));
+    }
+
+    #[test]
+    fn homographic_noun_genders_abstain_from_agreement() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(&entries, None);
+        // Cover exact/case-folded homographs and genuine standard-orthography
+        // collisions (Bělorus/Běloruś, plȯť/plot, spust/spusť).
+        for word in ["Bělorus", "dodatȯk", "družba", "led", "plȯť", "spust"] {
+            assert_eq!(
+                index.noun_gender.get(&forms::form_key(word)),
+                Some(&' '),
+                "mixed-gender homograph {word} must not inherit the first CSV row's gender"
+            );
+        }
+        for phrase in ["dobry družba", "dobry Bělorus", "dobra Běloruś"] {
+            assert!(
+                check_text(&index, phrase)
+                    .iter()
+                    .all(|r| r.agreement.is_none()),
+                "valid homograph reading must not be rejected: {phrase}"
+            );
+        }
+
+        // A synthetic m/f/m sequence proves ambiguity is absorbing without
+        // coupling the order-independence test to CSV row count or ordering.
+        let template = entries
+            .iter()
+            .find(|e| e.isv == "družba")
+            .expect("noun fixture");
+        let synthetic: Vec<OfficialEntry> = [
+            crate::model::Gender::Masculine,
+            crate::model::Gender::Feminine,
+            crate::model::Gender::Masculine,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, gender)| {
+            let mut entry = template.clone();
+            entry.id = format!("synthetic-{i}");
+            entry.isv = "testova".to_string();
+            entry.noun_traits.gender = Some(gender);
+            entry
+        })
+        .collect();
+        let synthetic_index = build_index(&synthetic, None);
+        assert_eq!(
+            synthetic_index.noun_gender.get(&forms::form_key("testova")),
+            Some(&' ')
+        );
     }
 
     #[test]
