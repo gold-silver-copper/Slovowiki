@@ -155,7 +155,7 @@ Each rule: **id** — condition — `before → after (etym / std)` — example 
 ### Phase F — Soft consonants (consonant + weak/lost ь) and syllabic liquids
 
 **`soft-consonant-marking`** — A consonant palatalized by a following (now-lost) front yer is written with its soft letter, which reduces to the plain consonant in standard.
-`tь→t́/t, dь→d́/d, sь→ś/s, zь→ź/z, lь→ĺ/l (→lj), nь→ń/n (→nj), rь→ŕ/r` — *kostь → kost́/kost; *lъžь…; *dъždь → dȯžd́/dožd; *losь → loś/los; *knęzь → knęź/knez`. `[DERIV][ORTH]`
+`tь→t́/t, dь→d́/d, sь→ś/s, zь→ź/z, lь→ĺ/l (→lj), nь→ń/n (→nj), rь→ŕ/r` — *kostь → `kost́` (repository glyph fallback `kosť`)/`kost`; *lъžь…; *dъždь → `dȯžd́` (fallback `dȯžď`)/`dožd`; *losь → loś/los; *knęzь → knęź/knez`. `[DERIV][ORTH]`
 
 **`palatal-l-n`** — *lь/lj → `lj`, *nь/nj → `nj` (kept as digraphs in both alphabets; `ĺ/ń` only pre-consonantally).
 `lj → lj`, `nj → nj` — *ljubiti → ljubiti; *dьnь → denj`. `[DERIV]`
@@ -231,7 +231,7 @@ Ex: *morje → morje. `[NOUN]`
 Ex: *žena → žena; *zemja → zemja. `[NOUN]`
 
 **`noun-fem-cons`** — feminine i-stem → nom.sg **zero ending** (consonant-final).
-Ex: *kostь → kost. `[NOUN]`
+Ex: *kostь → `kost́` (repository glyph fallback `kosť`), standard `kost`. The zero ending drops the yer but preserves stem-final softness. `[NOUN][ORTH]`
 
 **`noun-neut-e-athematic`** — neuter athematic `-e`; pick oblique stem by the preceding consonant:
 - preceded by `m` → `-men-` stem: `ime` (gen `imene`, pl `imena`).
