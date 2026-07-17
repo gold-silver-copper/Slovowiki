@@ -994,11 +994,12 @@ endpoints/page IDs, shared-anchor generated forms, the fired rule, and
 - `status: official`/`official-only` records are verification-grade.
 - `status: generated` records are NOT verification-grade. `probability` is
   model-specific and may be null:
-  - **cognate-set reconstructions** — `probability` comes from the dedicated,
-    input-fresh corpus coverage calibrator fitted only on the fixed train split
-    and measured on untouched holdout semantic-proxy labels. It estimates
-    official semantic coverage, not linguistic correctness; the separate
-    official-row pipeline calibrator is deliberately rejected as incompatible;
+  - **cognate-set reconstructions** — `probability` is always null. Their
+    input-fresh corpus calibrator estimates unconditional official semantic
+    coverage before official matches are filtered out, so it is not correctness
+    evidence for a known-unmatched reconstruction. Its value is exposed only as
+    `coverage_proxy` in `novel-words.tsv`; the separate official-row pipeline
+    calibrator is deliberately rejected as incompatible;
   - **regular derivatives off attested bases** (the site's "Slovotvorstvo"
     families) — a base lemma's productive family (`-osť`, adverb, `-ńje`,
     `-telj`, `-ny`/`-sky`, `-ka`/`-ica`, `ne-`), restricted to members ABSENT

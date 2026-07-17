@@ -445,10 +445,13 @@ inflection tables and the machine-readable artifacts, so they cannot drift:
   site's client-side JS, which verifies itself against
   `api/router-selftest.json` before trusting lookups.
 - `api/lemmas.json` — every headword with status (`official` /
-  `official-only` / `generated`) and an optional model-specific probability
-  (the corpus model supplies it only for unmatched corpus reconstructions;
-  official facts remain null); official verb rows additionally carry grammatical aspect and an
-  array of `[entry_id, lemma]` partners. Generated lemmas deliberately have
+  `official-only` / `generated`) and an optional model-specific probability.
+  Corpus reconstructions and official facts always carry null; the corpus
+  calibrator is exposed only as `coverage_proxy` in `novel-words.tsv` because
+  it is not correctness evidence for known-unmatched entries. Generated
+  derivatives retain their separate pattern-specific Wilson probability.
+  Official verb rows additionally carry grammatical aspect and an array of
+  `[entry_id, lemma]` partners. Generated lemmas deliberately have
   **no inflection records**:
   an inflected form of a wrong reconstruction is confidently wrong.
 - `api/aspect-pairs.json` — the production pair model's official endpoints,
