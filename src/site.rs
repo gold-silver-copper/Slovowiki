@@ -8618,9 +8618,9 @@ struct ProposalRow {
     gloss: String,
 }
 
-/// The Predloženja page: ranked novel-word proposals with the calibrated
-/// probability, evidence summary and curation notes. The full list is in
-/// data/novel-words.tsv; the page shows the propose bucket plus counts.
+/// The Predloženja page: novel-word proposals ranked by the unconditional
+/// official-coverage proxy, with evidence and curation notes. The full list is
+/// in data/novel-words.tsv; the page shows the propose bucket plus counts.
 fn proposals_page(
     proposals: &[ProposalRow],
     calibration: &crate::calibrate::CorpusCalibration,
@@ -8675,7 +8675,7 @@ fn proposals_page(
          <p class='lede'>Slova, ktore stroj pravilno izvodi iz slovjanskogo dokaza, ale ktoryh <b>něma</b> v oficialnom slovniku — kandidaty za novu leksiku.</p>\
          <p>{cal_note}</p>\
          <p>{summary} Kuratorske noty prihodęt iz <code>data/curation-notes.json</code>.</p>\
-         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th>p</th><th title='{razum_title}'>razumlivosť</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
+         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th title='bezuslovny proxy oficialnogo pokryća; ne věrojetnosť pravilnosti'>coverage proxy</th><th title='{razum_title}'>razumlivosť</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
          <p class='muted'>Pokazano najviše 600 predlogov; polny spisok v TSV. Mašinove rekonstrukcije, ne normativna leksika.</p></article>",
         razum_title = RAZUM_TITLE,
     );
