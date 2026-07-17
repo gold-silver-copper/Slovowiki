@@ -468,7 +468,9 @@ Website twins of the API: **`forms.html`** (reverse lookup of any inflected
 form → analyses + entry links; after an exact miss it tries a bounded,
 ambiguity-preserving ASCII expansion and shows every matched key) and
 **`text-check.html`** (paste text, every token verified client-side, with the
-same nearest-lemma suggestion contract as the CLI). Official preposition entry
+same verification-grade-only nearest-lemma suggestion contract as the CLI;
+generated proposals remain directly lookupable but are never offered as typo
+corrections). Official preposition entry
 infoboxes also show the governed cases from the same curated table used by the
 checker. The CLI equivalent:
 
@@ -478,8 +480,9 @@ cargo run --release -- check-text tekst.txt --json   # for agents
 ```
 
 classifies every token (known-lemma / known-form / generated / unknown with
-nearest-lemma suggestions; multi-word official lemmas resolve via trigram →
-bigram lookup), runs **conservative grammar-agreement checks** (adjacent
+verification-grade nearest-lemma suggestions; multi-word official lemmas
+resolve via trigram → bigram lookup), runs **conservative grammar-agreement
+checks** (adjacent
 adjective–noun case/number/gender — gender in the singular only, preposition
 government parsed from the dictionary's own `(+N)` annotations, pronoun–verb
 person/number; a warning fires only when NO combination of analyses is

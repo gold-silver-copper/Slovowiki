@@ -49,7 +49,9 @@ const SUGGEST_SELFTEST_ROWS: &[(&str, &str)] = &[
 pub struct Index {
     /// key → records (lemma citations and inflected forms).
     pub by_key: HashMap<String, Vec<FormRecord>>,
-    /// All lemma keys, for nearest-suggestion search.
+    /// Verification-grade lemma keys for nearest-suggestion search. Generated
+    /// proposals remain directly lookupable in `by_key` but are excluded here
+    /// because the suggestion wire format does not carry status.
     pub lemma_keys: Vec<(String, String)>, // (key, display lemma)
     pub notes: BTreeMap<String, SemanticNote>,
     /// Noun lemma key → dictionary gender (m/f/n), for agreement checking.
@@ -188,7 +190,7 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
     let mut lemma_keys: Vec<(String, String)> = Vec::new();
     let mut lemma_seen: HashSet<String> = HashSet::new();
     for r in records {
-        if r.source == "lemma" && lemma_seen.insert(r.key.clone()) {
+        if r.source == "lemma" && r.status != "generated" && lemma_seen.insert(r.key.clone()) {
             lemma_keys.push((r.key.clone(), r.lemma.clone()));
         }
         by_key.entry(r.key.clone()).or_default().push(r);
@@ -678,8 +680,10 @@ pub fn preposition_government() -> HashMap<String, Vec<&'static str>> {
     out
 }
 
-/// Nearest known lemmas for an unknown token: same first letter, folded edit
-/// distance ≤ 2, closest first, at most 3 (deterministic tie-break by lemma).
+/// Nearest verification-grade lemmas for an unknown token: same first letter,
+/// folded edit distance ≤ 2, closest first, at most 3 (deterministic tie-break
+/// by lemma). Generated proposals are excluded because suggestions carry no
+/// status with which a consumer could identify them as unverified.
 pub fn suggest(index: &Index, key: &str) -> Vec<String> {
     suggest_rows(&index.lemma_keys, key)
 }
@@ -988,6 +992,10 @@ mod tests {
         assert!(serde_json::to_string(&reports[0])
             .unwrap()
             .contains("\"probability\":null"));
+        assert!(
+            suggest(&index, &forms::form_key("jablukoo")).is_empty(),
+            "unverified proposal leaked into status-free typo suggestions"
+        );
         let _ = std::fs::remove_file(path);
     }
 
