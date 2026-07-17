@@ -16,7 +16,7 @@
 | ECE | 0.237488 | 0.010588 |
 | Brier | 0.164632 | 0.108036 |
 
-| operating point | selected | hits | precision | coverage |
+| unfiltered holdout operating point (not proposal-list quality) | selected | hits | precision | coverage |
 |---|---:|---:|---:|---:|
 | proposal p≥0.6 | 405 | 282 | 0.696296 | 0.250444 |
 | review p≥0.3 | 995 | 528 | 0.530653 | 0.468917 |

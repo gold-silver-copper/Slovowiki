@@ -8657,13 +8657,9 @@ fn proposals_page(
         );
     }
     let cal_note = format!(
-        "Věrojetnost je <b>izotonično kalibrovana korpusna ocěna pokryća</b> ({}; odložena ECE {:.3}) — semantičny proxy oficialnogo pokryća, ne dokaz jezyčnoj pravilnosti. Pragy sųt izměrjene na odloženoj četvrtině: predlog p≥{propose_t:.1} ({:.1}% točnost / {:.1}% pokrytje), pregled p≥{review_t:.1} ({:.1}% / {:.1}%).",
+        "Rang je <b>izotonično kalibrovany korpusny proxy</b> ({}; odložena ECE {:.3}). Pokazyvaje bezuslovnu podobnosť s oficialnym pokrytjem prěd slovničnym filtrom; ne jest věrojetnosť, že tut neoficialny predlog jest pravilny ili bude prijęty. Predlogy sųt poslě toga filtracije i potrěbujųt kuratorsku prověrku; bezuslovna holdout-točnost sę zato ne priměnjaje na tut spisok.",
         esc(&calibration.provenance.fitted_on),
         calibration.calibrated_holdout.ece,
-        100.0 * calibration.propose.precision,
-        100.0 * calibration.propose.coverage,
-        100.0 * calibration.review.precision,
-        100.0 * calibration.review.coverage,
     );
     let summary = format!(
         "<b>{n_propose}</b> predloženj (p≥{propose_t:.1}) + <b>{n_review}</b> k pregledu (p≥{review_t:.1}); polny spisok: <a href='novel-words.tsv'>novel-words.tsv</a>."
@@ -8977,7 +8973,7 @@ fn metrics_page(cal: &crate::calibrate::CorpusCalibration) -> String {
     let mut calib = String::from("<h2 id='kalibracija'>Kalibracija věrodostojnosti</h2>\n");
     let _ = write!(
         calib,
-        "  <p>Korpusne rekonstrukcije koristajų izotonično kalibrovanu věrojętnosť oficialnogo semantičnogo pokryća; negativa ne znači jezyčnu nepravilnosť.</p>\n  <table class='wikitable'><tbody>\n  <tr><th>Naučeno na</th><td>{}</td></tr>\n  <tr><th>Score-domain</th><td><code>{}</code></td></tr>\n  <tr><th>ECE na odloženoj četvrtině</th><td>{:.3}</td></tr>\n  <tr><th>predlog p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  <tr><th>pregled p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  </tbody></table>\n",
+        "  <p>Korpusne rekonstrukcije koristajų izotonično kalibrovany bezuslovny proxy oficialnogo semantičnogo pokryća; negativa ne znači jezyčnu nepravilnosť. Operacijne točky niže sųt měrjene prěd slovničnym filtrom i ne sųt točnost spiska neoficialnyh predlogov.</p>\n  <table class='wikitable'><tbody>\n  <tr><th>Naučeno na</th><td>{}</td></tr>\n  <tr><th>Score-domain</th><td><code>{}</code></td></tr>\n  <tr><th>ECE na odloženoj četvrtině</th><td>{:.3}</td></tr>\n  <tr><th>predlog p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  <tr><th>pregled p≥{:.1}</th><td>{:.1}% točnost / {:.1}% pokrytje</td></tr>\n  </tbody></table>\n",
         esc(&cal.provenance.fitted_on), esc(&cal.score_domain), cal.calibrated_holdout.ece,
         cal.propose.threshold, 100.0 * cal.propose.precision, 100.0 * cal.propose.coverage,
         cal.review.threshold, 100.0 * cal.review.precision, 100.0 * cal.review.coverage,
