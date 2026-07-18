@@ -322,8 +322,34 @@ impl DeterministicEntryIds {
     }
 }
 
+/// Normalized comma/semicolon/slash-delimited gloss alternatives. A leading
+/// English infinitive marker is removed (`to have` → `have`), while an internal
+/// `to` is retained (`have to` stays distinct), so modal and lexical senses do
+/// not collapse merely because the content-token matcher drops stopwords.
+fn gloss_alternatives(gloss: &str) -> Vec<String> {
+    let mut alternatives: Vec<String> = gloss
+        .split([',', ';', '/'])
+        .filter_map(|part| {
+            let mut words: Vec<String> = part
+                .to_lowercase()
+                .split(|c: char| !c.is_alphabetic())
+                .filter(|word| !word.is_empty())
+                .map(str::to_string)
+                .collect();
+            if words.first().is_some_and(|word| word == "to") {
+                words.remove(0);
+            }
+            (!words.is_empty()).then(|| words.join(" "))
+        })
+        .collect();
+    alternatives.sort();
+    alternatives.dedup();
+    alternatives
+}
+
 /// Select an official sense only with positive lexical evidence. Exact/folded
 /// spelling is a candidate lookup, not enough by itself to establish identity.
+/// Equal best semantic scores abstain rather than depending on CSV row order.
 fn select_official_entry(
     rows: &[usize],
     official_entries: &[OfficialEntry],
@@ -332,20 +358,28 @@ fn select_official_entry(
 ) -> Option<usize> {
     let set_tokens = crate::dump::gloss_tokens(set_gloss);
     let set_compact = set_tokens.join("");
-    let scored: Vec<(usize, (usize, bool))> = rows
+    let set_alternatives = gloss_alternatives(set_gloss);
+    let scored: Vec<(usize, (bool, usize, bool))> = rows
         .iter()
         .copied()
         .filter(|&i| official_entries[i].pos == pos)
         .map(|i| {
-            let gloss = crate::dump::gloss_tokens(&official_entries[i].english);
+            let official_gloss = &official_entries[i].english;
+            let gloss = crate::dump::gloss_tokens(official_gloss);
             let overlap = set_tokens.iter().filter(|t| gloss.contains(t)).count();
             // Wiktionaries vary compounds freely (fairy tale/fairytale,
             // feather grass/feathergrass). Joined content-token equality is a
             // positive semantic discriminator without admitting unrelated POS.
             let compound_match = !set_compact.is_empty() && set_compact == gloss.join("");
-            (i, (overlap, compound_match))
+            let official_alternatives = gloss_alternatives(official_gloss);
+            let exact_alternative = set_alternatives
+                .iter()
+                .any(|alternative| official_alternatives.contains(alternative));
+            (i, (exact_alternative, overlap, compound_match))
         })
-        .filter(|(_, (overlap, compound_match))| *overlap > 0 || *compound_match)
+        .filter(|(_, (exact_alternative, overlap, compound_match))| {
+            *exact_alternative || *overlap > 0 || *compound_match
+        })
         .collect();
     let best_score = scored.iter().map(|(_, score)| *score).max()?;
     let mut winners = scored
@@ -353,8 +387,6 @@ fn select_official_entry(
         .filter(|(_, score)| *score == best_score)
         .map(|(i, _)| *i);
     let winner = winners.next()?;
-    // An equal semantic score is unresolved ambiguity, not permission to make
-    // CSV row order part of official lexical identity.
     winners.next().is_none().then_some(winner)
 }
 
@@ -9869,6 +9901,13 @@ mod tests {
             .collect();
         assert!(imati_senses.contains("417") && imati_senses.contains("875"));
         assert!(spelling_index.contains_fold("imati"));
+        let imati_sense =
+            select_official_entry(&imati_indices, &entries, crate::model::Pos::Verb, "to have")
+                .unwrap();
+        assert_eq!(
+            entries[imati_sense].id, "875",
+            "leading infinitive `to have` must not collapse into modal `have to`"
+        );
 
         // Government annotations sanitize to the same citation spelling for
         // several senses. Equal semantic evidence must abstain rather than
