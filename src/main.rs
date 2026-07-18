@@ -1,59 +1,21 @@
 //! Interslavic Wiktionary Lab — evidence-based candidate generation.
 //!
 //! Main subcommands (see `Command` below for the full list):
-//!   * `export`    — generate the static site (cognate-set dictionary) from the
-//!                   committed caches; `make serve` previews it locally.
+//!   * `export` — generate the static site (cognate-set dictionary) from the
+//!     committed caches; `make serve` previews it locally.
 //!   * `extract-*` — stream the Wiktextract dumps into the committed caches.
 //!   * `evaluate`  — reproducible benchmark against the official dictionary.
 //!   * `explain`   — print the generator's full reasoning for one word/gloss.
 //!   * `check-text` — verify an Interslavic text against the lexicon.
 
-// The data model and orthography/linguistics helpers intentionally expose a
-// broader API surface (evidence relations, alternate configs, helper accessors)
-// than any single code path uses; keep them without dead-code noise.
-#![allow(dead_code)]
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use interslavic_wiktionary_lab::{
+    check, derive, dump, enrich, eval, inflect_eval, official, site, DEFAULT_DUMP,
+    DEFAULT_ENRICH_CACHE, DEFAULT_LEMMA_CACHE, DEFAULT_OFFICIAL, DEFAULT_PROTO_CACHE,
+    DEFAULT_RAW_LEMMA_CACHE, DEFAULT_WIKI_DIR,
+};
 use std::path::PathBuf;
-
-mod aspect;
-mod calibrate;
-mod check;
-mod consensus;
-mod corpus;
-mod derive;
-mod dump;
-mod enrich;
-mod eval;
-mod flavorize;
-mod forms;
-mod generator;
-mod glossxref;
-mod lang;
-mod model;
-mod morph;
-mod normalize;
-mod official;
-mod orthography;
-mod overrides;
-mod pipeline;
-mod proto;
-mod proto_link;
-mod site;
-mod thesaurus;
-
-pub const DEFAULT_DUMP: &str = "/Users/kisaczka/Desktop/code/wikidata/raw-wiktextract-data.jsonl";
-const DEFAULT_OFFICIAL: &str = "data/official-isv.csv";
-const DEFAULT_OVERRIDES: &str = "data/overrides.toml";
-const DEFAULT_PROTO_CACHE: &str = "data/proto-slavic.cache.json";
-pub const DEFAULT_LEMMA_CACHE: &str = "data/slavic-lemmas.cache.json";
-/// RAW single-token Slavic lemma cache (issue #33). Distinct from
-/// `DEFAULT_LEMMA_CACHE`: this is the evidence-free extraction and must never be
-/// read by the benchmark path.
-pub const DEFAULT_RAW_LEMMA_CACHE: &str = "data/raw-slavic-lemmas.cache.json";
-const DEFAULT_ENRICH_CACHE: &str = "data/wiktionary-enrich.cache.json";
-const DEFAULT_WIKI_DIR: &str = "/Users/kisaczka/Desktop/code/wikidata";
 
 #[derive(Parser)]
 #[command(
@@ -313,7 +275,7 @@ fn main() -> Result<()> {
         Command::MultiwordEval { official, out } => eval::run_multiword_eval(&official, &out),
         Command::AspectEval { official, out } => eval::run_aspect_eval(&official, &out),
         Command::EvidenceEval { official, out } => eval::run_evidence_eval(&official, &out),
-        Command::InflectEval { official, out } => site::run_inflect_eval(&official, &out),
+        Command::InflectEval { official, out } => inflect_eval::run_inflect_eval(&official, &out),
         Command::CheckText {
             file,
             json,
