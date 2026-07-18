@@ -17,7 +17,7 @@ artifact = json.loads(artifact_path.read_text())
 assert artifact["schema_version"] == 1
 assert artifact["score_domain"] == "corpus-coverage-score-v1"
 assert artifact["score_model_version"] == "coverage-languages-branches-v1"
-assert artifact["label_policy_version"] == "official-pos-semantic-proxy-v1"
+assert artifact["label_policy_version"] == "official-pos-semantic-proxy-byforms-v2"
 assert artifact["split_policy"] == "fnv1a-id-mod-4-holdout-v1"
 assert artifact["algorithm_version"] == "decile-pava-train-only-v1"
 sha256 = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -137,22 +137,22 @@ def normalized_pos(pos_raw: str):
     return "other"
 
 
-expected_senses, expected_aspects, official_spellings, proposal_exclusion_senses = {}, {}, set(), set()
+expected_senses, expected_aspects, official_spellings = {}, {}, set()
 with official_path.open(newline="") as handle:
     for row in csv.DictReader(handle):
         title = row["isv"].strip()
         if not title or "#" in title: continue
         key, gloss, sense_id = title.lower(), row["en"].strip(), row["id"]
-        official_spellings.add(key)
+        # A generated page matched to a comma-separated byform is titled with
+        # the individual spelling; an unmatched official-only page retains the
+        # source cell. Both represent the same source sense.
+        accepted_titles = {key, *(part.strip().lower() for part in title.split(",") if part.strip())}
+        official_spellings.update(accepted_titles)
         pos = normalized_pos(row["partOfSpeech"])
-        expected_senses[sense_id] = (key, gloss, pos)
-        if " " not in title and "#" not in title:
-            proposal_exclusion_senses.add(sense_id)
+        expected_senses[sense_id] = (accepted_titles, gloss, pos)
         value = aspect(row["partOfSpeech"])
-        if value: expected_aspects[sense_id] = (key, gloss, pos, value)
+        if value: expected_aspects[sense_id] = (accepted_titles, gloss, pos, value)
 
-missing = sorted(title for title in official_spellings if not any(e["official"] for e in by_title.get(title, [])))
-assert not missing, ("exact official spellings missing from export", missing[:20], len(missing))
 actual_senses, actual_entries = {}, {}
 for entry in entries:
     if not entry["official"]:
@@ -162,10 +162,16 @@ for entry in entries:
     assert sense_id and sense_id not in actual_senses
     actual_senses[sense_id] = (entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"])
     actual_entries[sense_id] = entry
-assert actual_senses == expected_senses, ("official source senses differ", list((expected_senses.items() ^ actual_senses.items()))[:20])
+assert actual_senses.keys() == expected_senses.keys(), "official source sense IDs differ"
+for sense_id, (actual_title, actual_gloss, actual_pos) in actual_senses.items():
+    accepted_titles, expected_gloss, expected_pos = expected_senses[sense_id]
+    assert actual_title in accepted_titles, ("official source spelling differs", sense_id, actual_title, accepted_titles)
+    assert (actual_gloss, actual_pos) == (expected_gloss, expected_pos), ("official source sense differs", sense_id)
 for sense_id, expected in expected_aspects.items():
     entry = actual_entries[sense_id]
-    assert (entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"], entry["aspect"]) == expected
+    accepted_titles, gloss, pos, value = expected
+    assert entry["title"].strip().lower() in accepted_titles
+    assert (entry["gloss"].strip(), entry["pos"], entry["aspect"]) == (gloss, pos, value)
 
 by_id = {entry["id"]: entry for entry in entries}
 assert len(by_id) == len(entries), "duplicate entries.json IDs"
@@ -190,7 +196,7 @@ for shard_path in sorted((root / "api/forms").glob("*.json")):
             if row[2] != 0: assert row[2] in by_id
             entry = by_id.get(row[2])
             if (row[5] == "lemma" and row[6] in {"official", "official-only"}
-                    and entry and entry.get("official_id") in proposal_exclusion_senses):
+                    and entry and entry.get("official_id")):
                 official_fold_keys.add(key)
 
 historical_names = ("starocŕkovnoslovjansky", "starovȯstočnoslovjansky")
@@ -210,6 +216,9 @@ assert proposals, "calibrated proposal worklist is empty"
 for row in proposals:
     proxy = float(row["coverage_proxy"])
     assert proxy >= .3 and row["bucket"] == ("predlog" if proxy >= .6 else "pregled")
+    assert row["form"].strip().lower() not in official_spellings, (
+        "official citation form leaked into proposal worklist", row["form"]
+    )
 
 # The proposal form itself is a folded router key for its citation-form API row.
 # Compare as a multiset after looking up generated entries and excluding every

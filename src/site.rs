@@ -437,12 +437,20 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // Prefer an exact scientific spelling. A folded match is accepted only
         // when every row under that fold has the same exact spelling;
         // otherwise distinct lexemes get separate official-only pages.
-        let matched: Option<OfficialMatch> = official_index
-            .match_candidates(&g.candidates, &official_entries, g.set.pos, &g.set.gloss)
-            .map(|m| OfficialMatch {
-                rank: m.candidate_rank,
-                entry: m.sense_index,
-            });
+        let reference_match = official_index.match_candidates(
+            &g.candidates,
+            &official_entries,
+            g.set.pos,
+            &g.set.gloss,
+        );
+        let display = reference_match
+            .as_ref()
+            .map(|m| m.spelling.clone())
+            .unwrap_or_else(|| form.clone());
+        let matched: Option<OfficialMatch> = reference_match.map(|m| OfficialMatch {
+            rank: m.candidate_rank,
+            entry: m.sense_index,
+        });
         if matched.is_some() {
             official += 1;
         }
@@ -451,9 +459,6 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         } else {
             MatchStatus::NoOfficialEntry
         };
-        let display = matched
-            .map(|m| official_entries[m.entry].isv.trim().to_string())
-            .unwrap_or_else(|| form.clone());
         prepared.push(Prepared {
             // Assigned only after homograph demotion and suppression finalize
             // this page's rendered identity.
@@ -644,6 +649,13 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     for p in &prepared {
         if !p.suppressed {
             isv_to_id.insert(&p.display, p.id);
+            if let Some(m) = p.matched {
+                for spelling in official_entries[m.entry].isv.split(',').map(str::trim) {
+                    if !spelling.is_empty() && !spelling.contains('#') {
+                        isv_to_id.insert(spelling, p.id);
+                    }
+                }
+            }
         }
     }
 
@@ -768,8 +780,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.g.n_branches,
             p.g.set.borrowed,
             false,
-            p.matched
-                .map(|m| official_entries[m.entry].isv.trim().to_string()),
+            p.matched.map(|_| p.display.clone()),
             ancestor,
             langs,
             wiki_categories,
@@ -1033,16 +1044,14 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // the official lemma's synonyms for a different sense).
         let matched_entry = p.matched.map(|m| &official_entries[m.entry]);
         let synonyms = match matched_entry {
-            Some(e) => synonyms_block(e.isv.trim(), &thesaurus, &isv_to_id),
+            Some(_) => synonyms_block(&p.display, &thesaurus, &isv_to_id),
             None => String::new(),
         };
         // Word-formation family from the display headword: the official lemma
         // with its OFFICIAL part of speech when matched (the form-only match can
         // cross POS), else the reconstruction — marked as such in the block.
         let derivation = match matched_entry {
-            Some(e) => {
-                derivation_block(e.isv.trim(), e.pos, &isv_to_id, true, p.id, &mut deriv_rows)
-            }
+            Some(e) => derivation_block(&p.display, e.pos, &isv_to_id, true, p.id, &mut deriv_rows),
             None => derivation_block(
                 p.g.form(),
                 p.g.set.pos,
@@ -1089,7 +1098,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.status,
             p.matched.map(|m| {
                 let e = &official_entries[m.entry];
-                (m.rank, e.isv.trim(), e.english.as_str())
+                (m.rank, p.display.as_str(), e.english.as_str())
             }),
             official_pg,
             official_disp,
@@ -1570,83 +1579,96 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         if p.suppressed {
             continue;
         }
-        let (headword, status, gloss): (String, &'static str, String) = match p.matched {
+        let (headwords, status, gloss, pos, gender): (
+            Vec<&str>,
+            &'static str,
+            String,
+            crate::model::Pos,
+            Option<crate::model::Gender>,
+        ) = match p.matched {
             Some(m) => {
                 let e = &official_entries[m.entry];
-                (e.isv.trim().to_string(), "official", e.english.clone())
-            }
-            None => (p.g.form().to_string(), "generated", p.g.set.gloss.clone()),
-        };
-        if headword.is_empty() || headword.contains('!') {
-            continue;
-        }
-        // Sanitize the citation: generated forms can carry raw pipeline
-        // notation ("pleskati,*plěskati"), official ones government hints
-        // ("pozirati (na)") — neither belongs in a lookup key.
-        let Some(headword) = crate::forms::citation(&headword) else {
-            continue;
-        };
-        // The calibration target is official matching before this dictionary
-        // filter, so it cannot be a probability for a known-unmatched lemma.
-        let prob = None;
-        // A matched headword's paradigm uses the authoritative official POS.
-        let (pos, gender) = match p.matched {
-            Some(m) => {
-                let e = &official_entries[m.entry];
-                if crate::aspect::aspect(&e.pos_raw).is_some() {
-                    (crate::model::Pos::Verb, None)
+                let pos = if crate::aspect::aspect(&e.pos_raw).is_some() {
+                    crate::model::Pos::Verb
                 } else {
-                    (e.pos, e.noun_traits.gender)
-                }
+                    e.pos
+                };
+                (
+                    e.isv.split(',').map(str::trim).collect(),
+                    "official",
+                    e.english.clone(),
+                    pos,
+                    e.noun_traits.gender,
+                )
             }
-            None => (p.g.set.pos, None),
-        };
-        lemma_sink.add(
-            &headword,
-            "",
-            &headword,
-            p.id,
-            pos.code(),
-            "lemma",
-            status,
-            prob,
-            &gloss,
-        );
-        form_sink.add(
-            &headword,
-            "",
-            &headword,
-            p.id,
-            pos.code(),
-            "lemma",
-            status,
-            prob,
-            &gloss,
-        );
-        if status == "official" && seen_paradigm.insert(format!("{headword}|{}", pos.code())) {
-            crate::forms::paradigm_records(
-                &mut form_sink,
-                &headword,
-                pos,
-                gender,
-                p.id,
-                "official",
+            None => (
+                vec![p.g.form()],
+                "generated",
+                p.g.set.gloss.clone(),
+                p.g.set.pos,
                 None,
-                &gloss,
-            );
-            crate::forms::pronoun_numeral_records(
-                &mut form_sink,
+            ),
+        };
+        for headword in headwords {
+            if headword.is_empty() || headword.contains(['#', '!']) {
+                continue;
+            }
+            // Sanitize generated pipeline notation and official government
+            // hints. Comma-separated official byforms were split above so all
+            // variants remain authoritative aliases of the matched page.
+            let Some(headword) = crate::forms::citation(headword) else {
+                continue;
+            };
+            // The calibration target is official matching before this dictionary
+            // filter, so it cannot be a probability for a known-unmatched lemma.
+            let prob = None;
+            lemma_sink.add(
                 &headword,
-                pos,
+                "",
+                &headword,
                 p.id,
-                "official",
+                pos.code(),
+                "lemma",
+                status,
+                prob,
                 &gloss,
             );
-        }
-        // An attested (official-matched) base: derive its family later. The
-        // reconstruction path (status == "generated") is deliberately excluded.
-        if status == "official" {
-            attested_bases.push((headword.clone(), pos, p.id, gloss.clone()));
+            form_sink.add(
+                &headword,
+                "",
+                &headword,
+                p.id,
+                pos.code(),
+                "lemma",
+                status,
+                prob,
+                &gloss,
+            );
+            if status == "official" && seen_paradigm.insert(format!("{headword}|{}", pos.code())) {
+                crate::forms::paradigm_records(
+                    &mut form_sink,
+                    &headword,
+                    pos,
+                    gender,
+                    p.id,
+                    "official",
+                    None,
+                    &gloss,
+                );
+                crate::forms::pronoun_numeral_records(
+                    &mut form_sink,
+                    &headword,
+                    pos,
+                    p.id,
+                    "official",
+                    &gloss,
+                );
+            }
+            // An attested (official-matched) base: derive its family later. The
+            // reconstruction path (status == "generated") is deliberately excluded.
+            if status == "official" {
+                attested_bases.push((headword, pos, p.id, gloss.clone()));
+            }
         }
     }
     for (oid, e) in &official_only_records {
@@ -1960,12 +1982,18 @@ fn build_corpus_render_index(
             continue;
         }
         id += 1;
-        let matched: Option<(usize, usize)> = official_index
-            .match_candidates(&g.candidates, official_entries, g.set.pos, &g.set.gloss)
-            .map(|m| (m.candidate_rank, m.sense_index));
-        let display = matched
-            .map(|(_, i)| official_entries[i].isv.trim().to_string())
+        let reference_match = official_index.match_candidates(
+            &g.candidates,
+            official_entries,
+            g.set.pos,
+            &g.set.gloss,
+        );
+        let display = reference_match
+            .as_ref()
+            .map(|m| m.spelling.clone())
             .unwrap_or_else(|| form.clone());
+        let matched: Option<(usize, usize)> =
+            reference_match.map(|m| (m.candidate_rank, m.sense_index));
         prepared.push(CovPrepared {
             id,
             g,
@@ -2054,6 +2082,13 @@ fn build_corpus_render_index(
             continue;
         }
         isv_to_id.insert(&p.display, p.id);
+        if let Some((_, entry)) = p.matched {
+            for spelling in official_entries[entry].isv.split(',').map(str::trim) {
+                if !spelling.is_empty() && !spelling.contains('#') {
+                    isv_to_id.insert(spelling, p.id);
+                }
+            }
+        }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
         }

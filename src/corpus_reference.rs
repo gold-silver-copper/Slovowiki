@@ -16,28 +16,49 @@ pub struct OfficialMatch {
     pub sense_index: usize,
     /// Stable official dictionary sense identifier.
     pub sense_id: String,
+    /// The individual official citation spelling that matched. Dictionary rows
+    /// may list comma-separated byforms (for example `iměti, imati`).
+    pub spelling: String,
+}
+
+#[derive(Debug, Clone)]
+struct IndexedSpelling {
+    sense_index: usize,
+    spelling: String,
 }
 
 pub struct OfficialIndex {
-    exact: HashMap<String, Vec<usize>>,
-    folded: HashMap<String, Vec<usize>>,
+    exact: HashMap<String, Vec<IndexedSpelling>>,
+    folded: HashMap<String, Vec<IndexedSpelling>>,
 }
 
 impl OfficialIndex {
     pub fn new(entries: &[OfficialEntry]) -> Self {
-        let mut exact: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut folded: HashMap<String, Vec<usize>> = HashMap::new();
-        for (i, entry) in entries.iter().enumerate() {
-            let spelling = entry.isv.trim();
-            if spelling.is_empty() || spelling.contains(' ') || spelling.contains('#') {
-                continue;
+        let mut exact: HashMap<String, Vec<IndexedSpelling>> = HashMap::new();
+        let mut folded: HashMap<String, Vec<IndexedSpelling>> = HashMap::new();
+        for (sense_index, entry) in entries.iter().enumerate() {
+            // About 230 dictionary rows list byform variants in one CSV cell.
+            // They are separate citation spellings everywhere else in the API,
+            // so index each one independently rather than mistaking the space
+            // after the comma for a multi-word lemma.
+            for spelling in entry.isv.split(',').map(str::trim) {
+                if spelling.is_empty() || spelling.contains(' ') || spelling.contains('#') {
+                    continue;
+                }
+                let lower = spelling.to_lowercase();
+                let indexed = IndexedSpelling {
+                    sense_index,
+                    spelling: spelling.to_string(),
+                };
+                exact
+                    .entry(lower.clone())
+                    .or_default()
+                    .push(indexed.clone());
+                folded
+                    .entry(crate::orthography::to_standard(&lower))
+                    .or_default()
+                    .push(indexed);
             }
-            let lower = spelling.to_lowercase();
-            exact.entry(lower.clone()).or_default().push(i);
-            folded
-                .entry(crate::orthography::to_standard(&lower))
-                .or_default()
-                .push(i);
         }
         Self { exact, folded }
     }
@@ -53,11 +74,12 @@ impl OfficialIndex {
         gloss: &str,
     ) -> Option<OfficialMatch> {
         candidates.iter().take(5).enumerate().find_map(|(rank, c)| {
-            self.match_form(&c.form, entries, pos, gloss)
-                .map(|sense_index| OfficialMatch {
+            self.match_form_with_spelling(&c.form, entries, pos, gloss)
+                .map(|matched| OfficialMatch {
                     candidate_rank: rank + 1,
-                    sense_id: entries[sense_index].id.clone(),
-                    sense_index,
+                    sense_id: entries[matched.sense_index].id.clone(),
+                    sense_index: matched.sense_index,
+                    spelling: matched.spelling,
                 })
         })
     }
@@ -69,6 +91,17 @@ impl OfficialIndex {
         pos: Pos,
         gloss: &str,
     ) -> Option<usize> {
+        self.match_form_with_spelling(form, entries, pos, gloss)
+            .map(|matched| matched.sense_index)
+    }
+
+    fn match_form_with_spelling(
+        &self,
+        form: &str,
+        entries: &[OfficialEntry],
+        pos: Pos,
+        gloss: &str,
+    ) -> Option<IndexedSpelling> {
         let lower = form.trim().to_lowercase();
         let rows = if let Some(rows) = self.exact.get(&lower) {
             rows.as_slice()
@@ -77,14 +110,20 @@ impl OfficialIndex {
                 .folded
                 .get(&crate::orthography::to_standard(&lower))?
                 .as_slice();
-            let mut spellings = rows.iter().map(|&i| entries[i].isv.trim().to_lowercase());
+            let mut spellings = rows.iter().map(|row| row.spelling.to_lowercase());
             let first = spellings.next()?;
             if spellings.any(|spelling| spelling != first) {
                 return None;
             }
             rows
         };
-        select_official_entry(rows, entries, pos, gloss)
+        let mut senses: Vec<usize> = rows.iter().map(|row| row.sense_index).collect();
+        senses.sort_unstable();
+        senses.dedup();
+        let sense_index = select_official_entry(&senses, entries, pos, gloss)?;
+        rows.iter()
+            .find(|row| row.sense_index == sense_index)
+            .cloned()
     }
 
     pub fn contains_fold(&self, form: &str) -> bool {
@@ -164,6 +203,30 @@ mod tests {
             index.match_form("bajka", &entries, Pos::Noun, "machine"),
             None
         );
+    }
+
+    #[test]
+    fn comma_separated_byforms_are_individual_official_spellings() {
+        let entries = vec![entry("1", "iměti, imati", Pos::Verb, "have, possess, own")];
+        let index = OfficialIndex::new(&entries);
+        assert_eq!(
+            index.match_form("imati", &entries, Pos::Verb, "to have"),
+            Some(0)
+        );
+        assert_eq!(
+            index.match_form("iměti", &entries, Pos::Verb, "to have"),
+            Some(0)
+        );
+        assert!(index.contains_fold("imati"));
+        let candidate = Candidate::new(
+            "imati".into(),
+            crate::model::CandidateSource::BranchConsensus,
+            0.9,
+        );
+        let matched = index
+            .match_candidates(&[candidate], &entries, Pos::Verb, "to have")
+            .unwrap();
+        assert_eq!(matched.spelling, "imati");
     }
 
     #[test]
