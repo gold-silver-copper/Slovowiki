@@ -43,6 +43,24 @@ pub struct OfficialEntry {
 }
 
 impl OfficialEntry {
+    /// Individual authoritative citation forms from the dictionary's `isv`
+    /// cell. About 230 rows encode byforms as comma-separated spellings
+    /// (`iměti, imati`); they are lexical aliases, not one lemma containing a
+    /// comma. Coinage-flagged rows are excluded as a whole, while exclamatory
+    /// notation is excluded per form. Parenthesized government hints are
+    /// stripped by the same citation sanitizer used by the forms API.
+    pub fn citation_forms(&self) -> Vec<String> {
+        if self.isv.contains('#') {
+            return Vec::new();
+        }
+        self.isv
+            .split(',')
+            .map(str::trim)
+            .filter(|form| !form.is_empty() && !form.contains('!'))
+            .filter_map(crate::forms::citation)
+            .collect()
+    }
+
     /// True when the lemma is a single inflectable word we can benchmark on
     /// (skip multi-word phrases, coinage-flagged forms, bracketed notes).
     pub fn is_benchmarkable(&self) -> bool {
@@ -120,6 +138,123 @@ impl OfficialEntry {
                     .any(|code| crate::lang::branch_of(code) == Some(*branch))
             })
             .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct IndexedCitation {
+    sense_index: usize,
+    spelling: String,
+}
+
+/// Exact-first index over individual official citation byforms. Standard
+/// folding is lookup convenience, never lexical identity: a folded lookup is
+/// accepted only when every indexed row under that fold has the same exact
+/// official spelling.
+pub struct OfficialSpellingIndex {
+    exact: HashMap<String, Vec<IndexedCitation>>,
+    folded: HashMap<String, Vec<IndexedCitation>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfficialCitationMatch {
+    pub sense_index: usize,
+    pub spelling: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfficialSpellingMatch {
+    citations: Vec<OfficialCitationMatch>,
+}
+
+impl OfficialSpellingMatch {
+    pub fn sense_indices(&self) -> Vec<usize> {
+        let mut sense_indices: Vec<usize> = self
+            .citations
+            .iter()
+            .map(|citation| citation.sense_index)
+            .collect();
+        sense_indices.sort_unstable();
+        sense_indices.dedup();
+        sense_indices
+    }
+
+    /// Canonical citation spelling belonging to the selected official sense.
+    /// Keeping this association prevents a case-insensitive lookup bucket from
+    /// lending another sense's casing (`lev` lion vs `Lev` Leo).
+    pub fn spelling_for(&self, sense_index: usize) -> Option<&str> {
+        self.citations
+            .iter()
+            .find(|citation| citation.sense_index == sense_index)
+            .map(|citation| citation.spelling.as_str())
+    }
+}
+
+impl OfficialSpellingIndex {
+    pub fn new(entries: &[OfficialEntry]) -> Self {
+        let mut exact: HashMap<String, Vec<IndexedCitation>> = HashMap::new();
+        let mut folded: HashMap<String, Vec<IndexedCitation>> = HashMap::new();
+        for (sense_index, entry) in entries.iter().enumerate() {
+            for spelling in entry
+                .citation_forms()
+                .into_iter()
+                .filter(|spelling| !spelling.contains(' '))
+            {
+                let lower = spelling.to_lowercase();
+                let indexed = IndexedCitation {
+                    sense_index,
+                    spelling,
+                };
+                exact
+                    .entry(lower.clone())
+                    .or_default()
+                    .push(indexed.clone());
+                folded
+                    .entry(crate::orthography::to_standard(&lower))
+                    .or_default()
+                    .push(indexed);
+            }
+        }
+        Self { exact, folded }
+    }
+
+    pub fn lookup(&self, form: &str) -> Option<OfficialSpellingMatch> {
+        let lower = form.trim().to_lowercase();
+        let rows = if let Some(rows) = self.exact.get(&lower) {
+            rows.as_slice()
+        } else {
+            let rows = self
+                .folded
+                .get(&crate::orthography::to_standard(&lower))?
+                .as_slice();
+            let mut spellings = rows.iter().map(|row| row.spelling.to_lowercase());
+            let first = spellings.next()?;
+            if spellings.any(|spelling| spelling != first) {
+                return None;
+            }
+            rows
+        };
+        let mut citations: Vec<OfficialCitationMatch> = Vec::new();
+        for row in rows {
+            if !citations.iter().any(|citation| {
+                citation.sense_index == row.sense_index && citation.spelling == row.spelling
+            }) {
+                citations.push(OfficialCitationMatch {
+                    sense_index: row.sense_index,
+                    spelling: row.spelling.clone(),
+                });
+            }
+        }
+        (!citations.is_empty()).then_some(OfficialSpellingMatch { citations })
+    }
+
+    /// Whether any official single-word citation occupies this folded spelling.
+    /// Used only for exclusion/deduplication, where ambiguity still means the
+    /// spelling is already official.
+    pub fn contains_fold(&self, form: &str) -> bool {
+        self.folded.contains_key(&crate::orthography::to_standard(
+            &form.trim().to_lowercase(),
+        ))
     }
 }
 
@@ -287,6 +422,58 @@ mod tests {
         assert_eq!(langs("ps"), Vec::<&str>::new());
         assert_eq!(langs("j yu mk"), vec!["bg", "bs", "hr", "mk", "sl", "sr"]);
         assert_eq!(langs(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn citation_byforms_are_indexed_individually_and_safely() {
+        let mut byforms = entry_with_same_in("");
+        byforms.isv = "iměti, imati".into();
+        assert_eq!(byforms.citation_forms(), ["iměti", "imati"]);
+        let mut adjective_byforms = entry_with_same_in("");
+        adjective_byforms.isv = "poslědnji, poslědny".into();
+        let index = OfficialSpellingIndex::new(&[byforms, adjective_byforms]);
+        assert_eq!(
+            index.lookup("imati").unwrap().spelling_for(0),
+            Some("imati")
+        );
+        assert_eq!(index.lookup("iměti").unwrap().sense_indices(), [0]);
+        assert_eq!(index.lookup("poslědnji").unwrap().sense_indices(), [1]);
+        assert_eq!(
+            index.lookup("poslědny").unwrap().spelling_for(1),
+            Some("poslědny")
+        );
+        assert!(index.contains_fold("imati"));
+
+        let mut governed = entry_with_same_in("");
+        governed.isv = "pozirati (na)".into();
+        assert_eq!(governed.citation_forms(), ["pozirati"]);
+
+        let mut flagged = entry_with_same_in("");
+        flagged.isv = "#izstava, izstavka".into();
+        assert!(flagged.citation_forms().is_empty());
+    }
+
+    #[test]
+    fn exact_lookup_keeps_canonical_spelling_bound_to_its_sense() {
+        let mut common = entry_with_same_in("");
+        common.isv = "lev".into();
+        let mut proper = entry_with_same_in("");
+        proper.isv = "Lev".into();
+        let index = OfficialSpellingIndex::new(&[common, proper]);
+        let matched = index.lookup("lev").unwrap();
+        assert_eq!(matched.sense_indices(), [0, 1]);
+        assert_eq!(matched.spelling_for(0), Some("lev"));
+        assert_eq!(matched.spelling_for(1), Some("Lev"));
+    }
+
+    #[test]
+    fn folded_spelling_lookup_abstains_on_distinct_official_spellings() {
+        let mut first = entry_with_same_in("");
+        first.isv = "dŕžati".into();
+        let mut second = entry_with_same_in("");
+        second.isv = "držati".into();
+        let index = OfficialSpellingIndex::new(&[first, second]);
+        assert!(index.lookup("drzati").is_none());
     }
 
     #[test]

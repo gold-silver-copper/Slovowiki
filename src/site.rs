@@ -322,8 +322,44 @@ impl DeterministicEntryIds {
     }
 }
 
+/// Normalized comma/semicolon/slash-delimited gloss alternatives. A leading
+/// English infinitive marker is removed (`to have` → `have`), while an internal
+/// `to` is retained (`have to` stays distinct), so modal and lexical senses do
+/// not collapse merely because the content-token matcher drops stopwords.
+fn gloss_alternatives(gloss: &str) -> Vec<String> {
+    let mut alternatives: Vec<String> = gloss
+        .split([',', ';', '/'])
+        .filter_map(|part| {
+            let mut words: Vec<String> = part
+                .to_lowercase()
+                .split(|c: char| !c.is_alphabetic())
+                .filter(|word| !word.is_empty())
+                .map(str::to_string)
+                .collect();
+            if words.first().is_some_and(|word| word == "to") {
+                words.remove(0);
+            }
+            (!words.is_empty()).then(|| words.join(" "))
+        })
+        .collect();
+    alternatives.sort();
+    alternatives.dedup();
+    alternatives
+}
+
+/// Whether two corpus glosses describe the same broad concept. This is used
+/// only after both sets independently selected the same official sense: shared
+/// content then means duplicate evidence for one page, while disjoint content
+/// remains a generated homographic page.
+fn glosses_overlap(a: &str, b: &str) -> bool {
+    let a = crate::dump::gloss_tokens(a);
+    let b = crate::dump::gloss_tokens(b);
+    !a.is_empty() && a.iter().any(|token| b.contains(token))
+}
+
 /// Select an official sense only with positive lexical evidence. Exact/folded
 /// spelling is a candidate lookup, not enough by itself to establish identity.
+/// Equal best semantic scores abstain rather than depending on CSV row order.
 fn select_official_entry(
     rows: &[usize],
     official_entries: &[OfficialEntry],
@@ -332,21 +368,36 @@ fn select_official_entry(
 ) -> Option<usize> {
     let set_tokens = crate::dump::gloss_tokens(set_gloss);
     let set_compact = set_tokens.join("");
-    rows.iter()
+    let set_alternatives = gloss_alternatives(set_gloss);
+    let scored: Vec<(usize, (bool, usize, bool))> = rows
+        .iter()
         .copied()
         .filter(|&i| official_entries[i].pos == pos)
         .map(|i| {
-            let gloss = crate::dump::gloss_tokens(&official_entries[i].english);
+            let official_gloss = &official_entries[i].english;
+            let gloss = crate::dump::gloss_tokens(official_gloss);
             let overlap = set_tokens.iter().filter(|t| gloss.contains(t)).count();
             // Wiktionaries vary compounds freely (fairy tale/fairytale,
             // feather grass/feathergrass). Joined content-token equality is a
             // positive semantic discriminator without admitting unrelated POS.
             let compound_match = !set_compact.is_empty() && set_compact == gloss.join("");
-            (i, overlap, compound_match)
+            let official_alternatives = gloss_alternatives(official_gloss);
+            let exact_alternative = set_alternatives
+                .iter()
+                .any(|alternative| official_alternatives.contains(alternative));
+            (i, (exact_alternative, overlap, compound_match))
         })
-        .filter(|(_, overlap, compound_match)| *overlap > 0 || *compound_match)
-        .max_by_key(|(_, overlap, compound_match)| (*overlap, *compound_match))
-        .map(|(i, _, _)| i)
+        .filter(|(_, (exact_alternative, overlap, compound_match))| {
+            *exact_alternative || *overlap > 0 || *compound_match
+        })
+        .collect();
+    let best_score = scored.iter().map(|(_, score)| *score).max()?;
+    let mut winners = scored
+        .iter()
+        .filter(|(_, score)| *score == best_score)
+        .map(|(i, _)| *i);
+    let winner = winners.next()?;
+    winners.next().is_none().then_some(winner)
 }
 
 /// Generate the static site from the Wiktionary cognate-set corpus. Every set of
@@ -385,27 +436,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     }
 
     let official_entries = official::load(official_path)?;
-    // Keep exact scientific spellings distinct. Standard folding is useful for
-    // lookup, but it is not lexical identity: dŕžati/držati and legti/lęgti
-    // are different official lemmas with different meanings/aspects.
-    let mut official_by_exact: std::collections::HashMap<String, Vec<usize>> =
-        std::collections::HashMap::new();
-    let mut official_by_fold: std::collections::HashMap<String, Vec<usize>> =
-        std::collections::HashMap::new();
-    for (i, e) in official_entries.iter().enumerate() {
-        let isv = e.isv.trim();
-        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
-            continue;
-        }
-        official_by_exact
-            .entry(isv.to_lowercase())
-            .or_default()
-            .push(i);
-        official_by_fold
-            .entry(crate::orthography::to_standard(&isv.to_lowercase()))
-            .or_default()
-            .push(i);
-    }
+    // Shared exact-first identity over individual official citation byforms.
+    // Folding remains ambiguity-aware and never becomes lexical identity.
+    let official_index = crate::official::OfficialSpellingIndex::new(&official_entries);
 
     // IDs depend only on the finalized deterministic export order. No previous
     // site or compatibility registry participates in allocation.
@@ -440,9 +473,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         display: String,
         status: MatchStatus,
         matched: Option<OfficialMatch>,
-        /// A redundant same-concept duplicate (same folded form + overlapping
-        /// gloss as a better set): not rendered, kept out of search/links.
+        /// A redundant same-concept duplicate: not rendered as its own page.
         suppressed: bool,
+        /// Representative prepared-row index when this set is duplicate corpus
+        /// evidence for the same official sense. Its cognate members still route
+        /// to the representative page.
+        merged_into: Option<usize>,
     }
     impl FamilyEntry for Prepared {
         fn id(&self) -> usize {
@@ -471,34 +507,33 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // Prefer an exact scientific spelling. A folded match is accepted only
         // when every row under that fold has the same exact spelling;
         // otherwise distinct lexemes get separate official-only pages.
-        let matched: Option<OfficialMatch> =
+        let reference_match =
             g.candidates
                 .iter()
                 .take(5)
                 .enumerate()
-                .find_map(|(rank, c)| {
-                    let lower = c.form.trim().to_lowercase();
-                    let rows = if let Some(rows) = official_by_exact.get(&lower) {
-                        rows.as_slice()
-                    } else {
-                        let fold = crate::orthography::to_standard(&lower);
-                        let rows = official_by_fold.get(&fold)?.as_slice();
-                        let mut spellings = rows
-                            .iter()
-                            .map(|&i| official_entries[i].isv.trim().to_lowercase());
-                        let first = spellings.next()?;
-                        if spellings.any(|s| s != first) {
-                            return None;
-                        }
-                        rows
-                    };
-                    let entry =
-                        select_official_entry(rows, &official_entries, g.set.pos, &g.set.gloss)?;
-                    Some(OfficialMatch {
-                        rank: rank + 1,
-                        entry,
-                    })
+                .find_map(|(rank, candidate)| {
+                    let spelling_match = official_index.lookup(&candidate.form)?;
+                    let entry = select_official_entry(
+                        &spelling_match.sense_indices(),
+                        &official_entries,
+                        g.set.pos,
+                        &g.set.gloss,
+                    )?;
+                    let spelling = spelling_match.spelling_for(entry)?.to_string();
+                    Some((
+                        OfficialMatch {
+                            rank: rank + 1,
+                            entry,
+                        },
+                        spelling,
+                    ))
                 });
+        let display = reference_match
+            .as_ref()
+            .map(|(_, spelling)| spelling.clone())
+            .unwrap_or_else(|| form.clone());
+        let matched = reference_match.map(|(matched, _)| matched);
         if matched.is_some() {
             official += 1;
         }
@@ -507,9 +542,6 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         } else {
             MatchStatus::NoOfficialEntry
         };
-        let display = matched
-            .map(|m| official_entries[m.entry].isv.trim().to_string())
-            .unwrap_or_else(|| form.clone());
         prepared.push(Prepared {
             // Assigned only after homograph demotion and suppression finalize
             // this page's rendered identity.
@@ -519,6 +551,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             status,
             matched,
             suppressed: false,
+            merged_into: None,
         });
     }
 
@@ -539,9 +572,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // native word (the French-borrowed *pisati* "piss" vs the native official
     // *pisati* "write"). Each official dictionary sense may be represented by
     // at most ONE set — the one whose POS and gloss positively match that row,
-    // tie-broken by
-    // the set's score. The losing sets keep their own page but lose the official
-    // badge, so no page ever headlines an official meaning it does not carry.
+    // tie-broken by the set's score. Losing sets with overlapping corpus glosses
+    // merge into that representative as duplicate evidence; semantically disjoint
+    // collisions keep their own generated page without an official badge.
     // Display-only: the leakage-free benchmark scores `generate_set` per official
     // row directly and is completely untouched by this.
     {
@@ -565,21 +598,35 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 }
             }
         }
-        let mut demoted = 0usize;
+        let mut deduped = 0usize;
         for i in 0..prepared.len() {
             let Some(m) = prepared[i].matched else {
                 continue;
             };
             let key = official_entries[m.entry].id.clone();
-            if best.get(&key) != Some(&i) {
+            let Some(&winner) = best.get(&key) else {
+                continue;
+            };
+            if winner == i {
+                continue;
+            }
+            // Two independently matched sets with overlapping corpus glosses
+            // are evidence variants of one official concept (for example
+            // `imati`/`iměti`). Collapse the loser onto the representative;
+            // disjoint homographic sets keep a generated page without an
+            // official badge.
+            if glosses_overlap(&prepared[i].g.set.gloss, &prepared[winner].g.set.gloss) {
+                prepared[i].suppressed = true;
+                prepared[i].merged_into = Some(winner);
+            } else {
                 prepared[i].matched = None;
                 prepared[i].status = MatchStatus::NoOfficialEntry;
                 prepared[i].display = prepared[i].g.form().to_string();
-                demoted += 1;
             }
+            deduped += 1;
         }
-        println!("Deduped {demoted} duplicate official matches (one representative per dictionary sense).");
-        official -= demoted;
+        println!("Deduped {deduped} duplicate official matches (one representative per dictionary sense).");
+        official -= deduped;
     }
 
     // ---- Official-fact treatment for MATCHED entries (issue #86) ----
@@ -617,6 +664,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let mut by_form: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
+            if p.suppressed {
+                continue;
+            }
             by_form
                 .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
                 .or_default()
@@ -708,6 +758,11 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     for p in &prepared {
         if !p.suppressed {
             isv_to_id.insert(&p.display, p.id);
+            if let Some(m) = p.matched {
+                for spelling in official_entries[m.entry].citation_forms() {
+                    isv_to_id.insert(&spelling, p.id);
+                }
+            }
         }
     }
 
@@ -723,6 +778,17 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+    // A merged set has no page of its own, but its source-language evidence is
+    // still represented by the winning official-sense page.
+    for p in prepared.iter().filter(|p| p.merged_into.is_some()) {
+        let winner = p.merged_into.expect("filtered merged row");
+        if prepared[winner].suppressed {
+            continue;
+        }
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, prepared[winner].id);
         }
     }
     println!(
@@ -758,6 +824,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     }
     for (oid, e) in &official_only_records {
         isv_to_id.insert(e.isv.trim(), *oid);
+        for spelling in e.citation_forms() {
+            isv_to_id.insert(&spelling, *oid);
+        }
     }
 
     // Raw-attestation pre-pass (issue #64): load the raw corpus and decide
@@ -832,8 +901,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.g.n_branches,
             p.g.set.borrowed,
             false,
-            p.matched
-                .map(|m| official_entries[m.entry].isv.trim().to_string()),
+            p.matched.map(|_| p.display.clone()),
             ancestor,
             langs,
             wiki_categories,
@@ -1097,16 +1165,14 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // the official lemma's synonyms for a different sense).
         let matched_entry = p.matched.map(|m| &official_entries[m.entry]);
         let synonyms = match matched_entry {
-            Some(e) => synonyms_block(e.isv.trim(), &thesaurus, &isv_to_id),
+            Some(_) => synonyms_block(&p.display, &thesaurus, &isv_to_id),
             None => String::new(),
         };
         // Word-formation family from the display headword: the official lemma
         // with its OFFICIAL part of speech when matched (the form-only match can
         // cross POS), else the reconstruction — marked as such in the block.
         let derivation = match matched_entry {
-            Some(e) => {
-                derivation_block(e.isv.trim(), e.pos, &isv_to_id, true, p.id, &mut deriv_rows)
-            }
+            Some(e) => derivation_block(&p.display, e.pos, &isv_to_id, true, p.id, &mut deriv_rows),
             None => derivation_block(
                 p.g.form(),
                 p.g.set.pos,
@@ -1153,7 +1219,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             p.status,
             p.matched.map(|m| {
                 let e = &official_entries[m.entry];
-                (m.rank, e.isv.trim(), e.english.as_str())
+                (m.rank, p.display.as_str(), e.english.as_str())
             }),
             official_pg,
             official_disp,
@@ -1177,6 +1243,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // searchable too — it is already searchable on official-only pages, so
         // this closes the parity gap without touching the entry HTML.
         if let Some(e) = matched_entry {
+            add_official_byform_search_keys(&mut keys, e, &p.display);
             for tok in crate::dump::gloss_tokens(&e.english) {
                 if tok.chars().count() >= 3 && !keys.iter().any(|(k, _)| k == &tok) {
                     keys.push((tok, 6));
@@ -1208,8 +1275,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // sides in lock-step:
         //   0 id · 1 display · 2 gloss (truncated 70) · 3 pos code ·
         //   4 status O/N/R · 5 confidence V/S/N · 6 keys [[key,rank],…]
-        //   (rank 1-5 = candidate deep-link anchor, 6 = gloss-token sentinel,
-        //   no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
+        //   (rank 1-5 = candidate deep-link anchor, 6 = gloss/byform alias
+        //   sentinel with no anchor) · 7 n_langs · 8 n_branches · 9 borrowed 0/1 ·
         //   10 quality label · 11 proto ancestor · 12 razumlivost % (integer
         //   0-100, issue #79; basis = cognate members on generated rows —
         //   UNIONED with the matched official row's sameInLanguages on
@@ -1305,6 +1372,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 keys.push((k, 1));
             }
         }
+        add_official_byform_search_keys(&mut keys, e, isv);
         // The committee's per-language translations (issue #31): this makes an
         // official-only lemma findable by any of its Slavic cognate spellings —
         // Cyrillic or Latinized — plus `de`/`nl`/`eo` as lower-weight
@@ -1555,7 +1623,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }
         // A homograph-demoted entry has `matched` cleared but its form IS an
         // official lemma — never propose a word the dictionary already has.
-        if official_by_fold.contains_key(&crate::orthography::to_standard(&form.to_lowercase())) {
+        if official_index.contains_fold(form) {
             continue;
         }
         let Some(cal) = calibration.as_ref() else {
@@ -1633,87 +1701,95 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         if p.suppressed {
             continue;
         }
-        let (headword, status, gloss): (String, &'static str, String) = match p.matched {
+        let (headwords, status, gloss, pos, gender): (
+            Vec<String>,
+            &'static str,
+            String,
+            crate::model::Pos,
+            Option<crate::model::Gender>,
+        ) = match p.matched {
             Some(m) => {
                 let e = &official_entries[m.entry];
-                (e.isv.trim().to_string(), "official", e.english.clone())
-            }
-            None => (p.g.form().to_string(), "generated", p.g.set.gloss.clone()),
-        };
-        if headword.is_empty() || headword.contains('!') {
-            continue;
-        }
-        // Sanitize the citation: generated forms can carry raw pipeline
-        // notation ("pleskati,*plěskati"), official ones government hints
-        // ("pozirati (na)") — neither belongs in a lookup key.
-        let Some(headword) = crate::forms::citation(&headword) else {
-            continue;
-        };
-        let prob = if status == "generated" {
-            calibration.as_ref().map(|c| c.probability(p.g.score))
-        } else {
-            None
-        };
-        // A matched headword's paradigm must use the OFFICIAL part of speech —
-        // the form-only official match can cross POS, and a wrong-POS paradigm
-        // exported as verification-grade would be confidently wrong.
-        let (pos, gender) = match p.matched {
-            Some(m) => {
-                let e = &official_entries[m.entry];
-                if crate::aspect::aspect(&e.pos_raw).is_some() {
+                let (pos, gender) = if crate::aspect::aspect(&e.pos_raw).is_some() {
                     (crate::model::Pos::Verb, None)
                 } else {
                     (e.pos, e.noun_traits.gender)
-                }
+                };
+                (
+                    e.citation_forms(),
+                    "official",
+                    e.english.clone(),
+                    pos,
+                    gender,
+                )
             }
-            None => (p.g.set.pos, None),
-        };
-        lemma_sink.add(
-            &headword,
-            "",
-            &headword,
-            p.id,
-            pos.code(),
-            "lemma",
-            status,
-            prob,
-            &gloss,
-        );
-        form_sink.add(
-            &headword,
-            "",
-            &headword,
-            p.id,
-            pos.code(),
-            "lemma",
-            status,
-            prob,
-            &gloss,
-        );
-        if status == "official" && seen_paradigm.insert(format!("{headword}|{}", pos.code())) {
-            crate::forms::paradigm_records(
-                &mut form_sink,
-                &headword,
-                pos,
-                gender,
-                p.id,
-                "official",
+            None => (
+                vec![p.g.form().to_string()],
+                "generated",
+                p.g.set.gloss.clone(),
+                p.g.set.pos,
                 None,
-                &gloss,
-            );
-            crate::forms::pronoun_numeral_records(
-                &mut form_sink,
+            ),
+        };
+        for headword in headwords {
+            // Generated forms may still carry raw pipeline notation. Official
+            // byforms were sanitized by `citation_forms`; applying the shared
+            // sanitizer again keeps both paths intentionally identical.
+            let Some(headword) = crate::forms::citation(&headword) else {
+                continue;
+            };
+            let prob = if status == "generated" {
+                calibration.as_ref().map(|c| c.probability(p.g.score))
+            } else {
+                None
+            };
+            lemma_sink.add(
                 &headword,
-                pos,
+                "",
+                &headword,
                 p.id,
-                "official",
+                pos.code(),
+                "lemma",
+                status,
+                prob,
                 &gloss,
             );
-        }
-        // An attested (official-matched) base: derive its family later. The
-        // reconstruction path (status == "generated") is deliberately excluded.
-        if status == "official" {
-            attested_bases.push((headword.clone(), pos, p.id, gloss.clone()));
+            form_sink.add(
+                &headword,
+                "",
+                &headword,
+                p.id,
+                pos.code(),
+                "lemma",
+                status,
+                prob,
+                &gloss,
+            );
+            if status == "official" && seen_paradigm.insert(format!("{headword}|{}", pos.code())) {
+                crate::forms::paradigm_records(
+                    &mut form_sink,
+                    &headword,
+                    pos,
+                    gender,
+                    p.id,
+                    "official",
+                    None,
+                    &gloss,
+                );
+                crate::forms::pronoun_numeral_records(
+                    &mut form_sink,
+                    &headword,
+                    pos,
+                    p.id,
+                    "official",
+                    &gloss,
+                );
+            }
+            // Every byform of an official-matched base is authoritative input
+            // for derivational families; generated reconstructions stay out.
+            if status == "official" {
+                attested_bases.push((headword, pos, p.id, gloss.clone()));
+            }
         }
     }
     for (oid, e) in &official_only_records {
@@ -1722,16 +1798,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         } else {
             e.pos
         };
-        // ~230 rows list byform variants in one cell ("iměti, imati"): each
-        // variant is its own lemma (and gets its own paradigm).
-        for isv in e.isv.split(',').map(str::trim) {
-            if isv.is_empty() || isv.contains('#') || isv.contains('!') {
-                continue;
-            }
-            let Some(clean) = crate::forms::citation(isv) else {
-                continue;
-            };
-            let isv = clean.as_str();
+        // Every authoritative byform is its own lemma and paradigm alias.
+        for isv in e.citation_forms() {
+            let isv = isv.as_str();
             lemma_sink.add(
                 isv,
                 "",
@@ -2000,6 +2069,7 @@ struct CovPrepared {
     display: String,
     matched: Option<(usize, usize)>,
     suppressed: bool,
+    merged_into: Option<usize>,
 }
 
 /// Build the identity-safe headword index (`isv_to_id`) and cognate cross-reference
@@ -2017,25 +2087,7 @@ fn build_corpus_render_index(
 ) {
     let cfg = ConsensusConfig::production();
     let sets = crate::corpus::build_sets(corpus);
-
-    let mut official_by_exact: std::collections::HashMap<String, Vec<usize>> =
-        std::collections::HashMap::new();
-    let mut official_by_fold: std::collections::HashMap<String, Vec<usize>> =
-        std::collections::HashMap::new();
-    for (i, e) in official_entries.iter().enumerate() {
-        let isv = e.isv.trim();
-        if isv.is_empty() || isv.contains(' ') || isv.contains('#') {
-            continue;
-        }
-        official_by_exact
-            .entry(isv.to_lowercase())
-            .or_default()
-            .push(i);
-        official_by_fold
-            .entry(crate::orthography::to_standard(&isv.to_lowercase()))
-            .or_default()
-            .push(i);
-    }
+    let official_index = crate::official::OfficialSpellingIndex::new(official_entries);
 
     // First pass: generate every set (same as export).
     let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -2048,40 +2100,34 @@ fn build_corpus_render_index(
             continue;
         }
         id += 1;
-        let matched: Option<(usize, usize)> =
+        let reference_match =
             g.candidates
                 .iter()
                 .take(5)
                 .enumerate()
-                .find_map(|(rank, c)| {
-                    let lower = c.form.trim().to_lowercase();
-                    let rows = if let Some(rows) = official_by_exact.get(&lower) {
-                        rows.as_slice()
-                    } else {
-                        let rows = official_by_fold
-                            .get(&crate::orthography::to_standard(&lower))?
-                            .as_slice();
-                        let mut spellings = rows
-                            .iter()
-                            .map(|&i| official_entries[i].isv.trim().to_lowercase());
-                        let first = spellings.next()?;
-                        if spellings.any(|s| s != first) {
-                            return None;
-                        }
-                        rows
-                    };
-                    let i = select_official_entry(rows, official_entries, g.set.pos, &g.set.gloss)?;
-                    Some((rank + 1, i))
+                .find_map(|(rank, candidate)| {
+                    let spelling_match = official_index.lookup(&candidate.form)?;
+                    let entry = select_official_entry(
+                        &spelling_match.sense_indices(),
+                        official_entries,
+                        g.set.pos,
+                        &g.set.gloss,
+                    )?;
+                    let spelling = spelling_match.spelling_for(entry)?.to_string();
+                    Some(((rank + 1, entry), spelling))
                 });
-        let display = matched
-            .map(|(_, i)| official_entries[i].isv.trim().to_string())
+        let display = reference_match
+            .as_ref()
+            .map(|(_, spelling)| spelling.clone())
             .unwrap_or_else(|| form.clone());
+        let matched = reference_match.map(|(matched, _)| matched);
         prepared.push(CovPrepared {
             id,
             g,
             display,
             matched,
             suppressed: false,
+            merged_into: None,
         });
     }
 
@@ -2107,14 +2153,23 @@ fn build_corpus_render_index(
                 }
             }
         }
-        for (i, p) in prepared.iter_mut().enumerate() {
-            let Some((_, entry)) = p.matched else {
+        for i in 0..prepared.len() {
+            let Some((_, entry)) = prepared[i].matched else {
                 continue;
             };
             let key = official_entries[entry].id.clone();
-            if best.get(&key) != Some(&i) {
-                p.matched = None;
-                p.display = p.g.form().to_string();
+            let Some(&winner) = best.get(&key) else {
+                continue;
+            };
+            if winner == i {
+                continue;
+            }
+            if glosses_overlap(&prepared[i].g.set.gloss, &prepared[winner].g.set.gloss) {
+                prepared[i].suppressed = true;
+                prepared[i].merged_into = Some(winner);
+            } else {
+                prepared[i].matched = None;
+                prepared[i].display = prepared[i].g.form().to_string();
             }
         }
     }
@@ -2132,6 +2187,9 @@ fn build_corpus_render_index(
         let mut by_form: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
+            if p.suppressed {
+                continue;
+            }
             by_form
                 .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
                 .or_default()
@@ -2164,8 +2222,22 @@ fn build_corpus_render_index(
             continue;
         }
         isv_to_id.insert(&p.display, p.id);
+        if let Some((_, entry)) = p.matched {
+            for spelling in official_entries[entry].citation_forms() {
+                isv_to_id.insert(&spelling, p.id);
+            }
+        }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+    for p in prepared.iter().filter(|p| p.merged_into.is_some()) {
+        let winner = p.merged_into.expect("filtered merged row");
+        if prepared[winner].suppressed {
+            continue;
+        }
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, prepared[winner].id);
         }
     }
 
@@ -2178,7 +2250,6 @@ fn build_corpus_render_index(
         }
     }
     let mut official_only = 0usize;
-    let mut official_only_records: Vec<(usize, String)> = Vec::new();
     for e in official_entries {
         let isv = e.isv.trim();
         if isv.is_empty() || isv.contains('#') {
@@ -2189,10 +2260,10 @@ fn build_corpus_render_index(
         }
         id += 1;
         official_only += 1;
-        official_only_records.push((id, isv.to_string()));
-    }
-    for (oid, isv) in &official_only_records {
-        isv_to_id.insert(isv, *oid);
+        isv_to_id.insert(isv, id);
+        for spelling in e.citation_forms() {
+            isv_to_id.insert(&spelling, id);
+        }
     }
 
     (xref, isv_to_id, generated_pages, official_only)
@@ -4727,6 +4798,31 @@ fn search_keys(candidates: &[Candidate], display: &str) -> Vec<(String, usize)> 
         }
     }
     keys
+}
+
+/// Add every official citation byform and its folds as non-candidate search
+/// aliases. Rank 6 is the existing no-anchor sentinel used by gloss aliases.
+fn add_official_byform_search_keys(
+    keys: &mut Vec<(String, usize)>,
+    entry: &OfficialEntry,
+    display: &str,
+) {
+    let display = display.to_lowercase();
+    for spelling in entry.citation_forms() {
+        let lower = spelling.to_lowercase();
+        for key in [
+            lower.clone(),
+            crate::orthography::to_standard(&lower),
+            crate::orthography::ascii_skeleton(&spelling),
+        ] {
+            if key.chars().count() >= 2
+                && key != display
+                && !keys.iter().any(|(existing, _)| existing == &key)
+            {
+                keys.push((key, 6));
+            }
+        }
+    }
 }
 
 /// JSON-encode the key list as `[["kratky",2],…]` for the search index row.
@@ -9860,6 +9956,59 @@ mod tests {
             select_official_entry(&bajka_rows, &entries, crate::model::Pos::Noun, "fairy tale")
                 .unwrap();
         assert_eq!(entries[bajka].english, "fairytale");
+
+        let spelling_index = crate::official::OfficialSpellingIndex::new(&entries);
+        let imati = spelling_index.lookup("imati").unwrap();
+        let imati_indices = imati.sense_indices();
+        let imati_senses: std::collections::HashSet<&str> = imati_indices
+            .iter()
+            .map(|&i| entries[i].id.as_str())
+            .collect();
+        assert!(imati_senses.contains("417") && imati_senses.contains("875"));
+        assert!(spelling_index.contains_fold("imati"));
+        let imati_sense =
+            select_official_entry(&imati_indices, &entries, crate::model::Pos::Verb, "to have")
+                .unwrap();
+        assert_eq!(
+            entries[imati_sense].id, "875",
+            "leading infinitive `to have` must not collapse into modal `have to`"
+        );
+        let corpus =
+            crate::dump::LemmaCorpus::load(Path::new("data/slavic-lemmas.cache.json")).unwrap();
+        let (_, render_index, _, _) = build_corpus_render_index(&corpus, &entries);
+        assert_eq!(
+            render_index.exact.get("iměti").map(Vec::len),
+            Some(2),
+            "the lexical and modal official senses must be the only page claimants; duplicate corpus byform evidence must merge"
+        );
+
+        // Government annotations sanitize to the same citation spelling for
+        // several senses. Equal semantic evidence must abstain rather than
+        // selecting whichever dictionary row happens to come last.
+        let naskakati = spelling_index.lookup("naskakati").unwrap();
+        assert_eq!(
+            select_official_entry(
+                &naskakati.sense_indices(),
+                &entries,
+                crate::model::Pos::Verb,
+                "to jump [with на (na, + accusative) ‘into a fence, etc.’] while on horseback",
+            ),
+            None
+        );
+
+        let leo = entries
+            .iter()
+            .position(|entry| entry.id == "27163")
+            .unwrap();
+        assert_eq!(
+            spelling_index.lookup("lev").unwrap().spelling_for(leo),
+            Some("Lev")
+        );
+
+        let last = entries.iter().find(|entry| entry.id == "2323").unwrap();
+        let mut keys = Vec::new();
+        add_official_byform_search_keys(&mut keys, last, "poslědny");
+        assert!(keys.iter().any(|(key, _)| key == "poslědnji"));
     }
 
     #[test]

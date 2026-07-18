@@ -5,16 +5,13 @@ import csv
 import json
 import re
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else "site")
 official_path = Path(sys.argv[2] if len(sys.argv) > 2 else "data/official-isv.csv")
 entries = json.loads((root / "entries.json").read_text())
-by_title = defaultdict(list)
 url_escape = re.compile(r"%[0-9A-Fa-f]{2}")
 for entry in entries:
-    by_title[entry["title"].strip().lower()].append(entry)
     for field in ("title", "ancestor"):
         assert not url_escape.search(entry.get(field, "")), (
             "URL-escaped transport bytes leaked into linguistic text",
@@ -61,30 +58,46 @@ def aspect(pos_raw: str):
     return None
 
 
+def citation_forms(title: str):
+    if "#" in title:
+        return []
+    forms = []
+    for form in title.split(","):
+        form = form.strip()
+        if not form or "!" in form:
+            continue
+        while "(" in form and ")" in form and form.index("(") < form.index(")"):
+            start, end = form.index("("), form.index(")")
+            form = (form[:start] + form[end + 1:]).strip()
+        if form and not any(mark in form for mark in "*()"):
+            forms.append(form)
+    return forms
+
+
 expected_senses = {}
 expected_aspects = {}
 official_spellings = set()
+expected_api_byforms = set()
 with official_path.open(newline="") as handle:
     for row in csv.DictReader(handle):
         title = row["isv"].strip()
         if not title or "#" in title:
             continue
-        key = title.lower()
-        official_spellings.add(key)
+        forms = citation_forms(title)
+        accepted_titles = {title, *forms}
+        official_spellings.update(spelling.lower() for spelling in accepted_titles)
         gloss = row["en"].strip()
         sense_id = row["id"]
+        # Slash notation is expanded by the pre-existing FormRecord cell
+        # parser; issue #99 freezes only comma-separated citation byforms.
+        expected_api_byforms.update(
+            (sense_id, form.lower()) for form in forms if "/" not in form
+        )
         pos = normalized_pos(row["partOfSpeech"])
-        expected_senses[sense_id] = (key, gloss, pos)
+        expected_senses[sense_id] = (accepted_titles, gloss, pos)
         value = aspect(row["partOfSpeech"])
         if value:
-            expected_aspects[sense_id] = (key, gloss, pos, value)
-
-missing = sorted(
-    title
-    for title in official_spellings
-    if not any(entry["official"] for entry in by_title.get(title, []))
-)
-assert not missing, ("exact official spellings missing from export", missing[:20], len(missing))
+            expected_aspects[sense_id] = (accepted_titles, gloss, pos, value)
 
 actual_senses = {}
 actual_entries = {}
@@ -96,30 +109,45 @@ for entry in entries:
     assert sense_id, ("official entry lacks source sense ID", entry["id"])
     assert sense_id not in actual_senses, ("duplicate official source sense ID", sense_id)
     actual_senses[sense_id] = (
-        entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"]
+        entry["title"].strip(), entry["gloss"].strip(), entry["pos"]
     )
     actual_entries[sense_id] = entry
-assert actual_senses == expected_senses, (
-    "official source senses differ", list((expected_senses.items() ^ actual_senses.items()))[:20]
-)
+assert actual_senses.keys() == expected_senses.keys(), "official source sense IDs differ"
+for sense_id, (actual_title, actual_gloss, actual_pos) in actual_senses.items():
+    accepted_titles, expected_gloss, expected_pos = expected_senses[sense_id]
+    assert actual_title in accepted_titles, (
+        "official source spelling differs", sense_id, actual_title, accepted_titles
+    )
+    assert (actual_gloss, actual_pos) == (expected_gloss, expected_pos), (
+        "official source sense differs", sense_id
+    )
 
 for sense_id, expected in expected_aspects.items():
     entry = actual_entries[sense_id]
-    actual = (entry["title"].strip().lower(), entry["gloss"].strip(), entry["pos"], entry["aspect"])
-    assert actual == expected, ("official aspect sense mismatch", sense_id, expected, actual)
+    accepted_titles, gloss, pos, value = expected
+    assert entry["title"].strip() in accepted_titles
+    actual = (entry["gloss"].strip(), entry["pos"], entry["aspect"])
+    assert actual == (gloss, pos, value), ("official aspect sense mismatch", sense_id, expected, actual)
 
 by_id = {entry["id"]: entry for entry in entries}
 assert len(by_id) == len(entries), "duplicate entries.json IDs"
 lemmas = json.loads((root / "api/lemmas.json").read_text())["lemmas"]
+actual_api_byforms = set()
 for row in lemmas:
     entry_id = row[4]
     if entry_id != 0:
         assert entry_id in by_id, ("API lemma references missing entry", row[:6])
     entry = by_id.get(entry_id)
+    if row[2] in {"official", "official-only"} and entry and entry.get("official_id"):
+        actual_api_byforms.add((entry["official_id"], row[0].strip().lower()))
     if row[2] == "generated" and entry is not None and not entry["official"]:
         assert row[3] is None, (
             "uncalibrated corpus lemma API probability", row[:6]
         )
+missing_byforms = sorted(expected_api_byforms - actual_api_byforms)
+assert not missing_byforms, (
+    "official citation byforms missing from API", missing_byforms[:20], len(missing_byforms)
+)
 
 for shard_path in sorted((root / "api/forms").glob("*.json")):
     records = json.loads(shard_path.read_text()).get("records", {})
@@ -144,6 +172,11 @@ for proto_path in sorted((root / "proto").glob("*.html")):
 
 proposal_lines = (root / "novel-words.tsv").read_text().splitlines()
 proposal_header = "form\tpos\tprobability\tbucket\tancestor\tn_langs\tn_branches\tgloss"
+assert proposal_lines and proposal_lines[0] == proposal_header
+for line in proposal_lines[1:]:
+    assert line.split("\t", 1)[0].strip().lower() not in official_spellings, (
+        "official citation byform leaked into proposal artifact", line
+    )
 assert proposal_lines == [proposal_header], (
     "uncalibrated or malformed novel-word proposal artifact", proposal_lines[:2]
 )

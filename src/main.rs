@@ -71,6 +71,9 @@ enum Command {
     /// Generate the static website (one HTML page per meaning + client-side
     /// search) — no server, GitHub Pages hostable.
     Export {
+        /// Required Slavic-lemma corpus produced by `extract-lemmas`.
+        #[arg(long, default_value = DEFAULT_LEMMA_CACHE)]
+        lemmas: PathBuf,
         /// Official dictionary (full interslavic-dictionary.com export).
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
@@ -267,16 +270,16 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Export { official, out } => {
-            // The site is the cognate-set dictionary built from the Wiktionary
-            // Slavic-lemma corpus when it's available; otherwise fall back to the
+        Command::Export {
+            lemmas,
+            official,
+            out,
+        } => {
+            // There is one production export contract: the cognate-set site is
+            // built from the extracted Slavic-lemma corpus. Missing input is a
+            // generation error, never a signal to emit a semantically different
             // official-dictionary-seeded site.
-            let lemmas = std::path::Path::new(DEFAULT_LEMMA_CACHE);
-            if lemmas.exists() {
-                site::export_corpus(lemmas, &official, &out)
-            } else {
-                site::export(&official, &out)
-            }
+            site::export_corpus(&lemmas, &official, &out)
         }
         Command::ExtractProto { dump, out } => dump::extract(&dump, &out),
         Command::ExtractLemmas { dump, out } => dump::extract_lemmas(&dump, &out),
