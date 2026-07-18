@@ -347,6 +347,16 @@ fn gloss_alternatives(gloss: &str) -> Vec<String> {
     alternatives
 }
 
+/// Whether two corpus glosses describe the same broad concept. This is used
+/// only after both sets independently selected the same official sense: shared
+/// content then means duplicate evidence for one page, while disjoint content
+/// remains a generated homographic page.
+fn glosses_overlap(a: &str, b: &str) -> bool {
+    let a = crate::dump::gloss_tokens(a);
+    let b = crate::dump::gloss_tokens(b);
+    !a.is_empty() && a.iter().any(|token| b.contains(token))
+}
+
 /// Select an official sense only with positive lexical evidence. Exact/folded
 /// spelling is a candidate lookup, not enough by itself to establish identity.
 /// Equal best semantic scores abstain rather than depending on CSV row order.
@@ -463,9 +473,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         display: String,
         status: MatchStatus,
         matched: Option<OfficialMatch>,
-        /// A redundant same-concept duplicate (same folded form + overlapping
-        /// gloss as a better set): not rendered, kept out of search/links.
+        /// A redundant same-concept duplicate: not rendered as its own page.
         suppressed: bool,
+        /// Representative prepared-row index when this set is duplicate corpus
+        /// evidence for the same official sense. Its cognate members still route
+        /// to the representative page.
+        merged_into: Option<usize>,
     }
     impl FamilyEntry for Prepared {
         fn id(&self) -> usize {
@@ -538,6 +551,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             status,
             matched,
             suppressed: false,
+            merged_into: None,
         });
     }
 
@@ -558,9 +572,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // native word (the French-borrowed *pisati* "piss" vs the native official
     // *pisati* "write"). Each official dictionary sense may be represented by
     // at most ONE set — the one whose POS and gloss positively match that row,
-    // tie-broken by
-    // the set's score. The losing sets keep their own page but lose the official
-    // badge, so no page ever headlines an official meaning it does not carry.
+    // tie-broken by the set's score. Losing sets with overlapping corpus glosses
+    // merge into that representative as duplicate evidence; semantically disjoint
+    // collisions keep their own generated page without an official badge.
     // Display-only: the leakage-free benchmark scores `generate_set` per official
     // row directly and is completely untouched by this.
     {
@@ -584,21 +598,35 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 }
             }
         }
-        let mut demoted = 0usize;
+        let mut deduped = 0usize;
         for i in 0..prepared.len() {
             let Some(m) = prepared[i].matched else {
                 continue;
             };
             let key = official_entries[m.entry].id.clone();
-            if best.get(&key) != Some(&i) {
+            let Some(&winner) = best.get(&key) else {
+                continue;
+            };
+            if winner == i {
+                continue;
+            }
+            // Two independently matched sets with overlapping corpus glosses
+            // are evidence variants of one official concept (for example
+            // `imati`/`iměti`). Collapse the loser onto the representative;
+            // disjoint homographic sets keep a generated page without an
+            // official badge.
+            if glosses_overlap(&prepared[i].g.set.gloss, &prepared[winner].g.set.gloss) {
+                prepared[i].suppressed = true;
+                prepared[i].merged_into = Some(winner);
+            } else {
                 prepared[i].matched = None;
                 prepared[i].status = MatchStatus::NoOfficialEntry;
                 prepared[i].display = prepared[i].g.form().to_string();
-                demoted += 1;
             }
+            deduped += 1;
         }
-        println!("Deduped {demoted} duplicate official matches (one representative per dictionary sense).");
-        official -= demoted;
+        println!("Deduped {deduped} duplicate official matches (one representative per dictionary sense).");
+        official -= deduped;
     }
 
     // ---- Official-fact treatment for MATCHED entries (issue #86) ----
@@ -636,6 +664,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let mut by_form: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
+            if p.suppressed {
+                continue;
+            }
             by_form
                 .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
                 .or_default()
@@ -747,6 +778,17 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+    // A merged set has no page of its own, but its source-language evidence is
+    // still represented by the winning official-sense page.
+    for p in prepared.iter().filter(|p| p.merged_into.is_some()) {
+        let winner = p.merged_into.expect("filtered merged row");
+        if prepared[winner].suppressed {
+            continue;
+        }
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, prepared[winner].id);
         }
     }
     println!(
@@ -2027,6 +2069,7 @@ struct CovPrepared {
     display: String,
     matched: Option<(usize, usize)>,
     suppressed: bool,
+    merged_into: Option<usize>,
 }
 
 /// Build the identity-safe headword index (`isv_to_id`) and cognate cross-reference
@@ -2084,6 +2127,7 @@ fn build_corpus_render_index(
             display,
             matched,
             suppressed: false,
+            merged_into: None,
         });
     }
 
@@ -2109,14 +2153,23 @@ fn build_corpus_render_index(
                 }
             }
         }
-        for (i, p) in prepared.iter_mut().enumerate() {
-            let Some((_, entry)) = p.matched else {
+        for i in 0..prepared.len() {
+            let Some((_, entry)) = prepared[i].matched else {
                 continue;
             };
             let key = official_entries[entry].id.clone();
-            if best.get(&key) != Some(&i) {
-                p.matched = None;
-                p.display = p.g.form().to_string();
+            let Some(&winner) = best.get(&key) else {
+                continue;
+            };
+            if winner == i {
+                continue;
+            }
+            if glosses_overlap(&prepared[i].g.set.gloss, &prepared[winner].g.set.gloss) {
+                prepared[i].suppressed = true;
+                prepared[i].merged_into = Some(winner);
+            } else {
+                prepared[i].matched = None;
+                prepared[i].display = prepared[i].g.form().to_string();
             }
         }
     }
@@ -2134,6 +2187,9 @@ fn build_corpus_render_index(
         let mut by_form: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
+            if p.suppressed {
+                continue;
+            }
             by_form
                 .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
                 .or_default()
@@ -2173,6 +2229,15 @@ fn build_corpus_render_index(
         }
         for m in &p.g.set.members {
             xref.insert(&m.lang, &m.word, p.id);
+        }
+    }
+    for p in prepared.iter().filter(|p| p.merged_into.is_some()) {
+        let winner = p.merged_into.expect("filtered merged row");
+        if prepared[winner].suppressed {
+            continue;
+        }
+        for m in &p.g.set.members {
+            xref.insert(&m.lang, &m.word, prepared[winner].id);
         }
     }
 
@@ -9907,6 +9972,14 @@ mod tests {
         assert_eq!(
             entries[imati_sense].id, "875",
             "leading infinitive `to have` must not collapse into modal `have to`"
+        );
+        let corpus =
+            crate::dump::LemmaCorpus::load(Path::new("data/slavic-lemmas.cache.json")).unwrap();
+        let (_, render_index, _, _) = build_corpus_render_index(&corpus, &entries);
+        assert_eq!(
+            render_index.exact.get("iměti").map(Vec::len),
+            Some(2),
+            "the lexical and modal official senses must be the only page claimants; duplicate corpus byform evidence must merge"
         );
 
         // Government annotations sanitize to the same citation spelling for
