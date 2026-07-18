@@ -72,18 +72,10 @@ pub fn build_index(entries: &[OfficialEntry], novel_words_tsv: Option<&Path>) ->
     // rendering; no site-only copy may drift from checker behavior.
     let prep_cases = preposition_government();
     for e in entries {
-        // ~230 rows list byform variants in one cell ("iměti, imati",
-        // "srědnji, srědny") — each variant is its own lemma.
-        for isv in e.isv.split(',').map(str::trim) {
-            if isv.is_empty() || isv.contains('#') || isv.contains('!') {
-                continue;
-            }
-            // Strip government hints ("pozirati (na)") and reject raw
-            // notation, same as the site API.
-            let Some(clean) = forms::citation(isv) else {
-                continue;
-            };
-            let isv = clean.as_str();
+        // Shared parsing keeps comma-separated official byforms and citation
+        // sanitization identical to site/API identity.
+        for isv in e.citation_forms() {
+            let isv = isv.as_str();
             // Two-token lemmas (reflexive verbs AND collocations) are reachable
             // via the general bigram lookup; only 3+-token phrases stay
             // lemma-only.

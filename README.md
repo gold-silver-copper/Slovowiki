@@ -429,7 +429,9 @@ inflection tables and the machine-readable artifacts, so they cannot drift:
 - `api/forms/<n>.json` — the **sharded form index** (schema 3, ~517k analysis
   records: every official lemma + full paradigm, **declined participles,
   comparatives/superlatives with adverbs, pronoun & numeral paradigms** from
-  the STEEN-G tables, byform variants split, syncretic cells merged). Shard
+  the STEEN-G tables, byform variants split, syncretic cells merged). Comma-
+  separated official citation byforms (for example `iměti, imati`) are indexed
+  individually while retaining the same source sense and page. Shard
   routing: `n = fnv1a32(key) % 2048` over the folded key — mirrored in the
   site's client-side JS, which verifies itself against
   `api/router-selftest.json` before trusting lookups.
