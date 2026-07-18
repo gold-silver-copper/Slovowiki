@@ -404,8 +404,10 @@ cargo run --release -- checktext-eval
 # never feeds production):
 cargo run --release -- oracle
 
-# Generate the static website locally (no server; not published anywhere):
-cargo run --release -- export --out site
+# Generate the static website locally (no server; not published anywhere).
+# The Slavic-lemma corpus is required; a missing cache is a hard error rather
+# than a fallback to a different dictionary-seeded site.
+cargo run --release -- export --lemmas data/slavic-lemmas.cache.json --out site
 # Preview locally with any static server, e.g.:
 #   (cd site && python3 -m http.server 8765)   # or: make serve
 

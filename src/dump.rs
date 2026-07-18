@@ -230,8 +230,13 @@ pub struct LemmaCorpus {
 
 impl LemmaCorpus {
     pub fn load(path: &Path) -> Result<Self> {
-        let bytes =
-            read_maybe_gz(path).with_context(|| format!("open lemma corpus {}", path.display()))?;
+        let bytes = read_maybe_gz(path).with_context(|| {
+            format!(
+                "open required lemma corpus {}; generate it with `cargo run --release -- extract-lemmas --out {}`",
+                path.display(),
+                path.display()
+            )
+        })?;
         let mut corpus: Self = serde_json::from_slice(&bytes).context("parse lemma corpus")?;
         check_cache_schema(
             "lemma",

@@ -14,7 +14,7 @@ extract-proto:
 
 # One-time: stream the dump into the Slavic-lemma corpus (drives the cognate-set site).
 extract-lemmas:
-	cargo run --release -- extract-lemmas --dump "$(DUMP)"
+	cargo run --release -- extract-lemmas --dump "$(DUMP)" --out "$(LEMMAS)"
 
 # One-time: stream the dump into the RAW (evidence-free) Slavic lemma cache +
 # extraction tally (drives the site's raw-attestation pages; issue #33/#34).
@@ -53,7 +53,7 @@ aspect-eval:
 
 # Generate the static website locally (no server; not published anywhere).
 export:
-	cargo run --release -- export --out "$(SITE)"
+	cargo run --release -- export --lemmas "$(LEMMAS)" --official "$(OFFICIAL)" --out "$(SITE)"
 
 # Preview the generated static site locally (any static server works).
 serve: export
