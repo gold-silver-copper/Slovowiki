@@ -173,6 +173,17 @@ enum Command {
         /// Emit machine-readable JSON instead of the human summary.
         #[arg(long)]
         json: bool,
+        /// Emit a per-status summary and exit nonzero when the text fails the
+        /// gate (CI mode; see --max-unknown / --max-agreement).
+        #[arg(long)]
+        summary: bool,
+        /// Maximum allowed unknown tokens before --summary fails (default 0).
+        #[arg(long, default_value_t = 0)]
+        max_unknown: usize,
+        /// Maximum allowed agreement warnings before --summary fails
+        /// (default 0).
+        #[arg(long, default_value_t = 0)]
+        max_agreement: usize,
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
@@ -298,8 +309,19 @@ fn main() -> Result<()> {
         Command::CheckText {
             file,
             json,
+            summary,
+            max_unknown,
+            max_agreement,
             official,
-        } => check::run(&official, &file, json),
+        } => check::run(
+            &official,
+            &file,
+            json,
+            summary.then_some(check::SummaryGate {
+                max_unknown,
+                max_agreement,
+            }),
+        ),
         Command::ChecktextEval { official, out } => check::run_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),

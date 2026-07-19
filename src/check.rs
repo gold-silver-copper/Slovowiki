@@ -763,13 +763,59 @@ fn json_escape(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
 
-/// The `check-text` CLI entry point.
-pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
+/// Gate thresholds for `check-text --summary` (issue: downstream projects
+/// want "all rendered messages verify clean" as a CI test).
+#[derive(Debug, Clone, Copy)]
+pub struct SummaryGate {
+    /// Maximum allowed `unknown` tokens before a nonzero exit.
+    pub max_unknown: usize,
+    /// Maximum allowed agreement warnings before a nonzero exit.
+    pub max_agreement: usize,
+}
+
+/// Deterministic summary of one check-text run.
+#[derive(Debug, serde::Serialize)]
+pub struct Summary {
+    pub tokens: usize,
+    pub known_lemma: usize,
+    pub known_form: usize,
+    pub generated: usize,
+    pub unknown: usize,
+    pub agreement_errors: usize,
+    pub false_friend_warnings: usize,
+    pub passed: bool,
+}
+
+pub fn summarize(reports: &[TokenReport], gate: SummaryGate) -> Summary {
+    let count = |st: &str| reports.iter().filter(|r| r.status == st).count();
+    let unknown = count("unknown");
+    let agreement_errors = reports.iter().filter(|r| r.agreement.is_some()).count();
+    Summary {
+        tokens: reports.len(),
+        known_lemma: count("known-lemma"),
+        known_form: count("known-form"),
+        generated: count("generated"),
+        unknown,
+        agreement_errors,
+        false_friend_warnings: reports.iter().filter(|r| r.warning.is_some()).count(),
+        passed: unknown <= gate.max_unknown && agreement_errors <= gate.max_agreement,
+    }
+}
+
+/// The `check-text` CLI entry point. With `gate` set (`--summary`), a summary
+/// is emitted and the process exits nonzero when the text fails the gate.
+pub fn run(
+    official_path: &Path,
+    text_path: &Path,
+    json: bool,
+    gate: Option<SummaryGate>,
+) -> Result<()> {
     let entries = official::load(official_path)?;
     let notes = crate::falsefriends::compute_from_default_caches(&entries);
     let index = build_index(&entries, Some(Path::new("data/novel-words.tsv")), notes);
     let text = std::fs::read_to_string(text_path)?;
     let reports = check_text(&index, &text);
+    let summary = gate.map(|g| summarize(&reports, g));
 
     if json {
         let mut s = String::from("[\n");
@@ -780,8 +826,17 @@ pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
             let _ = write!(s, "{}", serde_json::to_string(r)?);
         }
         s.push_str("\n]\n");
-        println!("{s}");
-        return Ok(());
+        match &summary {
+            // --json --summary: an object with the token array AND the
+            // summary, so agents get both in one parse.
+            Some(summary) => println!(
+                "{{\"tokens\":{},\"summary\":{}}}",
+                s.trim_end(),
+                serde_json::to_string(summary)?
+            ),
+            None => println!("{s}"),
+        }
+        return fail_gate_if_needed(summary);
     }
 
     let n = reports.len();
@@ -833,8 +888,77 @@ pub fn run(official_path: &Path, text_path: &Path, json: bool) -> Result<()> {
             );
         }
     }
+    if let Some(s) = &summary {
+        println!(
+            "summary: {} — {} unknown (max {}), {} agreement errors (max {})",
+            if s.passed { "PASS" } else { "FAIL" },
+            s.unknown,
+            gate.unwrap().max_unknown,
+            s.agreement_errors,
+            gate.unwrap().max_agreement,
+        );
+    }
     let _ = json_escape("");
-    Ok(())
+    fail_gate_if_needed(summary)
+}
+
+/// Nonzero exit for CI gating: a failed gate is an error AFTER all output has
+/// been printed, so agents still receive the full report.
+fn fail_gate_if_needed(summary: Option<Summary>) -> Result<()> {
+    match summary {
+        Some(s) if !s.passed => anyhow::bail!(
+            "check-text gate failed: {} unknown token(s), {} agreement error(s)",
+            s.unknown,
+            s.agreement_errors
+        ),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    fn report(status: &'static str, agreement: Option<&str>) -> TokenReport {
+        TokenReport {
+            token: "x".into(),
+            status,
+            lemmas: Vec::new(),
+            analyses: Vec::new(),
+            ambiguous: false,
+            probability: None,
+            suggestions: Vec::new(),
+            warning: None,
+            prefer: Vec::new(),
+            agreement: agreement.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn summary_gate_counts_and_thresholds() {
+        let reports = vec![
+            report("known-lemma", None),
+            report("unknown", None),
+            report("known-form", Some("case mismatch")),
+        ];
+        let strict = summarize(
+            &reports,
+            SummaryGate {
+                max_unknown: 0,
+                max_agreement: 0,
+            },
+        );
+        assert_eq!((strict.unknown, strict.agreement_errors), (1, 1));
+        assert!(!strict.passed);
+        let lenient = summarize(
+            &reports,
+            SummaryGate {
+                max_unknown: 1,
+                max_agreement: 1,
+            },
+        );
+        assert!(lenient.passed);
+    }
 }
 
 /// The check-text benchmark (issue #13, `checktext-eval`): classification
