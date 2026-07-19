@@ -26,6 +26,22 @@ const EN_SELFTEST_SAMPLES: &[&str] = &[
     "game",
 ];
 
+/// Canonical inputs for the frozen de-suffixing ladder samples in
+/// `api/en/selftest.json`. Chosen to exercise every strip rule.
+const EN_DESUFFIX_SAMPLES: &[&str] = &[
+    "healing",
+    "mapping",
+    "searching",
+    "invisibility",
+    "darkness",
+    "happiness",
+    "translation",
+    "definition",
+    "scrolls",
+    "potions",
+    "stories",
+];
+
 /// Function words: never a lookup key, not even as an exact gloss head.
 const HEAD_STOPWORDS: &[&str] = &["a", "an", "and", "etc", "in", "of", "or", "the", "to"];
 
@@ -274,6 +290,10 @@ fn match_rank(match_kind: &str) -> i32 {
     match match_kind {
         "phrase" => 120,
         "exact-gloss-head" => 100,
+        // Mechanical English derivation of the base's gloss (see
+        // `derived_english_forms`): stronger than an incidental token hit,
+        // weaker than an exact head.
+        "derived-english" => 80,
         "gloss-token" => 40,
         _ => 20,
     }
@@ -303,6 +323,126 @@ fn key_matches(gloss: &str) -> Vec<KeyMatch> {
             }
         })
         .collect()
+}
+
+/// The `deriv:<pattern>` provenance tag of a generated derivative record.
+fn deriv_pattern(record: &FormRecord) -> Option<&str> {
+    record
+        .analyses
+        .iter()
+        .find_map(|a| a.strip_prefix("deriv:"))
+}
+
+/// Purely mechanical English derivations of a base-gloss word for one
+/// Interslavic derivation pattern — the build-side half of the morphological
+/// normalization (issue: `heal` resolved but `healing` didn't; `nevidimy` was
+/// indexed under `invisible` but its `-osť` derivative not under
+/// `invisibility`). String transforms only; no exception dictionaries.
+fn derived_english_forms(pattern: &str, w: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if w.chars().count() < 3 || !w.chars().all(|c| c.is_ascii_alphabetic()) {
+        return out;
+    }
+    match pattern {
+        // -osť: abstract-quality noun → -ness / -ity.
+        "ost" => {
+            if let Some(stem) = w.strip_suffix("le") {
+                // invisible → invisibility, able → ability
+                if w.ends_with("ible") || w.ends_with("able") {
+                    out.push(format!("{stem}ility"));
+                }
+            }
+            if let Some(stem) = w.strip_suffix('y') {
+                out.push(format!("{stem}iness")); // happy → happiness
+            } else {
+                out.push(format!("{w}ness"));
+            }
+            if let Some(stem) = w.strip_suffix('e') {
+                out.push(format!("{stem}ity")); // scarce → scarcity
+            }
+        }
+        // adverb: -ly family.
+        "adv" => {
+            if w.ends_with("ic") {
+                out.push(format!("{w}ally")); // heroic → heroically
+            } else if let Some(stem) = w.strip_suffix("le") {
+                out.push(format!("{stem}ly")); // simple → simply
+            } else if let Some(stem) = w.strip_suffix('y') {
+                out.push(format!("{stem}ily")); // happy → happily
+            } else {
+                out.push(format!("{w}ly"));
+            }
+        }
+        // -ńje: verbal noun → -ing / -(a)tion.
+        "vnoun" => {
+            let chars: Vec<char> = w.chars().collect();
+            let n = chars.len();
+            if w.ends_with('e') && !w.ends_with("ee") {
+                out.push(format!("{}ing", &w[..w.len() - 1])); // make → making
+            } else {
+                out.push(format!("{w}ing")); // heal → healing
+                                             // CVC doubling: map → mapping (approximate, emitted alongside).
+                let vowel = |c: char| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u');
+                if n >= 3
+                    && !vowel(chars[n - 1])
+                    && !matches!(chars[n - 1], 'w' | 'x' | 'y')
+                    && vowel(chars[n - 2])
+                    && !vowel(chars[n - 3])
+                {
+                    out.push(format!("{w}{}ing", chars[n - 1]));
+                }
+            }
+            if let Some(stem) = w.strip_suffix("ate") {
+                out.push(format!("{stem}ation")); // translate → translation
+            }
+        }
+        // ne-: negated adjective → un- / in-.
+        "ne" => {
+            out.push(format!("un{w}"));
+            out.push(format!("in{w}"));
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Suffixes the documented de-suffixing retry ladder strips, longest first.
+/// Shared by the `en` CLI, the selftest samples, and the meta contract text.
+pub fn desuffix_variants(key: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |cand: String| {
+        if cand.chars().count() >= 3 && cand != key && !out.contains(&cand) {
+            out.push(cand);
+        }
+    };
+    let rules: &[(&str, &[&str])] = &[
+        ("ibility", &["ible"]),
+        ("ability", &["able"]),
+        ("iness", &["y"]),
+        ("ness", &[""]),
+        ("ation", &["", "ate"]),
+        ("ition", &["", "e", "ite"]),
+        ("ity", &["", "e"]),
+        ("ing", &["", "e"]),
+        ("ies", &["y"]),
+        ("es", &[""]),
+        ("s", &[""]),
+    ];
+    for (suf, restores) in rules {
+        if let Some(stem) = key.strip_suffix(suf) {
+            for r in *restores {
+                push(format!("{stem}{r}"));
+            }
+            // -ing after a doubled consonant: running → run.
+            if *suf == "ing" {
+                let cs: Vec<char> = stem.chars().collect();
+                if cs.len() >= 2 && cs[cs.len() - 1] == cs[cs.len() - 2] {
+                    push(stem[..stem.len() - 1].to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 fn trust(status: &str) -> &'static str {
@@ -337,7 +477,33 @@ pub(super) fn build_english_index(
         {
             continue;
         }
-        let keys = key_matches(&record.gloss);
+        let mut keys = key_matches(&record.gloss);
+        // Morphological build-side keys (issue: `healing`/`invisibility`
+        // misses): a generated derivative is additionally indexed under the
+        // mechanical English derivations of its base's single-word gloss keys,
+        // computed from its `deriv:<pattern>` tag.
+        if record.status == "generated" {
+            if let Some(pattern) = deriv_pattern(record) {
+                let mut derived: Vec<KeyMatch> = Vec::new();
+                for km in &keys {
+                    if km.key.contains(' ') {
+                        continue;
+                    }
+                    for form in derived_english_forms(pattern, &km.key) {
+                        if !keys.iter().any(|k| k.key == form)
+                            && !derived.iter().any(|k| k.key == form)
+                        {
+                            derived.push(KeyMatch {
+                                key: form,
+                                match_kind: "derived-english".to_string(),
+                                match_rank: match_rank("derived-english"),
+                            });
+                        }
+                    }
+                }
+                keys.extend(derived);
+            }
+        }
         if keys.is_empty() {
             continue;
         }
@@ -484,10 +650,17 @@ pub(super) fn write_en_api(
             serde_json::json!([raw, key, shard])
         })
         .collect();
+    // Frozen samples for the de-suffixing retry ladder: [key, [variants…]].
+    // A client implementing the documented ladder must reproduce these.
+    let desuffix_samples: Vec<serde_json::Value> = EN_DESUFFIX_SAMPLES
+        .iter()
+        .map(|key| serde_json::json!([key, desuffix_variants(key)]))
+        .collect();
     let selftest = serde_json::json!({
         "schema_version": EN_SCHEMA_VERSION,
         "shards": EN_SHARDS,
         "samples": samples,
+        "desuffix_samples": desuffix_samples,
     });
     let selftest_json = serde_json::to_string(&selftest)? + "\n";
     bytes += selftest_json.len();
@@ -500,7 +673,8 @@ pub(super) fn write_en_api(
         "shards": EN_SHARDS,
         "router": "fnv1a32(utf8(normalized_query)) % shards",
         "normalization": "lowercase; replace punctuation with spaces; collapse whitespace; trim; strip leading verb marker `to `",
-        "selftest": "api/en/selftest.json samples are [raw_query, normalized_key, shard]; verify your normalization + router reproduces them before first use",
+        "retry_ladder": "on a miss: (1) retry without a leading article; (2) retry each content word of a multiword query; (3) de-suffix and retry, longest suffix first: -ibility→-ible, -ability→-able, -iness→-y, -ness→∅, -ation→∅/-ate, -ition→∅/-e/-ite, -ity→∅/-e, -ing→∅/-e (and undouble a doubled final consonant), -ies→-y, -es→∅, -s→∅; keep stems of ≥3 chars",
+        "selftest": "api/en/selftest.json samples are [raw_query, normalized_key, shard] and desuffix_samples are [key, [variants…]]; verify your normalization + router + ladder reproduce them before first use",
         "english_keys": key_count,
         "candidate_records": candidate_count,
         "total_shard_bytes": total_shard_bytes,
@@ -707,6 +881,54 @@ mod tests {
                 ("before".to_string(), "exact-gloss-head".to_string())
             ]
         );
+    }
+
+    #[test]
+    fn derivatives_index_under_mechanically_derived_english_keys() {
+        // nevidimosť ← nevidimy (invisible): the -osť derivative must be
+        // findable under "invisibility"; healjeńje ← lěčiti (heal) under
+        // "healing"; both were mrzavec dry-run misses.
+        let mut ost = record(
+            "nevidimosť",
+            7,
+            "generated",
+            "abstraktne imę ← nevidimy (invisible)",
+            Some(0.8),
+        );
+        ost.analyses = vec!["deriv:ost".to_string()];
+        let mut vnoun = record(
+            "lěčeńje",
+            8,
+            "generated",
+            "glagoljno imę ← lěčiti (heal, cure)",
+            Some(0.8),
+        );
+        vnoun.analyses = vec!["deriv:vnoun".to_string()];
+        let metas = vec![meta(7, None), meta(8, None)];
+        let index =
+            build_english_index(&[ost, vnoun], &metas, &AspectMeta::new(), &BTreeMap::new());
+        let inv = index.get("invisibility").expect("invisibility key");
+        assert_eq!(inv[0].lemma, "nevidimosť");
+        assert_eq!(inv[0].match_kind, "derived-english");
+        let heal = index.get("healing").expect("healing key");
+        assert_eq!(heal[0].lemma, "lěčeńje");
+        // The base keys survive untouched.
+        assert!(index.get("invisible").is_some());
+        assert!(index.get("heal").is_some());
+    }
+
+    #[test]
+    fn desuffix_ladder_recovers_base_keys() {
+        assert!(desuffix_variants("healing").contains(&"heal".to_string()));
+        assert!(desuffix_variants("mapping").contains(&"map".to_string()));
+        assert!(desuffix_variants("searching").contains(&"search".to_string()));
+        assert!(desuffix_variants("invisibility").contains(&"invisible".to_string()));
+        assert!(desuffix_variants("happiness").contains(&"happy".to_string()));
+        assert!(desuffix_variants("translation").contains(&"translate".to_string()));
+        assert!(desuffix_variants("scrolls").contains(&"scroll".to_string()));
+        assert!(desuffix_variants("stories").contains(&"story".to_string()));
+        // Stems below 3 chars never emit.
+        assert!(desuffix_variants("es").is_empty());
     }
 
     #[test]

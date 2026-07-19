@@ -1065,12 +1065,23 @@ collapsing whitespace, trimming, and stripping a leading verb marker `to `.
 Route the normalized key with
 `fnv1a32(utf8(key)) % 256`, then fetch `api/en/<n>.json` and read
 `records[key]`.
-Normalization strips only the verb marker `to `; on a multiword miss, retry
-without a leading article ("the game" → "game") and then per content word.
+Normalization strips only the verb marker `to `; on a miss, walk the retry
+ladder documented in `api/en/meta.json`: (1) drop a leading article
+("the game" → "game"); (2) retry each content word of a multiword query;
+(3) **de-suffix** the key and retry, longest suffix first — `-ibility→-ible`,
+`-ability→-able`, `-iness→-y`, `-ness→∅`, `-ation→∅/-ate`, `-ition→∅/-e/-ite`,
+`-ity→∅/-e`, `-ing→∅/-e` (undoubling a doubled final consonant:
+"mapping"→"map"), `-ies→-y`, `-es→∅`, `-s→∅`, keeping stems of ≥3 chars.
+`api/en/selftest.json` freezes `desuffix_samples` (`[key, [variants…]]`) so you
+can verify your ladder implementation. The reverse direction is built in:
+generated derivatives are indexed under mechanically derived English keys
+("invisible"→"invisibility", "heal"→"healing") with match reason
+`derived-english`.
 
 Each English candidate is an object with the Interslavic `lemma`, `entry_id`,
 `official_id`, `pos`, source `gloss`, `status`, `trust`, deterministic `rank`,
-the match reason (`phrase`, `exact-gloss-head`, or `gloss-token`), optional
+the match reason (`phrase`, `exact-gloss-head`, `derived-english`, or
+`gloss-token`), optional
 verb `aspect` and `aspect_partners`, semantic `warnings`, optional `prefer`
 alternatives, model-specific `probability` for generated records, and
 `form_lookup` (`key`, `shard`, `path`) into the form API. The English API is
