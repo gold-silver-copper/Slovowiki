@@ -134,7 +134,7 @@ pub(super) fn english_shard_of(key: &str) -> u32 {
     forms::fnv1a32(key) % EN_SHARDS
 }
 
-fn usable_key_shape(key: &str) -> bool {
+fn usable_head_key(key: &str) -> bool {
     let n = key.chars().count();
     (2..=48).contains(&n)
         && !HEAD_STOPWORDS.contains(&key)
@@ -142,18 +142,22 @@ fn usable_key_shape(key: &str) -> bool {
         && !key.starts_with("used ")
 }
 
-fn usable_head_key(key: &str) -> bool {
-    usable_key_shape(key)
-}
-
 fn usable_token_key(key: &str) -> bool {
-    usable_key_shape(key) && !TOKEN_STOPWORDS.contains(&key)
+    usable_head_key(key) && !TOKEN_STOPWORDS.contains(&key)
 }
 
 pub(super) fn gloss_keys(gloss: &str) -> Vec<(String, String)> {
+    // Derivative glosses ("label ← base (…)") truncate the base gloss with a
+    // trailing `…`, so their final segment can be a cut word ("substa…") or
+    // carry an unbalanced paren. Official glosses use `…` legitimately
+    // ("either … or …") and are never ←-shaped.
+    let derived = gloss.contains('←');
     let gloss = english_lookup_gloss(gloss);
     let mut out = Vec::new();
     for segment in split_gloss_segments(gloss) {
+        if derived && segment.contains('…') {
+            continue;
+        }
         let (head, parenthetical) = split_parenthetical(segment);
         push_gloss_head_keys(&mut out, head);
         if let Some(note) = parenthetical {
@@ -212,6 +216,16 @@ fn split_parenthetical(segment: &str) -> (&str, Option<&str>) {
 
 fn push_gloss_head_keys(out: &mut Vec<(String, String)>, raw: &str) {
     let normalized_head = raw.replace(" or ", ",");
+    if normalized_head != raw {
+        // Idioms like "more or less": query normalization keeps "or", so the
+        // full phrase must be a key too, not only the split alternatives. The
+        // " or " must survive normalization ("either … or …" folds to
+        // "either or" — not a phrase anyone queries).
+        let full = normalize_english_query(raw);
+        if full.contains(" or ") && usable_head_key(&full) {
+            push_key(out, full, "phrase");
+        }
+    }
     for part in normalized_head.split(',') {
         let key = normalize_english_query(part);
         if !usable_head_key(&key) {
@@ -477,6 +491,7 @@ pub(super) fn write_en_api(
         largest_shard = largest_shard.max(json.len());
         std::fs::write(en_dir.join(format!("{shard}.json")), json)?;
     }
+    let total_shard_bytes = bytes;
 
     // Selftest mirror of api/router-selftest.json: canonical
     // (raw query → normalized key → shard) samples so a client's independent
@@ -509,6 +524,7 @@ pub(super) fn write_en_api(
         "selftest": "api/en/selftest.json samples are [raw_query, normalized_key, shard]; verify your normalization + router reproduces them before first use",
         "english_keys": key_count,
         "candidate_records": candidate_count,
+        "total_shard_bytes": total_shard_bytes,
         "largest_shard_bytes": largest_shard,
         "fields": {
             "lemma": "Interslavic citation form",
@@ -710,6 +726,38 @@ mod tests {
                 ("up".to_string(), "gloss-token".to_string()),
                 ("until".to_string(), "exact-gloss-head".to_string()),
                 ("before".to_string(), "exact-gloss-head".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn truncated_derivative_segments_are_not_indexed() {
+        // coverage.rs truncates the base gloss at 50 chars with a trailing
+        // `…`; the cut fragment must not become an English key.
+        assert_eq!(
+            gloss_keys("dějatelj ← potvŕditi (confirm, attest, substa…)"),
+            vec![
+                ("confirm".to_string(), "exact-gloss-head".to_string()),
+                ("attest".to_string(), "exact-gloss-head".to_string())
+            ]
+        );
+        // ... while official glosses keep their legitimate `…` segments.
+        assert_eq!(
+            gloss_keys("either … or …"),
+            vec![("either".to_string(), "exact-gloss-head".to_string())]
+        );
+    }
+
+    #[test]
+    fn or_idioms_keep_their_full_phrase_key() {
+        // Query normalization keeps "or", so "more or less" must be findable
+        // as a phrase, not only via its split alternatives.
+        assert_eq!(
+            gloss_keys("more or less"),
+            vec![
+                ("more or less".to_string(), "phrase".to_string()),
+                ("more".to_string(), "exact-gloss-head".to_string()),
+                ("less".to_string(), "exact-gloss-head".to_string())
             ]
         );
     }

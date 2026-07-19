@@ -1030,6 +1030,8 @@ Route the normalized key with
 `records[key]`. Before first use, fetch `api/en/selftest.json` and verify your
 normalization + router reproduce its `[raw_query, normalized_key, shard]`
 samples — same contract as `api/router-selftest.json` for the form API.
+Normalization strips only the verb marker `to `; on a multiword miss, retry
+without a leading article ("the game" → "game") and then per content word.
 
 Each English candidate is an object with the Interslavic `lemma`, `entry_id`,
 `official_id`, `pos`, source `gloss`, `status`, `trust`, deterministic `rank`,
