@@ -67,11 +67,34 @@ for pair in pairs["pairs"]:
         "pair missing perfective-to-imperfective link", pair
     )
 
+# English lookup selftest: reimplement the normalization + router independently
+# of the Rust exporter, so drift between the published samples and the actual
+# contract fails here instead of in a client.
+def en_normalize(raw):
+    folded = "".join(ch if ch.isalnum() else " " for ch in raw.lower())
+    key = " ".join(folded.split())
+    if key.startswith("to ") and key[3:].strip():
+        key = key[3:].strip()
+    return key
+
+def fnv1a32(text):
+    h = 2166136261
+    for b in text.encode("utf-8"):
+        h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+    return h
+
+en_selftest = json.loads((api / "en" / "selftest.json").read_text())
+assert en_selftest["samples"], "en selftest has no samples"
+for raw, key, shard in en_selftest["samples"]:
+    assert en_normalize(raw) == key, ("en normalization drift", raw, key, en_normalize(raw))
+    assert fnv1a32(key) % en_selftest["shards"] == shard, ("en router drift", key, shard)
+
 # `total_bytes` is payload bytes and intentionally excludes meta.json itself.
 counted = [api / "lemmas.json", api / "agent-guide.md", api / "router-selftest.json",
            api / "aspect-pairs.json", api / "suggest-selftest.json"]
 counted.extend((api / "forms").glob("*.json"))
 counted.extend((api / "suggest").glob("*.json"))
+counted.extend((api / "en").glob("*.json"))
 actual_bytes = sum(path.stat().st_size for path in counted)
 assert meta["total_bytes"] == actual_bytes, (
     "api total_bytes mismatch", meta["total_bytes"], actual_bytes

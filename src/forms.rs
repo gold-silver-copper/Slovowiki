@@ -950,7 +950,7 @@ pub fn write_api(
     std::fs::write(api.join("router-selftest.json"), st)?;
 
     let meta = format!(
-        "{{\n  \"schema_version\": {SCHEMA_VERSION},\n  \"git\": {},\n  \"license\": {},\n  \"shards\": {SHARDS},\n  \"router\": \"fnv1a32(utf8(key)) % shards; key = to_standard(lowercase(form)) — see agent-guide.md for the fold table\",\n  \"form_records\": {},\n  \"distinct_keys\": {},\n  \"lemmas\": {},\n  \"total_bytes\": {},\n  \"largest_shard_bytes\": {},\n  \"files\": {{\n    \"forms\": \"api/forms/<n>.json\",\n    \"lemmas\": \"api/lemmas.json\",\n    \"aspect_pairs\": \"api/aspect-pairs.json\",\n    \"suggestions\": \"api/suggest/<n>.json\",\n    \"suggestion_selftest\": \"api/suggest-selftest.json\",\n    \"guide\": \"api/agent-guide.md\"\n  }}\n}}\n",
+        "{{\n  \"schema_version\": {SCHEMA_VERSION},\n  \"git\": {},\n  \"license\": {},\n  \"shards\": {SHARDS},\n  \"router\": \"fnv1a32(utf8(key)) % shards; key = to_standard(lowercase(form)) — see agent-guide.md for the fold table\",\n  \"form_records\": {},\n  \"distinct_keys\": {},\n  \"lemmas\": {},\n  \"total_bytes\": {},\n  \"largest_shard_bytes\": {},\n  \"files\": {{\n    \"forms\": \"api/forms/<n>.json\",\n    \"lemmas\": \"api/lemmas.json\",\n    \"english_lookup_meta\": \"api/en/meta.json\",\n    \"english_lookup\": \"api/en/<n>.json\",\n    \"english_selftest\": \"api/en/selftest.json\",\n    \"aspect_pairs\": \"api/aspect-pairs.json\",\n    \"suggestions\": \"api/suggest/<n>.json\",\n    \"suggestion_selftest\": \"api/suggest-selftest.json\",\n    \"guide\": \"api/agent-guide.md\"\n  }}\n}}\n",
         json_str(git),
         json_str(LICENSE),
         records.len(),
@@ -976,12 +976,47 @@ pub fn agent_guide() -> String {
     format!(
         r#"# Slovowiki lexical API — agent guide
 
-Static, deterministic JSON artifacts for verifying Interslavic (Medžuslovjansky)
-text. No server, no rate limits: every file is a plain static asset. Schema
-version: {SCHEMA_VERSION} (see `api/meta.json`; a bump means breaking change).
+Static, deterministic JSON artifacts for working with Interslavic
+(Medžuslovjansky) text. No server, no rate limits, no auth: every path below is
+a plain static asset relative to the site root. Form-index schema version:
+{SCHEMA_VERSION} (see `api/meta.json`; a bump means breaking change). The
+English lookup API is versioned separately in `api/en/meta.json`.
 License: {LICENSE}.
 
-## Lookup protocol
+## Choose the right artifact
+
+| Task | Artifact |
+|---|---|
+| English word/phrase → Interslavic candidates | `api/en/<n>.json` (sharded) |
+| Verify/analyse an Interslavic token (real word? case/number/person?) | `api/forms/<n>.json` (sharded) |
+| Enumerate all lemmas; filter by status/POS/aspect | `api/lemmas.json` |
+| Verb aspect partners and the pair model | `api/aspect-pairs.json` |
+| False-friend warnings for a folded Interslavic key | `api/notes.json` |
+| Typo suggestions for an unknown Interslavic token | `api/suggest/<n>.json` |
+| Entry metadata: attestation languages, confidence, categories | `entries.json` (site root) |
+| Human-checkable citation for a lemma | `entry/<entry_id>.html` |
+
+Other root-level datasets: `edges.json` (semantic graph), `categories.json`,
+`roots.json` (Proto-Slavic root membership), `rules.json` (sound-rule reverse
+index), `search/manifest.json` (client search index), `build.json` (git +
+counts).
+
+## Verify your client first (self-tests)
+
+Two independent routers exist and each ships frozen samples. Fetch the relevant
+selftest once per session, recompute every sample with your own implementation,
+and refuse to continue on any mismatch — the site's own JS does exactly this.
+
+- `api/router-selftest.json` — form-index fold + router; samples are
+  `[form, key, shard]`.
+- `api/en/selftest.json` — English normalization + router; samples are
+  `[raw_query, normalized_key, shard]`.
+
+Both routers hash with FNV-1a 32-bit (offset 0x811c9dc5, prime 16777619) over
+UTF-8 bytes of the key, then take the remainder by the shard count from the
+respective meta file. Only the key-preparation step differs.
+
+## Interslavic form lookup (`api/forms`)
 
 1. **Fold the token** to its key: lowercase, then apply the standard-orthography
    fold (same as the site's search): `ě→e ę→e ų→u å→a ȯ→o ė→e ĺ/ľ→l ń→n ŕ→r
@@ -990,8 +1025,8 @@ License: {LICENSE}.
    ASCII, also try `c→č`-style broadenings. `forms.html` performs a bounded
    version of that fallback and reports every matched key; direct API clients
    must route each broadened real key themselves.
-2. **Route to a shard**: `n = fnv1a32(utf8(key)) % {SHARDS}` (FNV-1a, 32-bit,
-   offset 0x811c9dc5, prime 16777619). Fetch `api/forms/<n>.json`.
+2. **Route to a shard**: `n = fnv1a32(utf8(key)) % {SHARDS}`.
+   Fetch `api/forms/<n>.json`.
 3. **Read the analyses** under `records[key]`. Each record is a compact array:
    `[form, lemma, entry_id, pos, [analyses], source, status, probability, gloss]`
    - `form` — the flavored (etymological) spelling;
@@ -1019,6 +1054,51 @@ Rust and the browser must pass it before displaying suggestions.
 `api/aspect-pairs.json` contains the production pair model output: both official
 endpoints/page IDs, shared-anchor generated forms, the fired rule, and
 `-ovati/-uje` present stems where applicable.
+
+## English → Interslavic lookup (`api/en`)
+
+`api/en/meta.json` documents the static English-to-Interslavic lookup contract.
+Normalize an English query by lowercasing it, replacing punctuation with spaces,
+collapsing whitespace, trimming, and stripping a leading verb marker `to `.
+Route the normalized key with
+`fnv1a32(utf8(key)) % 256`, then fetch `api/en/<n>.json` and read
+`records[key]`.
+Normalization strips only the verb marker `to `; on a multiword miss, retry
+without a leading article ("the game" → "game") and then per content word.
+
+Each English candidate is an object with the Interslavic `lemma`, `entry_id`,
+`official_id`, `pos`, source `gloss`, `status`, `trust`, deterministic `rank`,
+the match reason (`phrase`, `exact-gloss-head`, or `gloss-token`), optional
+verb `aspect` and `aspect_partners`, semantic `warnings`, optional `prefer`
+alternatives, model-specific `probability` for generated records, and
+`form_lookup` (`key`, `shard`, `path`) into the form API. The English API is
+for candidate discovery; the form API remains the authority for surface forms.
+
+Ranking semantics: candidates under one key are sorted best-first, and verified
+records always precede generated ones. `rank` is comparable only WITHIN one
+English key — never across keys; across keys compare `trust`/`status`. A
+`gloss-token` match means the word appeared inside a longer gloss phrase — read
+`gloss` before trusting it as a direct translation.
+
+## Translation workflow (English → Interslavic)
+
+1. Pass the `api/en/selftest.json` check once per session.
+2. Normalize and route the English query; read the candidate list.
+3. Prefer `trust: verified-official` / `verified-official-only`. Treat
+   `generated-review` candidates as suggestions that need human review, never
+   as verified translations — say so when you use one.
+4. Heed `warnings` and `prefer`: they mark semantic traps where the obvious
+   cognate is wrong (false friends). When `prefer` is non-empty, use those
+   lemmas instead.
+5. For verbs, check `aspect`: pick imperfective for ongoing/habitual meaning,
+   perfective for a completed single event, and find the partner in
+   `aspect_partners`.
+6. Inflect via `form_lookup`: fetch the form shard and use only surface forms
+   listed there. Generated lemmas have NO inflection records on purpose —
+   do not invent inflected forms for them.
+7. Verify every token of your final output against the form API (see the
+   verification workflow) and cite `entry/<entry_id>.html` for anything a
+   human should double-check.
 
 ## Trust rules
 
@@ -1054,12 +1134,6 @@ numeral paradigms** (toj-class, moj-class, kto/čto, veś, jedin, dva/tri/
 **3-token official lemmas**
 (try trigram → bigram → unigram when verifying).
 
-## Self-test
-
-Fetch `api/router-selftest.json` and verify your fold + router reproduce the
-listed (form → key → shard) samples before trusting lookups — the site's own
-client refuses to run when this check fails.
-
 ## Agreement warnings (check-text)
 
 `check-text --json` reports may carry an `agreement` field: a conservative
@@ -1068,17 +1142,35 @@ government from the dictionary's own `(+N)` annotations, pronoun–verb
 person/number) that fires only when NO combination of the tokens' analyses is
 compatible and both tokens are POS-unambiguous verification-grade words.
 
-## Writing workflow
+## Verification workflow (Interslavic text)
 
-1. Prefer official lemmas (`api/lemmas.json`, filter by `status`).
-2. Verify every token of your draft against the form index. Two-token keys
+1. Pass the `api/router-selftest.json` check once per session.
+2. Prefer official lemmas (`api/lemmas.json`, filter by `status`).
+3. Verify every token of your draft against the form index. Two-token keys
    exist for reflexive verbs (`myti se`) AND two-word official lemmas
    (`adamovo jablȯko`): try the space-joined bigram of adjacent tokens
-   before falling back to unigrams.
-3. Check the `gloss` — do not assume a cognate's meaning from your own Slavic
-   language (see the semantic notes the check-text tool applies).
-4. For unknown tokens, `cargo run -- check-text` suggests nearest known forms.
-5. Cite `entry/<entry_id>.html` when you need a human-checkable source.
+   before falling back to unigrams (three-token official lemmas exist too:
+   trigram → bigram → unigram).
+4. Check the `gloss` — do not assume a cognate's meaning from your own Slavic
+   language — and look the folded key up in `api/notes.json` for curated
+   false-friend warnings with `prefer` replacements.
+5. For unknown tokens, use `api/suggest/<n>.json` (or `cargo run -- check-text`
+   locally) to offer nearest known forms.
+6. Cite `entry/<entry_id>.html` when you need a human-checkable source.
+
+## Pitfalls
+
+- A missing key means "unknown to Slovowiki", not "wrong" — and a present
+  `generated` key means "plausible reconstruction", not "verified word".
+- The form index keys are standard-orthography folds, but `form` values are
+  flavored (etymological) spellings. Compare like with like.
+- Fully-ASCII input needs broadening (`c→č`-style) before concluding a miss.
+- `rank` (English API) is meaningless across keys; `probability` is
+  model-specific and never verification.
+- Do not inflect generated lemmas; the absence of their inflection records is
+  a deliberate safety property, not a gap.
+- Multiword lemmas hide behind n-gram keys in BOTH APIs: try the longest
+  n-gram first ("coat of arms", "adamovo jablȯko").
 "#
     )
 }

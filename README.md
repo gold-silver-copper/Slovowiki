@@ -447,7 +447,11 @@ cargo run --release -- check-text tekst.txt --json
 
 Every `export` also writes a **static, deterministic lexical API** under
 `site/api/` (issue #11) — one `FormRecord` pipeline feeds both the website's
-inflection tables and the machine-readable artifacts, so they cannot drift:
+inflection tables and the machine-readable artifacts, so they cannot drift.
+**AI agents should start at `api/agent-guide.md` on the published site**
+(also linked from the site's datasets page): it maps tasks to artifacts, gives
+both lookup protocols with their self-tests, the trust rules, and step-by-step
+translation and text-verification workflows. The artifacts:
 
 - `api/forms/<n>.json` — the **sharded form index** (schema 3, ~517k analysis
   records: every official lemma + full paradigm, **declined participles,
@@ -463,6 +467,14 @@ inflection tables and the machine-readable artifacts, so they cannot drift:
   array of `[entry_id, lemma]` partners. Generated lemmas deliberately have
   **no inflection records**:
   an inflected form of a wrong reconstruction is confidently wrong.
+- `api/en/meta.json` + `api/en/<n>.json` — a static English→Interslavic lookup
+  API for translation agents. English keys are lowercased, punctuation-folded,
+  whitespace-collapsed, stripped of a leading verb marker `to `, then routed by
+  `fnv1a32(utf8(key)) % 256`. Records are ranked candidate objects with lemma,
+  entry id, official id, POS, gloss, status/trust, match reason, aspect
+  partners, semantic warnings, and a `form_lookup` pointer into
+  `api/forms/<n>.json` for inflection/analysis. `api/en/selftest.json` holds
+  frozen `[raw_query, normalized_key, shard]` samples for client verification.
 - `api/aspect-pairs.json` — the production pair model's official endpoints,
   linked entry IDs, jointly reconciled generated forms/rule, and `-ovati/-uje`
   present stems where applicable.
@@ -470,8 +482,11 @@ inflection tables and the machine-readable artifacts, so they cannot drift:
   **Schema 3 migration:** v2's six-field lemma tuple is now eight fields;
   consumers must accept trailing `aspect` and `aspect_partners` (an array,
   empty for unpaired/non-official rows).
-- `api/agent-guide.md` — the lookup protocol, fold table and trust rules
-  (any non-null generated probability ⇒ suggestion, never verification).
+- `api/agent-guide.md` — the agent manual: artifact-per-task table, both
+  lookup protocols (fold table, English normalization, FNV routing,
+  self-tests), trust rules (any non-null generated probability ⇒ suggestion,
+  never verification), an English→Interslavic translation workflow, an
+  Interslavic text-verification workflow, and a pitfalls list.
 
 Website twins of the API: **`forms.html`** (reverse lookup of any inflected
 form → analyses + entry links; after an exact miss it tries a bounded,
