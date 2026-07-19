@@ -9,7 +9,7 @@
 use self::assets::css;
 use self::coverage::{
     inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
-    plan_raw_pages, select_official_surface, OfficialSurface,
+    plan_raw_pages, raw_intl_candidates, select_official_surface, OfficialSurface,
 };
 use self::entries::{
     branch_evidence, build_input, corpus_about, corpus_entry_page, corpus_home, derivation_block,
@@ -1775,6 +1775,37 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         &deriv_probs,
     );
     println!("api: added {deriv_added} generated derivative lemmas off attested bases (issue #37)");
+    // ---- Borrowed internationalisms recovered from RAW attestations (2e) ----
+    // Cognate sets the evidence gate never saw (no etymology section on any
+    // member — the teleport family): ≥2 languages / ≥2 branches sharing an
+    // international shape AND a gloss token, run through the ordinary
+    // pipeline with is_intl_meaning. `generated`, `borrowed`, NO paradigm,
+    // NO probability (no calibrator for this path — fail closed), and never
+    // fed to build_sets or any benchmark.
+    let raw_intl = raw_corpus
+        .as_ref()
+        .map(|rc| raw_intl_candidates(&rc.lemmas, &raw_plan.xref, &mut taken))
+        .unwrap_or_default();
+    for c in &raw_intl {
+        let feats = format!("raw-intl:{}l{}b", c.langs.len(), c.n_branches);
+        for sink in [&mut lemma_sink, &mut form_sink] {
+            sink.add(
+                &c.form,
+                &feats,
+                &c.form,
+                c.entry_id,
+                c.pos.code(),
+                "lemma",
+                "generated",
+                None,
+                &c.gloss,
+            );
+        }
+    }
+    println!(
+        "raw-intl: {} borrowed internationalism candidates recovered from raw attestations (2e).",
+        raw_intl.len()
+    );
     let form_records = form_sink.into_records();
     let lemma_records = lemma_sink.into_records();
     // Computed false-friend notes for the web text-checker (the CLI computes
@@ -1798,7 +1829,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         .iter()
         .filter_map(|e| e.frequency.map(|f| (e.id.as_str(), f)))
         .collect();
-    let rank_evidence: std::collections::BTreeMap<usize, crate::forms::RankEvidence> = metas
+    let mut rank_evidence: std::collections::BTreeMap<usize, crate::forms::RankEvidence> = metas
         .iter()
         .map(|m| {
             (
@@ -1815,6 +1846,18 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             )
         })
         .collect();
+    // Raw-intl candidates hang off raw pages (or id 0), which have no meta
+    // row — attach their own attestation evidence, always borrowed.
+    for c in &raw_intl {
+        rank_evidence
+            .entry(c.entry_id)
+            .or_insert_with(|| crate::forms::RankEvidence {
+                frequency: None,
+                langs: c.langs.len(),
+                branch_pattern: navigation::branch_pattern(&c.langs),
+                borrowed: true,
+            });
+    }
     let english_counts = english_api::write_en_api(
         out_dir,
         &lemma_records,

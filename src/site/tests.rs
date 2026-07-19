@@ -1003,3 +1003,46 @@ fn word_chip_prefers_generated_then_raw_then_external() {
     assert!(ambiguous.contains("ru.wiktionary.org"), "{ambiguous}");
     assert!(!ambiguous.contains("999.html"), "{ambiguous}");
 }
+
+#[test]
+fn raw_intl_recovers_the_teleport_family() {
+    // 2e: pl/mk attest the borrowed family with NO etymology sections, so it
+    // never reached the evidence cache; the raw recovery pass must still
+    // yield an adapted `generated` candidate flagged borrowed.
+    let mk = |lang: &str, word: &str, pos: &str, gloss: &str| crate::dump::RawSlavicLemma {
+        word: word.to_string(),
+        lang: lang.to_string(),
+        pos: pos.to_string(),
+        glosses: vec![gloss.to_string()],
+        etymology_text: String::new(),
+        proto: String::new(),
+        etymon: String::new(),
+    };
+    let lemmas = vec![
+        mk("pl", "teleportacja", "noun", "teleportation"),
+        mk("mk", "телепортација", "noun", "teleportation"),
+        mk("pl", "teleportować", "verb", "to teleport"),
+        mk("mk", "телепортира", "verb", "to teleport"),
+        // A same-shape word pair with unrelated glosses must NOT group.
+        mk("pl", "granat", "noun", "grenade"),
+        mk("ru", "гранат", "noun", "pomegranate"),
+    ];
+    let xref = crate::enrich::Xref::new();
+    let mut taken = std::collections::HashSet::new();
+    let out = super::coverage::raw_intl_candidates(&lemmas, &xref, &mut taken);
+    let noun = out
+        .iter()
+        .find(|c| c.pos == Pos::Noun && c.gloss == "teleportation")
+        .expect("teleportation noun candidate");
+    assert!(
+        noun.form.starts_with("teleport"),
+        "adapted form: {}",
+        noun.form
+    );
+    assert_eq!(noun.langs, vec!["mk".to_string(), "pl".to_string()]);
+    assert_eq!(noun.n_branches, 2);
+    assert!(
+        !out.iter().any(|c| c.gloss.contains("grenade")),
+        "gloss-divergent same-shape words must not merge"
+    );
+}
