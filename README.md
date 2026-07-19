@@ -332,8 +332,7 @@ src/
   dump.rs          stream the 23 GB dump → Proto-Slavic cache + indexes
   proto_link.rs    leakage-free linker: explicit Wiktionary etymology + 3-signal fuzzy match
   pipeline.rs      two-stage §4.4 merge (consensus root + proto-derived form)
-  overrides.rs     manual curation (TOML), excluded from pure-algorithm accuracy
-  generator.rs     orchestrator: pipeline + overrides + official match status
+  generator.rs     orchestrator: pipeline + official match status
   eval.rs          benchmarks: ablation ladder, holdout split, significance,
                    multiword/aspect + evidence-growth audits, report writers
   calibrate.rs     the persisted isotonic score→probability calibrator
@@ -358,7 +357,6 @@ src/
     special.rs     metrics, datasets, proposals, forms, and scholarly pages
 data/
   official-isv.csv        the full official dictionary (evidence + gold)
-  overrides.toml          manual curation file
   RULE_SPEC.md            authoritative Proto-Slavic → Interslavic rule spec
   FLAVORIZATION_SPEC.md   display flavorization of raw source words (issue #62)
   proto-slavic.cache.json Proto-Slavic reconstructions (built by extract-proto)
@@ -520,8 +518,8 @@ verified by hashing two consecutive exports.
 
 Each entry page shows:
 
-- the **top candidate** headword with a **provenance** pill (proto-derived / consensus /
-  override) and a coverage-based **reliability** badge (not a probability);
+- the **top candidate** headword with a **provenance** pill (proto-derived /
+  consensus) and a coverage-based **reliability** badge (not a probability);
 - the **Proto-Slavic reconstruction** it was derived from, with Balto-Slavic / PIE
   ancestors and the link confidence;
 - **alternative** candidates with scores and branch coverage;

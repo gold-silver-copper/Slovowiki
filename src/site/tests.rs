@@ -80,7 +80,6 @@ fn dictionary_seeded_banner_uses_sanitized_official_byform() {
         candidates: vec![candidate],
         official: Some("bar".to_string()),
         match_status: MatchStatus::OfficialMatch,
-        overridden: false,
         reconstruction: None,
     };
 

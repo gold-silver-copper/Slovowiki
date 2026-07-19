@@ -41,7 +41,6 @@ use crate::consensus::ConsensusConfig;
 use crate::generator;
 use crate::model::{Confidence, MatchStatus};
 use crate::official::{self, OfficialEntry};
-use crate::overrides::Overrides;
 use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -72,7 +71,6 @@ fn add_official_byform_keys<'a>(
 /// Generate the whole static site under `out_dir`.
 pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
     let entries = official::load(official_path)?;
-    let overrides = Overrides::load(Path::new(crate::DEFAULT_OVERRIDES));
     let cfg = ConsensusConfig::production();
     let proto_path = Path::new(crate::DEFAULT_PROTO_CACHE);
     let proto_index = crate::dump::load_optional(proto_path, crate::dump::ProtoIndex::load)?;
@@ -120,7 +118,6 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
             official_byforms.iter().map(String::as_str),
             proto,
             &cfg,
-            &overrides,
         );
         // Display badges come from the calibrated probability, never the raw
         // score (issue #77); scores/ordering stay untouched.
