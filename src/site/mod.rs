@@ -1853,11 +1853,55 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     let form_records = form_sink.into_records();
     let lemma_records = lemma_sink.into_records();
     // Computed false-friend notes for the web text-checker (the CLI computes
-    // the same records), keyed by folded form so the client looks up by key
-    // directly. Deterministic: BTreeMap ordering, serde output.
-    let notes_json = serde_json::to_string(&ff_notes)? + "\n";
-    std::fs::create_dir_all(out_dir.join("api"))?;
-    std::fs::write(out_dir.join("api").join("notes.json"), &notes_json)?;
+    // the same records), keyed by folded form and SHARDED like the suggest
+    // index (V11 item 6): api/notes/<n>.json via fnv1a32(key) % 64, with a
+    // frozen router selftest. The retired monolithic api/notes.json is
+    // removed so stale copies can't shadow the shards.
+    let notes_dir = out_dir.join("api").join("notes");
+    let _ = std::fs::remove_dir_all(&notes_dir);
+    std::fs::create_dir_all(&notes_dir)?;
+    let _ = std::fs::remove_file(out_dir.join("api").join("notes.json"));
+    let mut notes_bytes = 0usize;
+    {
+        let mut shards: std::collections::BTreeMap<
+            u32,
+            std::collections::BTreeMap<&String, &crate::falsefriends::Note>,
+        > = std::collections::BTreeMap::new();
+        for (key, note) in &ff_notes {
+            shards
+                .entry(crate::forms::fnv1a32(key) % crate::falsefriends::NOTES_SHARDS)
+                .or_default()
+                .insert(key, note);
+        }
+        for shard in 0..crate::falsefriends::NOTES_SHARDS {
+            let body = serde_json::json!({
+                "schema_version": crate::falsefriends::NOTES_SCHEMA_VERSION,
+                "shard": shard,
+                "notes": shards.get(&shard).cloned().unwrap_or_default(),
+            });
+            let body = serde_json::to_string(&body)? + "\n";
+            notes_bytes += body.len();
+            std::fs::write(notes_dir.join(format!("{shard}.json")), body)?;
+        }
+        let samples: Vec<serde_json::Value> = crate::falsefriends::NOTES_SELFTEST_SAMPLES
+            .iter()
+            .map(|k| {
+                serde_json::json!([
+                    k,
+                    crate::forms::fnv1a32(k) % crate::falsefriends::NOTES_SHARDS
+                ])
+            })
+            .collect();
+        let st = serde_json::json!({
+            "schema_version": crate::falsefriends::NOTES_SCHEMA_VERSION,
+            "shards": crate::falsefriends::NOTES_SHARDS,
+            "router": "fnv1a32(utf8(folded_key)) % shards",
+            "samples": samples,
+        });
+        let st = serde_json::to_string(&st)? + "\n";
+        notes_bytes += st.len();
+        std::fs::write(out_dir.join("api").join("notes-selftest.json"), st)?;
+    }
     let aspect_api: crate::forms::AspectMeta = metas
         .iter()
         .filter_map(|m| {
@@ -1954,7 +1998,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         &aspect_api,
         &rank_evidence,
         ff_notes.len(),
-        pair_json.len() + suggest_bytes + english_counts.bytes + notes_json.len(),
+        pair_json.len() + suggest_bytes + english_counts.bytes + notes_bytes,
         &build_meta.git,
         &crate::forms::agent_guide(),
     )?;

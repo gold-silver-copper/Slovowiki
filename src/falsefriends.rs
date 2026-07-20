@@ -37,6 +37,15 @@ const MAX_WARNED_LANGS: usize = 4;
 /// At most this many divergent senses are quoted per colliding word.
 const MAX_QUOTED_SENSES: usize = 2;
 
+/// Sharding of the published notes artifact (V11 item 6): route by
+/// `fnv1a32(folded_key) % NOTES_SHARDS`, mirroring the suggest index.
+pub const NOTES_SHARDS: u32 = 64;
+/// First versioned notes schema — the monolithic unversioned `api/notes.json`
+/// is retired in favor of `api/notes/<n>.json` shards.
+pub const NOTES_SCHEMA_VERSION: u32 = 1;
+/// Frozen router inputs for `api/notes-selftest.json` ([key, shard] pairs).
+pub const NOTES_SELFTEST_SAMPLES: &[&str] = &["pytati", "jutro", "čas", "zakuska", "koristny"];
+
 /// Modern languages whose speakers the warnings address, in render order.
 /// English Wiktionary's `sh` macro-code covers Serbian/Croatian/Bosnian.
 const LANGS: &[(&str, &str)] = &[

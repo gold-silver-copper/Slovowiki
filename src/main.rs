@@ -193,6 +193,10 @@ enum Command {
         /// caches; faster for pure classification/CI gating).
         #[arg(long)]
         no_warnings: bool,
+        /// With --summary: also fail when SEVERE false-friend warnings
+        /// (severity high/medium) exceed this count.
+        #[arg(long)]
+        max_severe_warnings: Option<usize>,
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
@@ -322,6 +326,7 @@ fn main() -> Result<()> {
             max_unknown,
             max_agreement,
             no_warnings,
+            max_severe_warnings,
             official,
         } => check::run(
             &official,
@@ -330,6 +335,7 @@ fn main() -> Result<()> {
             summary.then_some(check::SummaryGate {
                 max_unknown,
                 max_agreement,
+                max_severe_warnings,
             }),
             !no_warnings,
         ),

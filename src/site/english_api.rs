@@ -81,6 +81,9 @@ pub(super) struct EnglishCandidate {
     aspect: Option<String>,
     aspect_partners: Vec<AspectPartner>,
     warnings: Vec<String>,
+    /// Severity of the false-friend warning (`high`/`medium`/`low`),
+    /// present iff `warnings` is non-empty (V11 item 6).
+    warning_severity: Option<String>,
     prefer: Vec<String>,
     form_lookup: FormLookup,
     probability: Option<f64>,
@@ -807,6 +810,7 @@ pub(super) fn build_english_index(
         let form_shard = forms::shard_of(&form_key);
         let note = notes.get(&form_key);
         let warnings = note.map(|n| vec![n.warning.clone()]).unwrap_or_default();
+        let warning_severity = note.map(|n| n.severity.to_string());
         let prefer = note.map(|n| n.prefer.clone()).unwrap_or_default();
 
         // Raw-intl records carry their evidence inline (entry_id 0 sentinel);
@@ -864,6 +868,7 @@ pub(super) fn build_english_index(
                 aspect: aspect.clone(),
                 aspect_partners: aspect_partners.clone(),
                 warnings: warnings.clone(),
+                warning_severity: warning_severity.clone(),
                 prefer: prefer.clone(),
                 form_lookup: FormLookup {
                     key: form_key.clone(),
@@ -1008,7 +1013,8 @@ pub(super) fn write_en_api(
             "match": "why this candidate is indexed for this English key",
             "aspect": "ipf, pf, ipf/pf, or null",
             "aspect_partners": "known aspect partner entry ids and lemmas",
-            "warnings": "computed false-friend warnings (same records as api/notes.json)",
+            "warnings": "computed false-friend warnings (same records as the api/notes/<n>.json shards)",
+            "warning_severity": "high/medium (primary-sense trap) or low (colloquial-only), when warnings is non-empty",
             "prefer": "official lemma(s) covering the divergent sense, computed from gloss overlap",
             "form_lookup": "folded lemma key and api/forms shard for inflection lookup",
             "probability": "model-specific generated probability when available",

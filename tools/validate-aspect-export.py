@@ -113,6 +113,24 @@ def en_desuffix(key):
                 push(stem[:-1])
     return out
 
+# Notes router selftest (V11 item 6): the shard router must reproduce the
+# frozen samples, notes must NOT also ship as the retired monolith, and every
+# note must live in the shard its key routes to.
+notes_selftest = json.loads((api / "notes-selftest.json").read_text())
+assert not (api / "notes.json").exists(), "retired monolithic notes.json still present"
+for k, s_ in notes_selftest["samples"]:
+    assert fnv1a32(k) % notes_selftest["shards"] == s_, ("notes router drift", k, s_)
+notes_total = 0
+for shard_path in sorted((api / "notes").glob("*.json")):
+    shard_doc = json.loads(shard_path.read_text())
+    for k, note in shard_doc["notes"].items():
+        notes_total += 1
+        assert fnv1a32(k) % notes_selftest["shards"] == shard_doc["shard"], (
+            "note in wrong shard", k, shard_path.name
+        )
+        assert note["severity"] in ("high", "medium", "low"), ("bad severity", k)
+assert notes_total == meta["notes"], ("meta notes count mismatch", notes_total, meta["notes"])
+
 en_selftest = json.loads((api / "en" / "selftest.json").read_text())
 assert en_selftest["samples"], "en selftest has no samples"
 for raw, key, shard in en_selftest["samples"]:
@@ -126,7 +144,9 @@ for key, variants in en_selftest["desuffix_samples"]:
 
 # `total_bytes` is payload bytes and intentionally excludes meta.json itself.
 counted = [api / "lemmas.json", api / "agent-guide.md", api / "router-selftest.json",
-           api / "aspect-pairs.json", api / "suggest-selftest.json", api / "notes.json"]
+           api / "aspect-pairs.json", api / "suggest-selftest.json",
+           api / "notes-selftest.json"]
+counted.extend((api / "notes").glob("*.json"))
 counted.extend((api / "forms").glob("*.json"))
 counted.extend((api / "suggest").glob("*.json"))
 counted.extend((api / "en").glob("*.json"))

@@ -1002,13 +1002,14 @@ pub fn write_api(
     std::fs::write(api.join("router-selftest.json"), st)?;
 
     let meta = format!(
-        "{{\n  \"schema_version\": {SCHEMA_VERSION},\n  \"git\": {},\n  \"license\": {},\n  \"shards\": {SHARDS},\n  \"router\": \"fnv1a32(utf8(key)) % shards; key = to_standard(lowercase(form)) — see agent-guide.md for the fold table\",\n  \"form_records\": {},\n  \"distinct_keys\": {},\n  \"lemmas\": {},\n  \"notes\": {},\n  \"total_bytes\": {},\n  \"largest_shard_bytes\": {},\n  \"files\": {{\n    \"forms\": \"api/forms/<n>.json\",\n    \"lemmas\": \"api/lemmas.json\",\n    \"english_lookup_meta\": \"api/en/meta.json\",\n    \"english_lookup\": \"api/en/<n>.json\",\n    \"english_selftest\": \"api/en/selftest.json\",\n    \"aspect_pairs\": \"api/aspect-pairs.json\",\n    \"notes\": \"api/notes.json\",\n    \"suggestions\": \"api/suggest/<n>.json\",\n    \"suggestion_selftest\": \"api/suggest-selftest.json\",\n    \"guide\": \"api/agent-guide.md\"\n  }}\n}}\n",
+        "{{\n  \"schema_version\": {SCHEMA_VERSION},\n  \"git\": {},\n  \"license\": {},\n  \"shards\": {SHARDS},\n  \"router\": \"fnv1a32(utf8(key)) % shards; key = to_standard(lowercase(form)) — see agent-guide.md for the fold table\",\n  \"form_records\": {},\n  \"distinct_keys\": {},\n  \"lemmas\": {},\n  \"notes\": {},\n  \"notes_shards\": {},\n  \"total_bytes\": {},\n  \"largest_shard_bytes\": {},\n  \"files\": {{\n    \"forms\": \"api/forms/<n>.json\",\n    \"lemmas\": \"api/lemmas.json\",\n    \"english_lookup_meta\": \"api/en/meta.json\",\n    \"english_lookup\": \"api/en/<n>.json\",\n    \"english_selftest\": \"api/en/selftest.json\",\n    \"aspect_pairs\": \"api/aspect-pairs.json\",\n    \"notes\": \"api/notes/<n>.json\",\n    \"notes_selftest\": \"api/notes-selftest.json\",\n    \"suggestions\": \"api/suggest/<n>.json\",\n    \"suggestion_selftest\": \"api/suggest-selftest.json\",\n    \"guide\": \"api/agent-guide.md\"\n  }}\n}}\n",
         json_str(git),
         json_str(LICENSE),
         records.len(),
         keyset.len(),
         lemmas.len(),
         notes_count,
+        crate::falsefriends::NOTES_SHARDS,
         bytes,
         largest,
     );
@@ -1044,7 +1045,7 @@ License: {LICENSE}.
 | Verify/analyse an Interslavic token (real word? case/number/person?) | `api/forms/<n>.json` (sharded) |
 | Enumerate all lemmas; filter by status/POS/aspect | `api/lemmas.json` |
 | Verb aspect partners and the pair model | `api/aspect-pairs.json` |
-| False-friend warnings for a folded Interslavic key (computed from cache evidence) | `api/notes.json` |
+| False-friend warnings for a folded Interslavic key (computed from cache evidence) | `api/notes/<n>.json` (sharded) |
 | Typo suggestions for an unknown Interslavic token | `api/suggest/<n>.json` |
 | Entry metadata: attestation languages, confidence, categories | `entries.json` (site root) |
 | Human-checkable citation for a lemma | `entry/<entry_id>.html` |
@@ -1254,10 +1255,14 @@ compatible and both tokens are POS-unambiguous verification-grade words.
    before falling back to unigrams (three-token official lemmas exist too:
    trigram → bigram → unigram).
 4. Check the `gloss` — do not assume a cognate's meaning from your own Slavic
-   language — and look the folded key up in `api/notes.json` for computed
-   false-friend warnings (each record: `warning` sentence, optional `prefer`
-   official lemma covering the divergent sense, and per-language `collisions`
-   evidence).
+   language — and look the folded key up in the sharded notes artifact:
+   route `fnv1a32(utf8(folded_key)) % 64` → `api/notes/<n>.json`, verifying
+   your router against `api/notes-selftest.json` first (notes schema 1; the
+   monolithic `api/notes.json` is retired). Each record: `warning` sentence,
+   `severity` (`high`/`medium` = the word's primary sense diverges;
+   `low` = colloquial-only), optional `prefer` official lemma covering the
+   divergent sense, and per-language `collisions` evidence with
+   `primary_agrees` flags.
 5. For unknown tokens, use `api/suggest/<n>.json` (or `cargo run -- check-text`
    locally) to offer nearest known forms.
 6. Cite `entry/<entry_id>.html` when you need a human-checkable source.
