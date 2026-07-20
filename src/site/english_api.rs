@@ -715,6 +715,7 @@ pub fn run_en_batch(site_dir: &Path, file: &Path, json: bool) -> anyhow::Result<
     let text = std::fs::read_to_string(file)?;
     let mut rows: Vec<serde_json::Value> = Vec::new();
     let mut counts = (0usize, 0usize, 0usize); // verified / generated / miss
+    let mut sense_notes = 0usize;
     for line in text.lines() {
         let query = line.trim();
         if query.is_empty() || query.starts_with('#') {
@@ -736,6 +737,7 @@ pub fn run_en_batch(site_dir: &Path, file: &Path, json: bool) -> anyhow::Result<
             "miss"
         };
         let sense_note = hits.iter().find_map(|h| h.sense_note.clone());
+        sense_notes += sense_note.is_some() as usize;
         if !json {
             let show = |c: &Option<serde_json::Value>| {
                 c.as_ref()
@@ -778,12 +780,15 @@ pub fn run_en_batch(site_dir: &Path, file: &Path, json: bool) -> anyhow::Result<
                     "verified": counts.0,
                     "generated_only": counts.1,
                     "miss": counts.2,
+                    // How many results need gloss reading before trusting
+                    // the top verified candidate (V12 item 7).
+                    "sense_notes": sense_notes,
                 },
             }))?
         );
     } else {
         println!(
-            "batch: {} verified / {} generated-only / {} miss",
+            "batch: {} verified / {} generated-only / {} miss ({sense_notes} with sense notes)",
             counts.0, counts.1, counts.2
         );
     }
