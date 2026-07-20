@@ -122,6 +122,11 @@ enum Command {
     CorpusEval {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
+        /// Fit and persist the corpus-coverage calibrator
+        /// (data/corpus-calibration.json): isotonic fit on the dev split,
+        /// holdout-validated (V11 item 5 / issue #90).
+        #[arg(long)]
+        fit: bool,
     },
     /// Benchmark the derivation layer: mined official base→derivative pairs,
     /// seam-aware layer vs naive concatenation (Track A / issue #1).
@@ -301,7 +306,7 @@ fn main() -> Result<()> {
         Command::En { query, json, site } => site::run_en_lookup(&site, &query, json),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
-        Command::CorpusEval { official } => eval::run_corpus_eval(&official),
+        Command::CorpusEval { official, fit } => eval::run_corpus_eval(&official, fit),
         Command::DeriveEval { official, out } => derive::run_eval(&official, &out),
         Command::MultiwordEval { official, out } => eval::run_multiword_eval(&official, &out),
         Command::AspectEval { official, out } => eval::run_aspect_eval(&official, &out),

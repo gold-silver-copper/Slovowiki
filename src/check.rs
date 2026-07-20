@@ -150,8 +150,8 @@ pub fn build_index(
     }
     if let Some(path) = novel_words_tsv {
         // The proposals file is a committed export artifact (`export` refreshes
-        // it). It is intentionally header-only while corpus calibration is
-        // paused; a missing file is a separate reproducibility warning.
+        // it). Rows carry the corpus-coverage calibrator's probability (V11
+        // item 5); a missing file is a separate reproducibility warning.
         let tsv = std::fs::read_to_string(path).unwrap_or_else(|e| {
             eprintln!(
                 "warning: generated-word proposal artifact unavailable ({}: {e}); \

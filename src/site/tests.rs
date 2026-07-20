@@ -1031,7 +1031,9 @@ fn raw_intl_recovers_the_teleport_family() {
     // consonant fingerprint, so no verb SET can form — only the derivational
     // completion off the recovered noun reaches teleportovati.)
     let mut taken = std::collections::HashSet::new();
-    let out = super::coverage::raw_intl_candidates(&lemmas, &mut taken);
+    let mut probs = std::collections::BTreeMap::new();
+    probs.insert((2usize, 2usize), 0.42);
+    let out = super::coverage::raw_intl_candidates(&lemmas, &mut taken, &probs);
     let noun = out
         .iter()
         .find(|c| c.pos == Pos::Noun && c.gloss == "teleportation")
@@ -1056,4 +1058,12 @@ fn raw_intl_recovers_the_teleport_family() {
     assert_eq!(verb.gloss, "to teleport");
     assert_eq!(verb.deriv_of.as_deref(), Some("teleportacija"));
     assert_eq!(verb.present_stem.as_deref(), Some("teleportuje"));
+    // V11 item 5: bucket probability applied to the noun; the derivational
+    // verb inherits its source noun's bucket.
+    let noun = out
+        .iter()
+        .find(|c| c.form == "teleportacija")
+        .expect("noun candidate");
+    assert_eq!(noun.probability, Some(0.42));
+    assert_eq!(verb.probability, Some(0.42));
 }

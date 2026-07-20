@@ -23,9 +23,12 @@ for entry in entries:
     historical = {"cu", "orv"}.intersection(entry.get("langs_list", []))
     assert not historical, ("historical hint published as modern evidence", entry["id"], historical)
     if not entry["official"]:
-        assert entry["prob"] is None, (
-            "uncalibrated corpus score published as probability", entry["id"], entry["prob"]
-        )
+        # V11 item 5 (issue #90): the corpus-coverage calibrator is committed,
+        # so generated entries carry its probability — which must be a proper
+        # open-interval value (None only when the calibrator file was absent).
+        assert entry["prob"] is None or (
+            isinstance(entry["prob"], float) and 0.0 < entry["prob"] < 1.0
+        ), ("corpus probability out of range", entry["id"], entry["prob"])
 
 
 def normalized_pos(pos_raw: str):
@@ -170,8 +173,13 @@ for row in lemmas:
         assert entry_id in by_id, ("API lemma references missing entry", row[:6])
     entry = by_id.get(entry_id)
     if row[2] == "generated" and entry is not None and not entry["official"]:
-        assert row[3] is None, (
-            "uncalibrated corpus lemma API probability", row[:6]
+        # V11 item 5 (issue #90): corpus reconstructions may now carry a
+        # probability from the committed corpus-coverage calibrator. It must
+        # be a proper open-interval probability — an exact 0.0/1.0 or an
+        # out-of-range value means a broken calibrator, and None means the
+        # calibrator file was absent at export time.
+        assert row[3] is None or (isinstance(row[3], float) and 0.0 < row[3] < 1.0), (
+            "corpus lemma probability out of range", row[:6]
         )
 
 for shard_path in sorted((root / "api/forms").glob("*.json")):
@@ -197,9 +205,20 @@ for proto_path in sorted((root / "proto").glob("*.html")):
 
 proposal_lines = (root / "novel-words.tsv").read_text().splitlines()
 proposal_header = "form\tpos\tprobability\tbucket\tancestor\tn_langs\tn_branches\tgloss"
-assert proposal_lines == [proposal_header], (
-    "uncalibrated or malformed novel-word proposal artifact", proposal_lines[:2]
+assert proposal_lines and proposal_lines[0] == proposal_header, (
+    "malformed novel-word proposal header", proposal_lines[:1]
 )
+# V11 item 5: with the corpus-coverage calibrator committed, proposals are
+# live again. Each row must carry a calibrated probability in the review
+# band or above, and the bucket must agree with the probability.
+for line in proposal_lines[1:]:
+    cols = line.split("\t")
+    assert len(cols) == 8, ("malformed proposal row", line)
+    prob = float(cols[2])
+    assert 0.3 <= prob < 1.0, ("proposal probability out of band", line)
+    assert cols[3] == ("predlog" if prob >= 0.6 else "pregled"), (
+        "proposal bucket disagrees with probability", line
+    )
 
 print(
     f"linguistic logic valid: {len(expected_senses)} official senses across "

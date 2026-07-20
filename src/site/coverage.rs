@@ -471,6 +471,74 @@ pub(super) struct RawIntlCandidate {
     /// verb was generated from, plus its `-uje` present stem when regular.
     pub(super) deriv_of: Option<String>,
     pub(super) present_stem: Option<String>,
+    /// Calibrated P(exact official form | this feature bucket), from the
+    /// leakage-free genesis=I holdout (V11 item 5) — model-specific,
+    /// suggestion-never-verification. None only when no calibration map was
+    /// supplied.
+    pub(super) probability: Option<f64>,
+}
+
+/// Feature bucket of one recovered candidate: (attesting languages clamped
+/// to 4, attesting branches clamped to 3).
+fn raw_intl_bucket(c: &RawIntlCandidate) -> (usize, usize) {
+    (
+        c.langs.len().min(4),
+        c.branch_pattern.split('+').count().min(3),
+    )
+}
+
+/// Fit per-bucket shipped probabilities for the raw-recovery pass, mirroring
+/// the derivation-probability recipe (Wilson-95 lower bound, capped): run the
+/// recovery UNFILTERED (empty `taken`, so official-colliding candidates are
+/// kept as measurement samples), take every candidate whose gloss matches an
+/// official internationalism row (genesis=I) as a sample, and score a hit
+/// when the candidate's form reproduces that row's lemma (normalized). The
+/// pipeline never reads the answer — official rows only SCORE aggregates.
+pub(super) fn raw_intl_probabilities(
+    lemmas: &[crate::dump::RawSlavicLemma],
+    official_entries: &[OfficialEntry],
+) -> BTreeMap<(usize, usize), f64> {
+    const CAP: f64 = 0.90;
+    let mut empty = std::collections::HashSet::new();
+    let candidates = raw_intl_candidates(lemmas, &mut empty, &BTreeMap::new());
+    // token → official intl row indices (single-token rows only).
+    let mut by_token: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, e) in official_entries.iter().enumerate() {
+        if e.genesis.trim() != "I" || e.isv.trim().contains(' ') || e.isv.trim().is_empty() {
+            continue;
+        }
+        for t in crate::falsefriends::gloss_tokens(&e.english) {
+            by_token.entry(t).or_default().push(i);
+        }
+    }
+    let mut buckets: BTreeMap<(usize, usize), (usize, usize)> = BTreeMap::new(); // (hits, n)
+    for c in &candidates {
+        if c.deriv_of.is_some() {
+            continue; // derivational completions inherit their noun's bucket
+        }
+        let mut rows: std::collections::BTreeSet<usize> = Default::default();
+        for t in crate::falsefriends::gloss_tokens(&c.gloss) {
+            if let Some(is) = by_token.get(&t) {
+                rows.extend(is.iter().copied());
+            }
+        }
+        if rows.is_empty() {
+            continue; // no gloss-matched official row: not a scorable sample
+        }
+        let hit = rows.iter().any(|&i| {
+            official_entries[i]
+                .citation_byforms()
+                .iter()
+                .any(|b| crate::orthography::normalized_match(&c.form, &b.form))
+        });
+        let slot = buckets.entry(raw_intl_bucket(c)).or_default();
+        slot.0 += hit as usize;
+        slot.1 += 1;
+    }
+    buckets
+        .into_iter()
+        .map(|(b, (hits, n))| (b, crate::derive::wilson_lower(hits, n).min(CAP)))
+        .collect()
 }
 
 /// Group raw lemmas into borrowed-internationalism cognate sets by
@@ -484,6 +552,7 @@ pub(super) struct RawIntlCandidate {
 pub(super) fn raw_intl_candidates(
     lemmas: &[crate::dump::RawSlavicLemma],
     taken: &mut std::collections::HashSet<String>,
+    probs: &BTreeMap<(usize, usize), f64>,
 ) -> Vec<RawIntlCandidate> {
     use crate::model::Pos;
     // (lang, word, gloss list) of one raw member.
@@ -654,7 +723,7 @@ pub(super) fn raw_intl_candidates(
         let Some(branch_pattern) = super::navigation::branch_pattern(&langs) else {
             continue;
         };
-        out.push(RawIntlCandidate {
+        let mut candidate = RawIntlCandidate {
             form,
             pos,
             gloss: gloss.to_string(),
@@ -662,7 +731,20 @@ pub(super) fn raw_intl_candidates(
             branch_pattern,
             deriv_of: None,
             present_stem: None,
-        });
+            probability: None,
+        };
+        if !probs.is_empty() {
+            // Unobserved buckets ship at the review floor, mirroring the
+            // derivation-probability fallback: a low-confidence suggestion,
+            // never an unmeasured cap.
+            candidate.probability = Some(
+                probs
+                    .get(&raw_intl_bucket(&candidate))
+                    .copied()
+                    .unwrap_or(crate::calibrate::REVIEW_T),
+            );
+        }
+        out.push(candidate);
     }
     // ---- Cross-POS completion (V11 item 4): recovered -acija/-ija nouns
     // whose verb IS attested in some raw language get their regular -ovati
@@ -706,6 +788,10 @@ pub(super) fn raw_intl_candidates(
             langs: c.langs.clone(),
             branch_pattern: c.branch_pattern.clone(),
             deriv_of: Some(c.form.clone()),
+            // Derivational completion: inherits the source noun's bucket
+            // probability (the family is the evidence; the verb attestation
+            // is only the existence gate).
+            probability: c.probability,
         });
     }
     out.extend(verbs);

@@ -1185,9 +1185,14 @@ row blindly.
 - `status: official`/`official-only` records are verification-grade.
 - `status: generated` records are NOT verification-grade. `probability` is
   model-specific and may be null:
-  - **cognate-set reconstructions** — `probability` is currently null because
-    their coverage score has no corpus-path holdout calibrator; the separate
-    official-row pipeline calibrator is deliberately rejected as incompatible;
+  - **cognate-set reconstructions** — `probability` is
+    P(reproduces an official lemma, normalized) from the committed
+    corpus-coverage calibrator (`data/corpus-calibration.json`): an isotonic
+    decile map fitted on cache sets gloss+POS-matched to official dev rows
+    and holdout-validated (ECE ≈0.014). The separate official-row pipeline
+    calibrator is still deliberately rejected as incompatible. Top-decile
+    coverage calibrates to only ≈0.43 — even the best-attested
+    reconstruction is closer to a coin flip than to verification;
   - **regular derivatives off attested bases** (the site's "Slovotvorstvo"
     families) — a base lemma's productive family (`-osť`, adverb, `-ńje`,
     `-telj`, `-ny`/`-sky`, `-ka`/`-ica`, `ne-`), restricted to members ABSENT
@@ -1205,10 +1210,15 @@ row blindly.
     `raw-intl:<langs>l:<branch-pattern>` tag (e.g. `raw-intl:2l:Z+J`), which
     also feeds their ranking evidence (`borrowed: true`), and `entry_id` is
     the `0` "no entry page" sentinel — do not fetch `entry/0.html`.
+    Their `probability` is the Wilson-95 lower bound of the recovery pass's
+    exact-match rate on the official-internationalism (genesis=I) holdout,
+    per (languages, branches) feature bucket, capped at 0.90 (unobserved
+    buckets ship at the 0.3 review floor).
     Recovered `-acija`/`-ija` nouns whose verb is attested in any raw
     language additionally yield the regular `-ovati` verb (teleportacija →
     teleportovati) with extra analyses `deriv:intl-ovati←<noun>` and
-    `pres:<stem>uje` marking the derivation and the regular present stem.
+    `pres:<stem>uje` marking the derivation and the regular present stem;
+    the verb inherits its source noun's bucket probability.
 - **Any non-null generated probability is still a suggestion, never
   verification.** Generated lemmas (all kinds) have NO inflection records on
   purpose: an inflected form of a

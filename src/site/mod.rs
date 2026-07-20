@@ -9,7 +9,8 @@
 use self::assets::css;
 use self::coverage::{
     inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
-    plan_raw_pages, raw_intl_candidates, select_official_surface, OfficialSurface,
+    plan_raw_pages, raw_intl_candidates, raw_intl_probabilities, select_official_surface,
+    OfficialSurface,
 };
 use self::entries::{
     branch_evidence, build_input, corpus_about, corpus_entry_page, corpus_home, derivation_block,
@@ -462,16 +463,28 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         });
     }
 
-    // ---- Confidence domain boundary (issue #89 J26/J27) ----
-    // `generate_set` scores are cognate-coverage scores. The committed
-    // calibrator is fitted on the separate official-row pipeline candidate
-    // score and MUST NOT be applied here merely because both scales are 0–1.
-    // Keep coverage badges, export null probabilities and pause the proposal
-    // buckets until a corpus-coverage calibrator is fitted and holdout-validated.
-    let calibration: Option<crate::calibrate::Calibration> = None;
-    println!(
-        "Corpus coverage scores are uncalibrated; generated probabilities and novel-word proposal buckets are disabled (issue #89 J26)."
-    );
+    // ---- Confidence domain boundary (issue #89 J26/J27, closed by V11) ----
+    // `generate_set` scores are cognate-coverage scores; the official-row
+    // pipeline calibrator MUST NOT be applied to them. The corpus path now
+    // has its OWN committed calibrator (data/corpus-calibration.json, fitted
+    // by `corpus-eval --fit` on the dev split and holdout-validated), loaded
+    // with a machine-checked score domain. Absent file → the V10 fail-closed
+    // posture (null probabilities, proposals paused) remains.
+    let calibration: Option<crate::calibrate::Calibration> =
+        crate::calibrate::Calibration::load_for_domain(
+            Path::new(crate::calibrate::CORPUS_CALIBRATION_PATH),
+            crate::calibrate::CORPUS_COVERAGE_SCORE_DOMAIN,
+        )?;
+    match &calibration {
+        Some(cal) => println!(
+            "Corpus coverage probabilities from the committed corpus calibrator (holdout ECE {:.4}; {}).",
+            cal.holdout_ece, cal.fitted_on
+        ),
+        None => println!(
+            "Corpus coverage scores are uncalibrated (no {} — run `corpus-eval --fit`); generated probabilities and novel-word proposal buckets are disabled (issue #89 J26).",
+            crate::calibrate::CORPUS_CALIBRATION_PATH
+        ),
+    }
 
     // Homograph / duplicate dedup. Several corpus sets can fold to the same
     // official lemma: genuine homographs (`ja` = I / and / yes), redundant
@@ -1782,9 +1795,25 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // pipeline with is_intl_meaning. `generated`, `borrowed`, NO paradigm,
     // NO probability (no calibrator for this path — fail closed), and never
     // fed to build_sets or any benchmark.
+    // V11 item 5: per-bucket Wilson-95 probabilities from the leakage-free
+    // genesis=I holdout, computed before the production (deduped) pass.
+    let raw_intl_probs = raw_corpus
+        .as_ref()
+        .map(|rc| raw_intl_probabilities(&rc.lemmas, &official_entries))
+        .unwrap_or_default();
+    if !raw_intl_probs.is_empty() {
+        let stats: Vec<String> = raw_intl_probs
+            .iter()
+            .map(|((l, b), p)| format!("{l}l{b}b={p:.2}"))
+            .collect();
+        println!(
+            "raw-intl calibration (Wilson-95 by langs/branches): {}",
+            stats.join(" ")
+        );
+    }
     let raw_intl = raw_corpus
         .as_ref()
-        .map(|rc| raw_intl_candidates(&rc.lemmas, &mut taken))
+        .map(|rc| raw_intl_candidates(&rc.lemmas, &mut taken, &raw_intl_probs))
         .unwrap_or_default();
     for c in &raw_intl {
         // entry_id 0 is the established "no entry page" sentinel (the raw
@@ -1811,7 +1840,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                     c.pos.code(),
                     "lemma",
                     "generated",
-                    None,
+                    c.probability,
                     &c.gloss,
                 );
             }
