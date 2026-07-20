@@ -690,10 +690,13 @@ pub fn compute(
         //     sense, noun smŕť for verb 'execute');
         // (b) coverage counts closure-aware matches (exact / near / mates),
         //     scored per collision in integer ppm as before;
-        // (c) a best score under PREFER_MIN_COVERAGE (half of one collision's
-        //     sense fully covered) emits an EMPTY prefer — expected and
-        //     accepted for most notes.
-        const PREFER_MIN_COVERAGE: usize = 500_000;
+        // (c) a best score under PREFER_MIN_COVERAGE emits an EMPTY prefer —
+        //     expected and accepted for most notes. Strictly MORE than half a
+        //     collision: the seed-42 sample showed exactly-half covers are the
+        //     single-token-graze class ('to acquire a tan' → iziskati via
+        //     'acquire' alone at 500k), while genuine prefers either fully
+        //     cover a sense (bazar→trg) or cover several tokens.
+        const PREFER_MIN_COVERAGE: usize = 600_000;
         let pos_class = |p: crate::model::Pos| match p {
             crate::model::Pos::Noun | crate::model::Pos::ProperNoun => "noun",
             crate::model::Pos::Verb => "verb",
