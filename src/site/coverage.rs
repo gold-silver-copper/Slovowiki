@@ -559,7 +559,7 @@ pub(super) fn raw_intl_candidates(
     type Member = (String, String, Vec<String>);
     // (intl skeleton, pos class) → members.
     let mut groups: BTreeMap<(String, &'static str), Vec<Member>> = BTreeMap::new();
-    let mut verb_gloss_by_ck: BTreeMap<String, String> = BTreeMap::new();
+    let mut verb_gloss_by_ck: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for l in lemmas {
         let word = l.word.trim();
         let modern = crate::lang::lang_info(&l.lang).is_some_and(|i| i.modern);
@@ -600,15 +600,31 @@ pub(super) fn raw_intl_candidates(
         // verb can't form a set of its own; the noun family + any one verb
         // attestation is the evidence instead).
         if pc == "v" {
-            if let Some(gloss) = l
-                .glosses
-                .iter()
-                .map(|g| g.trim())
-                .find(|g| !g.is_empty() && !g.chars().any(|c| c.is_uppercase()))
-            {
-                verb_gloss_by_ck
-                    .entry(crate::orthography::consonant_key(&latin))
-                    .or_insert_with(|| gloss.to_string());
+            // Grammar/form-of descriptions are not definitions — 'first-person
+            // singular … of абсолютизи́рам' must not become a shipped gloss
+            // (its parenthesized transliteration even names the stem).
+            const FORM_OF_MARKERS: &[&str] = &[
+                "singular",
+                "plural",
+                "participle",
+                "indicative",
+                "imperative",
+                "aorist",
+                "imperfect",
+                "-person",
+                "form of",
+            ];
+            let entry = verb_gloss_by_ck
+                .entry(crate::orthography::consonant_key(&latin))
+                .or_default();
+            for gloss in l.glosses.iter().map(|g| g.trim()) {
+                if !gloss.is_empty()
+                    && !gloss.chars().any(|c| c.is_uppercase())
+                    && !FORM_OF_MARKERS.iter().any(|m| gloss.contains(m))
+                    && !entry.iter().any(|have| have == gloss)
+                {
+                    entry.push(gloss.to_string());
+                }
             }
         }
     }
@@ -768,10 +784,31 @@ pub(super) fn raw_intl_candidates(
         if stem_ck.chars().count() < 4 {
             continue;
         }
+        // The attesting verb must be the stem's OWN verb, not any verb whose
+        // consonant fingerprint happens to prefix-match (that gate alone
+        // paired gubernija with 'to hibernate' and pauperizacija with 'to
+        // fry for a while'): some gloss token of the verb must share the
+        // stem's skeleton prefix (teleport → 'to teleport'; informatiz →
+        // 'to informatize'). That matching gloss — the right sense by
+        // construction — is also the one the completion ships under.
+        let stem_sk = crate::orthography::ascii_skeleton(stem);
+        let required = stem_sk.chars().count().clamp(4, 6);
+        let gloss_names_stem = |g: &str| {
+            g.split(|c: char| !c.is_alphabetic()).any(|t| {
+                crate::orthography::ascii_skeleton(t)
+                    .chars()
+                    .zip(stem_sk.chars())
+                    .take_while(|(a, b)| a == b)
+                    .count()
+                    >= required
+            })
+        };
         let Some(gloss) = verb_gloss_by_ck
             .iter()
-            .find(|(ck, _)| ck.starts_with(&stem_ck))
-            .map(|(_, g)| g.clone())
+            .filter(|(ck, _)| ck.starts_with(&stem_ck))
+            .flat_map(|(_, glosses)| glosses.iter())
+            .find(|g| gloss_names_stem(g))
+            .cloned()
         else {
             continue;
         };

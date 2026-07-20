@@ -1026,6 +1026,11 @@ fn raw_intl_recovers_the_teleport_family() {
         // A same-shape word pair with unrelated glosses must NOT group.
         mk("pl", "granat", "noun", "grenade"),
         mk("ru", "гранат", "noun", "pomegranate"),
+        // An -ija noun whose only fingerprint-matching verb is UNRELATED
+        // (gubernija/'to hibernate' class): no completion may ship.
+        mk("pl", "gubernia", "noun", "governorate"),
+        mk("ru", "губерния", "noun", "governorate"),
+        mk("ru", "гибернировать", "verb", "to hibernate"),
     ];
     // (verb completion asserted below: the pl/mk verb adaptations share no
     // consonant fingerprint, so no verb SET can form — only the derivational
@@ -1049,7 +1054,14 @@ fn raw_intl_recovers_the_teleport_family() {
         !out.iter().any(|c| c.gloss.contains("grenade")),
         "gloss-divergent same-shape words must not merge"
     );
-    // V11 item 4: the -ovati completion, gated on the raw verb attestation.
+    // V11 item 4: the -ovati completion, gated on a verb attestation whose
+    // gloss names the stem — the unrelated 'hibernate' verb must not give
+    // gubernija a completion.
+    assert!(
+        !out.iter()
+            .any(|c| c.form.starts_with("gubern") && c.pos == Pos::Verb),
+        "unrelated verb gloss must not complete gubernija"
+    );
     let verb = out
         .iter()
         .find(|c| c.pos == Pos::Verb)
