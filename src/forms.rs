@@ -1261,8 +1261,13 @@ compatible and both tokens are POS-unambiguous verification-grade words.
    monolithic `api/notes.json` is retired). Each record: `warning` sentence,
    `severity` (`high`/`medium` = the word's primary sense diverges;
    `low` = colloquial-only), optional `prefer` official lemma covering the
-   divergent sense, and per-language `collisions` evidence with
-   `primary_agrees` flags.
+   divergent sense (V12: chosen by SLAVIC bridges — the colliding word or
+   its native synonyms appearing in the preferred lemma's own cognate
+   cells — with English token coverage only as a fallback), and
+   per-language `collisions` evidence with `primary_agrees` flags and a
+   `level` field (`exact` = same folded surface, the classic traps;
+   `loose` = y→i skeleton match). Rendered warnings quote exact-level
+   collisions first.
 5. For unknown tokens, use `api/suggest/<n>.json` (or `cargo run -- check-text`
    locally) to offer nearest known forms.
 6. Cite `entry/<entry_id>.html` when you need a human-checkable source.

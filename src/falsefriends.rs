@@ -75,6 +75,10 @@ pub struct Collision {
     /// record) agrees with the official gloss — the divergence is a
     /// secondary/colloquial sense (pl banan: 'banana' first, slang later).
     pub primary_agrees: bool,
+    /// Surface-match level: `exact` (same folded surface) or `loose`
+    /// (y→i-folded skeleton). Exact collisions are the classic traps and
+    /// outrank loose ones in the rendered warning (V12 item 2).
+    pub level: &'static str,
 }
 
 /// A computed semantic-trap note for one folded Interslavic key. The
@@ -607,13 +611,18 @@ pub fn compute(
         if isv_tokens.is_empty() {
             continue;
         }
-        let mut candidate_idxs: BTreeSet<usize> = BTreeSet::new();
+        // record idx → matched at exact level (loose-only records are false).
+        let mut candidate_idxs: BTreeMap<usize, bool> = BTreeMap::new();
         if let Some(v) = by_exact.get(key) {
-            candidate_idxs.extend(v.iter().copied());
+            for &i in v {
+                candidate_idxs.insert(i, true);
+            }
         }
         if key.chars().count() >= LOOSE_MIN_CHARS {
             if let Some(v) = by_loose.get(&loose_key(key)) {
-                candidate_idxs.extend(v.iter().copied());
+                for &i in v {
+                    candidate_idxs.entry(i).or_insert(false);
+                }
             }
         }
         // Merge divergent records of the same (lang, word) into one collision.
@@ -624,12 +633,13 @@ pub fn compute(
             glosses: Vec<String>,
             tokens: BTreeSet<String>,
             primary_agrees: bool,
+            exact: bool,
         }
         let mut merged: BTreeMap<(usize, String), Merged> = BTreeMap::new();
-        for w in candidate_idxs
+        for (w, exact) in candidate_idxs
             .into_iter()
-            .map(|i| &words[i])
-            .filter(|w| !overlaps(&w.tokens, isv_tokens, &mates))
+            .map(|(i, exact)| (&words[i], exact))
+            .filter(|(w, _)| !overlaps(&w.tokens, isv_tokens, &mates))
         {
             let primary_agrees = primary_tokens
                 .get(&(w.lang_idx, w.word.clone()))
@@ -643,7 +653,9 @@ pub fn compute(
                     glosses: Vec::new(),
                     tokens: BTreeSet::new(),
                     primary_agrees,
+                    exact: false,
                 });
+            slot.exact |= exact;
             slot.poses.insert(w.pos.clone());
             for g in &w.glosses {
                 if !slot.glosses.iter().any(|have| have == g) {
@@ -674,10 +686,13 @@ pub fn compute(
         // Quote primary-sense traps first, colloquial-only divergences after,
         // each with wording that says which kind it is.
         let mut warned_langs: Vec<usize> = Vec::new();
-        let quote_order = collisions
-            .iter()
-            .filter(|c| !c.primary_agrees)
-            .chain(collisions.iter().filter(|c| c.primary_agrees));
+        // Primary-divergent before colloquial; within each, EXACT collisions
+        // before loose (V12 item 2: pytati must quote пытать 'torture', the
+        // exact classic trap, not only the loose питать 'feed') — and since
+        // one language gets one quote, exact-first means the exact sense is
+        // the one a reader sees.
+        let mut quote_order: Vec<&Merged> = collisions.iter().collect();
+        quote_order.sort_by_key(|c| (c.primary_agrees, !c.exact, c.lang_idx, c.word.clone()));
         for w in quote_order {
             if warned_langs.contains(&w.lang_idx) || warned_langs.len() >= MAX_WARNED_LANGS {
                 continue;
@@ -876,6 +891,7 @@ pub fn compute(
                         word: w.word,
                         glosses: w.glosses,
                         primary_agrees: w.primary_agrees,
+                        level: if w.exact { "exact" } else { "loose" },
                     })
                     .collect(),
             },
@@ -1003,6 +1019,38 @@ mod tests {
 
     /// V11 item 1: the observed false-positive classes must not fire (or
     /// must be downgraded to colloquial/low severity).
+    /// V12 item 2: exact-level collisions outrank loose in the rendered
+    /// warning — pytati must quote пытать 'torture' (exact), not only the
+    /// loose питать 'feed'; the machine-readable list stays complete and
+    /// level-annotated.
+    #[test]
+    fn exact_collision_is_the_quoted_one() {
+        let notes = notes();
+        let pytati = notes.get("pytati").expect("pytati note");
+        assert!(
+            pytati.warning.contains("torture"),
+            "warning must quote the exact пытать sense: {}",
+            pytati.warning
+        );
+        let levels: Vec<(&str, &str)> = pytati
+            .collisions
+            .iter()
+            .map(|c| (c.word.as_str(), c.level))
+            .collect();
+        assert!(
+            levels
+                .iter()
+                .any(|(w, l)| w.contains("пытать") && *l == "exact"),
+            "{levels:?}"
+        );
+        assert!(
+            levels
+                .iter()
+                .any(|(w, l)| w.contains("питать") && *l == "loose"),
+            "{levels:?}"
+        );
+    }
+
     /// V12 item 1: English polysemy must not mint prefers — the four
     /// observed bad prefers go empty or sensible, the good ones survive.
     #[test]

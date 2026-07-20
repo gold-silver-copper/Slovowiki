@@ -129,6 +129,8 @@ for shard_path in sorted((api / "notes").glob("*.json")):
             "note in wrong shard", k, shard_path.name
         )
         assert note["severity"] in ("high", "medium", "low"), ("bad severity", k)
+        for coll in note["collisions"]:
+            assert coll["level"] in ("exact", "loose"), ("bad collision level", k)
 assert notes_total == meta["notes"], ("meta notes count mismatch", notes_total, meta["notes"])
 
 en_selftest = json.loads((api / "en" / "selftest.json").read_text())
