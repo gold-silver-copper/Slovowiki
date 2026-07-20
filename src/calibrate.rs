@@ -73,6 +73,11 @@ impl CorpusCalibration {
             cal.score_domain,
             expected_domain
         );
+        anyhow::ensure!(
+            !cal.bands.is_empty(),
+            "corpus calibration {} has no bands",
+            path.display()
+        );
         Ok(Some(cal))
     }
 

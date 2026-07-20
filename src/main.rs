@@ -189,7 +189,7 @@ enum Command {
     },
     /// Verify an Interslavic text against the lexicon: classify every token
     /// (known-lemma / known-form / generated / unknown), suggest nearest
-    /// lemmas, apply curated semantic-trap warnings (issue #11).
+    /// lemmas, apply computed false-friend warnings (issue #11).
     CheckText {
         /// Text file to verify.
         file: PathBuf,
