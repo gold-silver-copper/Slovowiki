@@ -309,9 +309,11 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     }
 
     // The project-lexicon hand-off (V13 item 2): emit the exact item-1 TSV
-    // row, validated by the SAME rules `check-text --lexicon` applies —
-    // an invalid row must fail here, not later in CI.
-    let lexicon_row = if overrides.lexicon_row {
+    // row, validated by the SAME rules `check-text --lexicon` applies — an
+    // invalid row must fail here, not later in CI. The failure surfaces
+    // AFTER the full four-axis report (like check-text's summary gate): the
+    // report is precisely the diagnostic that explains a rejection.
+    let lexicon_row: Option<Result<String>> = if overrides.lexicon_row {
         let (g, a) = if pos == crate::model::Pos::Noun {
             (
                 overrides
@@ -333,9 +335,11 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
             pos.code(),
             overrides.gloss.as_deref().unwrap_or("").trim()
         );
-        let parsed = crate::check::parse_lexicon(&row)?;
-        crate::check::validate_lexicon_row(&index, &parsed[0])?;
-        Some(row)
+        let validated = crate::check::parse_lexicon(&row)
+            .and_then(|rows| crate::check::validate_lexicon_row(&index, &rows[0]))
+            .map(|_pinned| row)
+            .map_err(|e| anyhow::anyhow!("--lexicon-row rejected for '{word}': {e:#}"));
+        Some(validated)
     } else {
         None
     };
@@ -369,11 +373,18 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
                     .collect::<Vec<_>>(),
             },
         });
-        if let Some(row) = &lexicon_row {
-            out["lexicon_row"] = serde_json::json!(row);
+        match &lexicon_row {
+            Some(Ok(row)) => out["lexicon_row"] = serde_json::json!(row),
+            // Agents get the rejection in-band too; the nonzero exit below
+            // still fires after the full report is printed.
+            Some(Err(e)) => out["lexicon_row_error"] = serde_json::json!(e.to_string()),
+            None => {}
         }
         println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(());
+        return match lexicon_row {
+            Some(Err(e)) => Err(e),
+            _ => Ok(()),
+        };
     }
 
     println!("coin-check '{word}' (folded key '{folded}')");
@@ -455,11 +466,18 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     for d in &divergences {
         println!("  ⚠ divergence : {d}");
     }
-    if let Some(row) = &lexicon_row {
-        println!("  lexicon row  : {}", row.replace('\t', "\\t"));
-        println!("                 (append the raw TSV line to your project lexicon; --json carries it in 'lexicon_row')");
+    match &lexicon_row {
+        Some(Ok(row)) => {
+            println!("  lexicon row  : {}", row.replace('\t', "\\t"));
+            println!("                 (append the raw TSV line to your project lexicon; --json carries it in 'lexicon_row')");
+        }
+        Some(Err(e)) => println!("  lexicon row  : REJECTED — {e}"),
+        None => {}
     }
-    Ok(())
+    match lexicon_row {
+        Some(Err(e)) => Err(e),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]

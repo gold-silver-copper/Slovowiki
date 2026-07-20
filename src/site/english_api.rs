@@ -936,12 +936,13 @@ pub fn run_translation_probe(site_dir: &Path, probe: &Path, out_dir: &Path) -> a
     )?;
     writeln!(
         s,
-        "**Denominator:** the committed {total}-word probe `{PROBE_FILE}` (Rogue-5.4.5 \
+        "**Denominator:** the committed {total}-word probe `{}` (Rogue-5.4.5 \
          game vocabulary), each query walked through the documented `api/en` retry \
          ladder by the same code path as `en --batch`. **Reported metric, not a \
          gate:** coverage moves with data; this report keeps PRs honest without \
          freezing them. **Leakage story:** the probe is an external vocabulary \
-         list; no accuracy path reads it.\n"
+         list; no accuracy path reads it.\n",
+        probe.display()
     )?;
     writeln!(
         s,

@@ -150,7 +150,7 @@ enum Command {
         #[arg(long, default_value = "site")]
         site: PathBuf,
         /// The probe file (one query per line, #-comment category headers).
-        #[arg(long, default_value = "tools/translation-probe.txt")]
+        #[arg(long, default_value = site::PROBE_FILE)]
         probe: PathBuf,
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,

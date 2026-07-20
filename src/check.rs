@@ -744,12 +744,17 @@ fn consistency_warning(index: &Index, rs: &[FormRecord], display: &str) -> Optio
         return None;
     }
     let lemma_keys: HashSet<String> = official.iter().map(|r| forms::form_key(&r.lemma)).collect();
+    // Tokenize each official gloss ONCE per token — the sets are row-loop
+    // invariant, and a large text × large lexicon multiplies this cost.
+    let record_tokens: Vec<std::collections::BTreeSet<String>> = official
+        .iter()
+        .map(|r| crate::site::english_gloss_tokens(&r.gloss))
+        .collect();
     for row in &index.lexicon {
         if lemma_keys.contains(&row.lemma_key) {
             continue; // the token IS the project's choice for this concept
         }
-        for r in &official {
-            let tokens = crate::site::english_gloss_tokens(&r.gloss);
+        for (r, tokens) in official.iter().zip(&record_tokens) {
             let shared: Vec<&str> = tokens
                 .intersection(&row.gloss_tokens)
                 .map(String::as_str)
@@ -877,6 +882,11 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
     let pure = |p: &str| !recs.is_empty() && recs.iter().all(|r| r.pos == p);
     let (pure_adj, pure_noun, pure_verb) = (pure("adj"), pure("noun"), pure("verb"));
     for r in recs {
+        // DELIBERATE (V13): `project` records count as verification-grade
+        // here, so sanctioned coinages participate in the conservative
+        // agreement checks like official words do — their paradigms are
+        // explicit project decisions, and apply_lexicon feeds their declared
+        // genders into `noun_gender`. Only `generated` stays excluded.
         if r.status != "generated" {
             official = true;
         }
@@ -1864,6 +1874,17 @@ mod tests {
             },
         );
         assert!(!gated.passed, "consistency gate must fire when requested");
+
+        // The skip-own-lemma path: the project's OWN choice for a concept
+        // (`praktika`, pinned official) must never warn against itself.
+        let own = check_text(&index, "Tvoja praktika pomagaje.");
+        let praktika = own.iter().find(|r| r.token == "praktika").unwrap();
+        assert_eq!(praktika.status, "known-lemma");
+        assert!(
+            praktika.consistency.is_none(),
+            "the row's own lemma must not drift against its own row: {:?}",
+            praktika.consistency
+        );
     }
 
     /// V13 item 1: a broken lexicon is a hard error, never a silent
@@ -1927,6 +1948,21 @@ mod tests {
         // accepted and marked pinned (no project paradigm re-indexed).
         let pin = parse_lexicon("voda\tnoun\tf\tinanim\twater").unwrap();
         assert!(validate_lexicon_row(&index, &pin[0]).expect("pin validates"));
+
+        // Rows validate SEQUENTIALLY against the growing index: a later row
+        // colliding with an earlier coinage's inflected form is rejected,
+        // not silently double-indexed. (Empty official corpus — the
+        // collision is purely between the two project rows.)
+        let mut coinage_index = build_index(&[], None, Default::default());
+        let ordered = parse_lexicon(
+            "žabervok\tnoun\tm\tanim\tjabberwock\nžabervoka\tnoun\tf\tinanim\tjabberwock hen",
+        )
+        .expect("both rows parse");
+        let err = apply_lexicon(&mut coinage_index, ordered).unwrap_err();
+        assert!(
+            err.to_string().contains("žabervoka") && err.to_string().contains("collides"),
+            "{err}"
+        );
     }
 
     #[test]

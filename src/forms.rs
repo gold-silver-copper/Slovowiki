@@ -216,6 +216,13 @@ pub fn noun_paradigm_forms(
 /// a project lexicon or a coin-check `--animacy` flag is an explicit consumer
 /// decision (`ISV::noun_with` semantics), so it must reach the inflector —
 /// masculine-animate accusatives (`žabervoka`) differ from inanimate ones.
+///
+/// CAUTION: with `gender: None` this falls back to the crate's own
+/// gender/animacy inference and `animate` is IGNORED — there is no
+/// `noun_forms` variant taking animacy without gender. Both callers
+/// guarantee a concrete gender for nouns (`parse_lexicon` requires it;
+/// coin-check backfills the guess); a new caller must do the same or accept
+/// the guessed animacy.
 pub fn noun_paradigm_forms_with_animacy(
     word: &str,
     gender: Option<crate::model::Gender>,
@@ -1335,7 +1342,9 @@ project-lexicon TSV row (see below; also a `lexicon_row` field in `--json`),
 so the coinage workflow chains mechanically:
 `coin-check → append row → check-text --lexicon`. The row is validated by
 the same rules `check-text --lexicon` applies — an invalid row fails here,
-not later in CI.
+not later in CI: the full four-axis report still prints (it is the
+diagnostic that explains the rejection; `--json` carries the reason as
+`lexicon_row_error`), then the command exits nonzero.
 
 ## Project lexicons (check-text --lexicon)
 
@@ -1353,7 +1362,10 @@ skipped. `check-text --lexicon <file>` then:
 - builds each row's full paradigm in memory (same machinery as the official
   paradigms) and classifies matching tokens with status `project` — so a
   coinage inflected at runtime (`žabervoka`, `žabervokom`) no longer drowns
-  a `--summary --max-unknown 0` CI gate;
+  a `--summary --max-unknown 0` CI gate. Project tokens also participate in
+  the conservative agreement checks like official words (their paradigms and
+  declared genders are explicit project decisions), so a case error in a
+  coinage's usage is caught too;
 - validates the lexicon on load, as HARD errors: rows must parse, verbs must
   cite `-ti`, adjectives `-y`/`-i`, nouns must be declinable, and every
   lemma must either collide with nothing (coin-check's collision axis) or
