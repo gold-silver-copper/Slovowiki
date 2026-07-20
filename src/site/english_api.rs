@@ -458,10 +458,15 @@ pub fn desuffix_variants(key: &str) -> Vec<String> {
             for r in *restores {
                 push(format!("{stem}{r}"));
             }
-            // -ing after a doubled consonant: running → run.
+            // -ing after a doubled consonant: running → run. ASCII-gated
+            // (English doubling is ASCII-only), which also keeps the
+            // char-boundary truncation safe for non-ASCII queries.
             if *suf == "ing" {
                 let cs: Vec<char> = stem.chars().collect();
-                if cs.len() >= 2 && cs[cs.len() - 1] == cs[cs.len() - 2] {
+                if cs.len() >= 2
+                    && cs[cs.len() - 1] == cs[cs.len() - 2]
+                    && cs[cs.len() - 1].is_ascii_alphabetic()
+                {
                     push(stem[..stem.len() - 1].to_string());
                 }
             }

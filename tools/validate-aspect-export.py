@@ -108,7 +108,8 @@ def en_desuffix(key):
             stem = key[: len(key) - len(suf)]
             for r in restores:
                 push(stem + r)
-            if suf == "ing" and len(stem) >= 2 and stem[-1] == stem[-2]:
+            if (suf == "ing" and len(stem) >= 2 and stem[-1] == stem[-2]
+                    and stem[-1].isascii() and stem[-1].isalpha()):
                 push(stem[:-1])
     return out
 
