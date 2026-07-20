@@ -1103,6 +1103,11 @@ fn raw_intl_recovers_the_teleport_family() {
             .any(|c| c.form.starts_with("gubern") && c.pos == Pos::Verb),
         "unrelated verb gloss must not complete gubernija"
     );
+    assert!(
+        !out.iter()
+            .any(|c| c.pos == Pos::Verb && c.gloss.contains("translocate")),
+        "sibling-lexeme verb must not gloss the transl- noun"
+    );
     let verb = out
         .iter()
         .find(|c| c.pos == Pos::Verb)
