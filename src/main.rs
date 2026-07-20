@@ -93,8 +93,13 @@ enum Command {
     /// ladder the API documents — the reference client, so agents need not
     /// reimplement the router. Requires a prior `export`.
     En {
-        /// The English word or phrase to look up.
-        query: String,
+        /// The English word or phrase to look up (omit with --batch).
+        query: Option<String>,
+        /// Lexicon-building mode: one query per line (blank lines and
+        /// #-comments skipped), one selftest pass, shard cache shared,
+        /// output in input order (V11 item 7).
+        #[arg(long)]
+        batch: Option<PathBuf>,
         /// Emit machine-readable JSON instead of the human table.
         #[arg(long)]
         json: bool,
@@ -122,6 +127,11 @@ enum Command {
     CorpusEval {
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
+        /// Fit and persist the corpus-coverage calibrator
+        /// (data/corpus-calibration.json): isotonic fit on the dev split,
+        /// holdout-validated (V11 item 5 / issue #90).
+        #[arg(long)]
+        fit: bool,
     },
     /// Benchmark the derivation layer: mined official base→derivative pairs,
     /// seam-aware layer vs naive concatenation (Track A / issue #1).
@@ -188,6 +198,10 @@ enum Command {
         /// caches; faster for pure classification/CI gating).
         #[arg(long)]
         no_warnings: bool,
+        /// With --summary: also fail when SEVERE false-friend warnings
+        /// (severity high/medium) exceed this count.
+        #[arg(long)]
+        max_severe_warnings: Option<usize>,
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
@@ -298,10 +312,19 @@ fn main() -> Result<()> {
             enrich::extract(&dir, &wanted, &out)
         }
         Command::Coverage { out } => site::run_coverage(&out),
-        Command::En { query, json, site } => site::run_en_lookup(&site, &query, json),
+        Command::En {
+            query,
+            batch,
+            json,
+            site,
+        } => match (query, batch) {
+            (None, Some(file)) => site::run_en_batch(&site, &file, json),
+            (Some(q), None) => site::run_en_lookup(&site, &q, json),
+            _ => anyhow::bail!("pass exactly one of <QUERY> or --batch <file>"),
+        },
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
-        Command::CorpusEval { official } => eval::run_corpus_eval(&official),
+        Command::CorpusEval { official, fit } => eval::run_corpus_eval(&official, fit),
         Command::DeriveEval { official, out } => derive::run_eval(&official, &out),
         Command::MultiwordEval { official, out } => eval::run_multiword_eval(&official, &out),
         Command::AspectEval { official, out } => eval::run_aspect_eval(&official, &out),
@@ -317,17 +340,28 @@ fn main() -> Result<()> {
             max_unknown,
             max_agreement,
             no_warnings,
+            max_severe_warnings,
             official,
-        } => check::run(
-            &official,
-            &file,
-            json,
-            summary.then_some(check::SummaryGate {
-                max_unknown,
-                max_agreement,
-            }),
-            !no_warnings,
-        ),
+        } => {
+            // A severity gate over warnings that were never computed would
+            // pass vacuously — reject the combination instead of letting a
+            // CI job believe it is gated.
+            anyhow::ensure!(
+                !(no_warnings && max_severe_warnings.is_some()),
+                "--max-severe-warnings needs the false-friend computation; drop --no-warnings"
+            );
+            check::run(
+                &official,
+                &file,
+                json,
+                summary.then_some(check::SummaryGate {
+                    max_unknown,
+                    max_agreement,
+                    max_severe_warnings,
+                }),
+                !no_warnings,
+            )
+        }
         Command::ChecktextEval { official, out } => check::run_eval(&official, &out),
         Command::Audit { official, out } => eval::run_audit(&official, &out),
         Command::Oracle { official, out } => eval::run_oracle(&official, &out),

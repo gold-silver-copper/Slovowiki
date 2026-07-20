@@ -9,7 +9,8 @@
 use self::assets::css;
 use self::coverage::{
     inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
-    plan_raw_pages, raw_intl_candidates, select_official_surface, OfficialSurface,
+    plan_raw_pages, raw_intl_candidates, raw_intl_probabilities, select_official_surface,
+    OfficialSurface,
 };
 use self::entries::{
     branch_evidence, build_input, corpus_about, corpus_entry_page, corpus_home, derivation_block,
@@ -462,16 +463,28 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         });
     }
 
-    // ---- Confidence domain boundary (issue #89 J26/J27) ----
-    // `generate_set` scores are cognate-coverage scores. The committed
-    // calibrator is fitted on the separate official-row pipeline candidate
-    // score and MUST NOT be applied here merely because both scales are 0–1.
-    // Keep coverage badges, export null probabilities and pause the proposal
-    // buckets until a corpus-coverage calibrator is fitted and holdout-validated.
-    let calibration: Option<crate::calibrate::Calibration> = None;
-    println!(
-        "Corpus coverage scores are uncalibrated; generated probabilities and novel-word proposal buckets are disabled (issue #89 J26)."
-    );
+    // ---- Confidence domain boundary (issue #89 J26/J27, closed by V11) ----
+    // `generate_set` scores are cognate-coverage scores; the official-row
+    // pipeline calibrator MUST NOT be applied to them. The corpus path now
+    // has its OWN committed calibrator (data/corpus-calibration.json, fitted
+    // by `corpus-eval --fit` on the dev split and holdout-validated), loaded
+    // with a machine-checked score domain. Absent file → the V10 fail-closed
+    // posture (null probabilities, proposals paused) remains.
+    let calibration: Option<crate::calibrate::Calibration> =
+        crate::calibrate::Calibration::load_for_domain(
+            Path::new(crate::calibrate::CORPUS_CALIBRATION_PATH),
+            crate::calibrate::CORPUS_COVERAGE_SCORE_DOMAIN,
+        )?;
+    match &calibration {
+        Some(cal) => println!(
+            "Corpus coverage probabilities from the committed corpus calibrator (holdout ECE {:.4}; {}).",
+            cal.holdout_ece, cal.fitted_on
+        ),
+        None => println!(
+            "Corpus coverage scores are uncalibrated (no {} — run `corpus-eval --fit`); generated probabilities and novel-word proposal buckets are disabled (issue #89 J26).",
+            crate::calibrate::CORPUS_CALIBRATION_PATH
+        ),
+    }
 
     // Homograph / duplicate dedup. Several corpus sets can fold to the same
     // official lemma: genuine homographs (`ja` = I / and / yes), redundant
@@ -1782,9 +1795,25 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // pipeline with is_intl_meaning. `generated`, `borrowed`, NO paradigm,
     // NO probability (no calibrator for this path — fail closed), and never
     // fed to build_sets or any benchmark.
+    // V11 item 5: per-bucket Wilson-95 probabilities from the leakage-free
+    // genesis=I holdout, computed before the production (deduped) pass.
+    let raw_intl_probs = raw_corpus
+        .as_ref()
+        .map(|rc| raw_intl_probabilities(&rc.lemmas, &official_entries))
+        .unwrap_or_default();
+    if !raw_intl_probs.is_empty() {
+        let stats: Vec<String> = raw_intl_probs
+            .iter()
+            .map(|((l, b), p)| format!("{l}l{b}b={p:.2}"))
+            .collect();
+        println!(
+            "raw-intl calibration (Wilson-95 by langs/branches): {}",
+            stats.join(" ")
+        );
+    }
     let raw_intl = raw_corpus
         .as_ref()
-        .map(|rc| raw_intl_candidates(&rc.lemmas, &mut taken))
+        .map(|rc| raw_intl_candidates(&rc.lemmas, &mut taken, &raw_intl_probs))
         .unwrap_or_default();
     for c in &raw_intl {
         // entry_id 0 is the established "no entry page" sentinel (the raw
@@ -1792,19 +1821,29 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // linguistic-logic CI guard requires nonzero ids to resolve there).
         // The attestation evidence rides in the provenance tag, which the
         // English API parses back out.
-        let feats = format!("raw-intl:{}l:{}", c.langs.len(), c.branch_pattern);
-        for sink in [&mut lemma_sink, &mut form_sink] {
-            sink.add(
-                &c.form,
-                &feats,
-                &c.form,
-                0,
-                c.pos.code(),
-                "lemma",
-                "generated",
-                None,
-                &c.gloss,
-            );
+        let mut feat_list = vec![format!("raw-intl:{}l:{}", c.langs.len(), c.branch_pattern)];
+        if let Some(noun) = &c.deriv_of {
+            // V11 item 4: derivational completion — provenance points at the
+            // recovered noun; the regular present stem rides along.
+            feat_list.push(format!("deriv:intl-ovati←{noun}"));
+            if let Some(stem) = &c.present_stem {
+                feat_list.push(format!("pres:{stem}"));
+            }
+        }
+        for feats in &feat_list {
+            for sink in [&mut lemma_sink, &mut form_sink] {
+                sink.add(
+                    &c.form,
+                    feats,
+                    &c.form,
+                    0,
+                    c.pos.code(),
+                    "lemma",
+                    "generated",
+                    c.probability,
+                    &c.gloss,
+                );
+            }
         }
     }
     println!(
@@ -1814,11 +1853,55 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     let form_records = form_sink.into_records();
     let lemma_records = lemma_sink.into_records();
     // Computed false-friend notes for the web text-checker (the CLI computes
-    // the same records), keyed by folded form so the client looks up by key
-    // directly. Deterministic: BTreeMap ordering, serde output.
-    let notes_json = serde_json::to_string(&ff_notes)? + "\n";
-    std::fs::create_dir_all(out_dir.join("api"))?;
-    std::fs::write(out_dir.join("api").join("notes.json"), &notes_json)?;
+    // the same records), keyed by folded form and SHARDED like the suggest
+    // index (V11 item 6): api/notes/<n>.json via fnv1a32(key) % 64, with a
+    // frozen router selftest. The retired monolithic api/notes.json is
+    // removed so stale copies can't shadow the shards.
+    let notes_dir = out_dir.join("api").join("notes");
+    let _ = std::fs::remove_dir_all(&notes_dir);
+    std::fs::create_dir_all(&notes_dir)?;
+    let _ = std::fs::remove_file(out_dir.join("api").join("notes.json"));
+    let mut notes_bytes = 0usize;
+    {
+        let mut shards: std::collections::BTreeMap<
+            u32,
+            std::collections::BTreeMap<&String, &crate::falsefriends::Note>,
+        > = std::collections::BTreeMap::new();
+        for (key, note) in &ff_notes {
+            shards
+                .entry(crate::forms::fnv1a32(key) % crate::falsefriends::NOTES_SHARDS)
+                .or_default()
+                .insert(key, note);
+        }
+        for shard in 0..crate::falsefriends::NOTES_SHARDS {
+            let body = serde_json::json!({
+                "schema_version": crate::falsefriends::NOTES_SCHEMA_VERSION,
+                "shard": shard,
+                "notes": shards.get(&shard).cloned().unwrap_or_default(),
+            });
+            let body = serde_json::to_string(&body)? + "\n";
+            notes_bytes += body.len();
+            std::fs::write(notes_dir.join(format!("{shard}.json")), body)?;
+        }
+        let samples: Vec<serde_json::Value> = crate::falsefriends::NOTES_SELFTEST_SAMPLES
+            .iter()
+            .map(|k| {
+                serde_json::json!([
+                    k,
+                    crate::forms::fnv1a32(k) % crate::falsefriends::NOTES_SHARDS
+                ])
+            })
+            .collect();
+        let st = serde_json::json!({
+            "schema_version": crate::falsefriends::NOTES_SCHEMA_VERSION,
+            "shards": crate::falsefriends::NOTES_SHARDS,
+            "router": "fnv1a32(utf8(folded_key)) % shards",
+            "samples": samples,
+        });
+        let st = serde_json::to_string(&st)? + "\n";
+        notes_bytes += st.len();
+        std::fs::write(out_dir.join("api").join("notes-selftest.json"), st)?;
+    }
     let aspect_api: crate::forms::AspectMeta = metas
         .iter()
         .filter_map(|m| {
@@ -1915,7 +1998,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         &aspect_api,
         &rank_evidence,
         ff_notes.len(),
-        pair_json.len() + suggest_bytes + english_counts.bytes + notes_json.len(),
+        pair_json.len() + suggest_bytes + english_counts.bytes + notes_bytes,
         &build_meta.git,
         &crate::forms::agent_guide(),
     )?;
@@ -2000,7 +2083,7 @@ mod search;
 mod special;
 
 pub use self::coverage::run_coverage;
-pub use self::english_api::run_en_lookup;
+pub use self::english_api::{run_en_batch, run_en_lookup};
 
 #[cfg(test)]
 mod tests;

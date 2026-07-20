@@ -64,10 +64,12 @@ committed and the site build stays self-contained.
 - `cargo run -- corpus-eval` scores this site path against the dictionary directly:
   **58.95% exact / 62.84% normalized** on 7,400 entries with a known ancestor.
 - `data/novel-words.tsv` — the novel-vocabulary proposal artifact regenerated
-  by every `export`. It currently contains only its header: issue #89 found that
-  the official-row pipeline calibrator had been applied to the corpus path's
-  different coverage score. Probabilities and proposal buckets now fail closed
-  until a corpus-specific calibrator is fitted and holdout-validated.
+  by every `export`. Live again since V11: the corpus path has its own
+  committed calibrator (`data/corpus-calibration.json`, fitted by
+  `corpus-eval --fit` on the dev split, holdout ECE ≈0.014), replacing the
+  issue-#89 fail-closed pause. Honest ceiling: top-decile coverage calibrates
+  to ≈0.43, so every current proposal sits in the review band (`pregled`) —
+  none reach the propose threshold.
 
 The **benchmark below** still measures generation accuracy against the official dictionary
 (a separate, leakage-free evaluation of the engine).
@@ -363,8 +365,9 @@ data/
   proto-slavic.cache.json Proto-Slavic reconstructions (built by extract-proto)
   slavic-lemmas.cache.json every inherited + borrowed Slavic lemma (built by extract-lemmas)
   wiktionary-enrich.cache.json native RU/PL/CS etymology/senses/links (built by extract-enrich)
-  novel-words.tsv         paused proposal artifact (header-only until corpus calibration)
+  novel-words.tsv         novel-word proposals (probabilities from the corpus calibrator)
   score-calibration.json  official-row pipeline calibrator (domain-checked; refit by evaluate)
+  corpus-calibration.json corpus-coverage calibrator (fitted by corpus-eval --fit, read by export)
   curation-notes.example.json  format of the optional human curation notes
 docs/history/
   IMPROVEMENT_PROMPT*.md historical experiment briefs (not contributor instructions)

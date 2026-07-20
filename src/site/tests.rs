@@ -1026,9 +1026,19 @@ fn raw_intl_recovers_the_teleport_family() {
         // A same-shape word pair with unrelated glosses must NOT group.
         mk("pl", "granat", "noun", "grenade"),
         mk("ru", "гранат", "noun", "pomegranate"),
+        // An -ija noun whose only fingerprint-matching verb is UNRELATED
+        // (gubernija/'to hibernate' class): no completion may ship.
+        mk("pl", "gubernia", "noun", "governorate"),
+        mk("ru", "губерния", "noun", "governorate"),
+        mk("ru", "гибернировать", "verb", "to hibernate"),
     ];
+    // (verb completion asserted below: the pl/mk verb adaptations share no
+    // consonant fingerprint, so no verb SET can form — only the derivational
+    // completion off the recovered noun reaches teleportovati.)
     let mut taken = std::collections::HashSet::new();
-    let out = super::coverage::raw_intl_candidates(&lemmas, &mut taken);
+    let mut probs = std::collections::BTreeMap::new();
+    probs.insert((2usize, 2usize), 0.42);
+    let out = super::coverage::raw_intl_candidates(&lemmas, &mut taken, &probs);
     let noun = out
         .iter()
         .find(|c| c.pos == Pos::Noun && c.gloss == "teleportation")
@@ -1044,4 +1054,28 @@ fn raw_intl_recovers_the_teleport_family() {
         !out.iter().any(|c| c.gloss.contains("grenade")),
         "gloss-divergent same-shape words must not merge"
     );
+    // V11 item 4: the -ovati completion, gated on a verb attestation whose
+    // gloss names the stem — the unrelated 'hibernate' verb must not give
+    // gubernija a completion.
+    assert!(
+        !out.iter()
+            .any(|c| c.form.starts_with("gubern") && c.pos == Pos::Verb),
+        "unrelated verb gloss must not complete gubernija"
+    );
+    let verb = out
+        .iter()
+        .find(|c| c.pos == Pos::Verb)
+        .expect("teleport verb completion");
+    assert_eq!(verb.form, "teleportovati");
+    assert_eq!(verb.gloss, "to teleport");
+    assert_eq!(verb.deriv_of.as_deref(), Some("teleportacija"));
+    assert_eq!(verb.present_stem.as_deref(), Some("teleportuje"));
+    // V11 item 5: bucket probability applied to the noun; the derivational
+    // verb inherits its source noun's bucket.
+    let noun = out
+        .iter()
+        .find(|c| c.form == "teleportacija")
+        .expect("noun candidate");
+    assert_eq!(noun.probability, Some(0.42));
+    assert_eq!(verb.probability, Some(0.42));
 }

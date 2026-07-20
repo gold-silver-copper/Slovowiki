@@ -204,7 +204,7 @@ struct RunMetrics {
 /// internationalism flag) — exactly what the corpus site does — run
 /// `generate_set`, and score its headword. This gives the site path its own
 /// accuracy number, distinct from the consensus pipeline's headline.
-pub fn run_corpus_eval(official_path: &Path) -> Result<()> {
+pub fn run_corpus_eval(official_path: &Path, fit: bool) -> Result<()> {
     use crate::corpus::{self, CognateSet};
     use crate::dump::LemmaEntry;
     let entries = official::load(official_path)?;
@@ -299,6 +299,138 @@ pub fn run_corpus_eval(official_path: &Path) -> Result<()> {
         pct(exact),
         pct(norm)
     );
+
+    if fit {
+        // ---- Corpus-coverage calibrator (V11 item 5 / issue #90) ----
+        // Same leakage discipline as the pipeline calibrator: isotonic
+        // decile fit on the DEV split only, ECE/Brier validated on the
+        // untouched holdout, persisted with a machine-checked score domain.
+        //
+        // Samples are the REAL cache-built cognate sets (the population the
+        // calibrator will serve), meaning-matched to official rows by gloss
+        // tokens + POS — NOT the synthesized full-cell rows of the headline
+        // eval above, whose coverage scores all land in the top decile and
+        // fit a degenerate map (nine empty deciles → p=0 for every real
+        // low-coverage set). Sets whose gloss matches no official row have
+        // no ground truth and are excluded — a stated limitation: the fit
+        // describes official-meaning-reachable sets.
+        let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
+        let sets = corpus::build_sets(&corpus);
+        let mut by_token: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, e) in entries.iter().enumerate() {
+            if e.isv.trim().is_empty() || e.isv.contains(' ') || e.isv.contains('#') {
+                continue;
+            }
+            for t in crate::dump::gloss_tokens(&e.english) {
+                by_token.entry(t).or_default().push(i);
+            }
+        }
+        let mut samples: Vec<(String, f32, bool)> = Vec::new();
+        for set in sets {
+            let (set_gloss, set_pos) = (set.gloss.clone(), set.pos);
+            let g = corpus::generate_set(set, &cfg);
+            let form = g.form().to_string();
+            if form.is_empty() {
+                continue;
+            }
+            let toks = crate::dump::gloss_tokens(&set_gloss);
+            let mut best: Option<(usize, usize)> = None; // (overlap, entry idx)
+            let mut seen: std::collections::BTreeSet<usize> = Default::default();
+            for t in &toks {
+                if let Some(is) = by_token.get(t) {
+                    seen.extend(is.iter().copied());
+                }
+            }
+            for i in seen {
+                if entries[i].pos != set_pos {
+                    continue;
+                }
+                let overlap = crate::dump::gloss_tokens(&entries[i].english)
+                    .iter()
+                    .filter(|t| toks.contains(t))
+                    .count();
+                if overlap == 0 {
+                    continue;
+                }
+                let better = match best {
+                    None => true,
+                    Some((bo, bi)) => {
+                        (overlap, std::cmp::Reverse(&entries[i].id))
+                            > (bo, std::cmp::Reverse(&entries[bi].id))
+                    }
+                };
+                if better {
+                    best = Some((overlap, i));
+                }
+            }
+            let Some((_, i)) = best else { continue };
+            let hit = entries[i]
+                .citation_byforms()
+                .iter()
+                .any(|b| ortho::normalized_match(&form, &b.form));
+            samples.push((entries[i].id.clone(), g.score, hit));
+        }
+        let dev: Vec<(f32, bool)> = samples
+            .iter()
+            .filter(|(id, _, _)| !is_holdout_id(id))
+            .map(|(_, s, h)| (*s, *h))
+            .collect();
+        let held: Vec<(f32, bool)> = samples
+            .iter()
+            .filter(|(id, _, _)| is_holdout_id(id))
+            .map(|(_, s, h)| (*s, *h))
+            .collect();
+        anyhow::ensure!(
+            dev.len() >= 500 && held.len() >= 100,
+            "too few corpus-path samples to fit ({} dev / {} holdout)",
+            dev.len(),
+            held.len()
+        );
+        let iso = crate::calibrate::fit_isotonic_deciles(&dev);
+        let (ece_raw, brier_raw) = crate::calibrate::ece_brier(&held, None);
+        let (ece_cal, brier_cal) = crate::calibrate::ece_brier(&held, Some(&iso));
+        let calibrate = |score: f32| iso[((score.clamp(0.0, 1.0) * 10.0) as usize).min(9)];
+        let pr_at = |t: f64| -> (f64, f64) {
+            let sel: Vec<&(f32, bool)> = held.iter().filter(|(s, _)| calibrate(*s) >= t).collect();
+            let hits = sel.iter().filter(|(_, h)| *h).count();
+            let total = held.iter().filter(|(_, h)| *h).count().max(1);
+            (
+                hits as f64 / sel.len().max(1) as f64,
+                hits as f64 / total as f64,
+            )
+        };
+        let cal = crate::calibrate::Calibration {
+            score_domain: crate::calibrate::CORPUS_COVERAGE_SCORE_DOMAIN.to_string(),
+            fitted_on: format!(
+                "cache cognate sets gloss+POS-matched to official rows, dev split ({} sets; {} holdout), generate_set coverage score",
+                dev.len(),
+                held.len()
+            ),
+            holdout_ece: ece_cal,
+            propose_pr: pr_at(crate::calibrate::PROPOSE_T),
+            review_pr: pr_at(crate::calibrate::REVIEW_T),
+            deciles: iso,
+        };
+        std::fs::write(
+            crate::calibrate::CORPUS_CALIBRATION_PATH,
+            serde_json::to_string_pretty(&cal)?
+                + "
+",
+        )?;
+        println!(
+            "corpus calibrator fitted → {} (holdout ECE {:.4} raw → {:.4} calibrated, Brier {:.4} → {:.4}; propose P/R {:.3}/{:.3}, review P/R {:.3}/{:.3})",
+            crate::calibrate::CORPUS_CALIBRATION_PATH,
+            ece_raw,
+            ece_cal,
+            brier_raw,
+            brier_cal,
+            cal.propose_pr.0,
+            cal.propose_pr.1,
+            cal.review_pr.0,
+            cal.review_pr.1,
+        );
+    }
     Ok(())
 }
 
@@ -1270,7 +1402,8 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     const LANGS: &[&str] = &[
         "ru", "uk", "be", "pl", "cs", "sk", "sl", "hr", "sr", "sh", "bg", "mk",
     ];
-    let mut by_token: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut by_token: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
     for (i, l) in corpus.entries.iter().enumerate() {
         if !LANGS.contains(&l.lang.as_str()) || l.word.contains(' ') {
             continue;

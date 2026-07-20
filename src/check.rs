@@ -150,8 +150,8 @@ pub fn build_index(
     }
     if let Some(path) = novel_words_tsv {
         // The proposals file is a committed export artifact (`export` refreshes
-        // it). It is intentionally header-only while corpus calibration is
-        // paused; a missing file is a separate reproducibility warning.
+        // it). Rows carry the corpus-coverage calibrator's probability (V11
+        // item 5); a missing file is a separate reproducibility warning.
         let tsv = std::fs::read_to_string(path).unwrap_or_else(|e| {
             eprintln!(
                 "warning: generated-word proposal artifact unavailable ({}: {e}); \
@@ -221,8 +221,11 @@ pub struct TokenReport {
     pub probability: Option<f64>,
     /// Nearest known lemmas, for unknown tokens.
     pub suggestions: Vec<String>,
-    /// Curated semantic-trap warning, if any.
+    /// Computed false-friend warning, if any.
     pub warning: Option<String>,
+    /// Warning severity (`high`/`medium` = primary-sense trap, `low` =
+    /// colloquial-only), present iff `warning` is.
+    pub severity: Option<String>,
     pub prefer: Vec<String>,
     /// Grammar-agreement warning (issue #13 §3): set when NO combination of
     /// this token's analyses is compatible with its neighbour.
@@ -390,6 +393,7 @@ fn check_tokens_impl(
                     probability: if official { None } else { probability },
                     suggestions: Vec::new(),
                     warning: note.map(|n| n.warning.clone()),
+                    severity: note.map(|n| n.severity.to_string()),
                     prefer: note.map(|n| n.prefer.clone()).unwrap_or_default(),
                     agreement: None,
                 }
@@ -403,6 +407,7 @@ fn check_tokens_impl(
                 probability: None,
                 suggestions: suggest(index, &key),
                 warning: None,
+                severity: None,
                 prefer: Vec::new(),
                 agreement: None,
             },
@@ -771,6 +776,10 @@ pub struct SummaryGate {
     pub max_unknown: usize,
     /// Maximum allowed agreement warnings before a nonzero exit.
     pub max_agreement: usize,
+    /// When set, maximum allowed SEVERE false-friend warnings (severity
+    /// `high` or `medium` — the word's primary sense diverges) before a
+    /// nonzero exit. None = false-friend warnings never gate.
+    pub max_severe_warnings: Option<usize>,
 }
 
 /// Deterministic summary of one check-text run.
@@ -783,6 +792,8 @@ pub struct Summary {
     pub unknown: usize,
     pub agreement_errors: usize,
     pub false_friend_warnings: usize,
+    /// Warnings with severity `high`/`medium` (primary-sense traps).
+    pub severe_warnings: usize,
     pub passed: bool,
 }
 
@@ -790,6 +801,10 @@ pub fn summarize(reports: &[TokenReport], gate: SummaryGate) -> Summary {
     let count = |st: &str| reports.iter().filter(|r| r.status == st).count();
     let unknown = count("unknown");
     let agreement_errors = reports.iter().filter(|r| r.agreement.is_some()).count();
+    let severe_warnings = reports
+        .iter()
+        .filter(|r| matches!(r.severity.as_deref(), Some("high" | "medium")))
+        .count();
     Summary {
         tokens: reports.len(),
         known_lemma: count("known-lemma"),
@@ -798,7 +813,12 @@ pub fn summarize(reports: &[TokenReport], gate: SummaryGate) -> Summary {
         unknown,
         agreement_errors,
         false_friend_warnings: reports.iter().filter(|r| r.warning.is_some()).count(),
-        passed: unknown <= gate.max_unknown && agreement_errors <= gate.max_agreement,
+        severe_warnings,
+        passed: unknown <= gate.max_unknown
+            && agreement_errors <= gate.max_agreement
+            && gate
+                .max_severe_warnings
+                .is_none_or(|max| severe_warnings <= max),
     }
 }
 
@@ -896,8 +916,12 @@ pub fn run(
         }
     }
     if let Some(s) = &summary {
+        let severe = match gate.unwrap().max_severe_warnings {
+            Some(max) => format!(", {} severe warnings (max {max})", s.severe_warnings),
+            None => format!(", {} severe warnings (not gated)", s.severe_warnings),
+        };
         println!(
-            "summary: {} — {} unknown (max {}), {} agreement errors (max {})",
+            "summary: {} — {} unknown (max {}), {} agreement errors (max {}){severe}",
             if s.passed { "PASS" } else { "FAIL" },
             s.unknown,
             gate.unwrap().max_unknown,
@@ -914,9 +938,10 @@ pub fn run(
 fn fail_gate_if_needed(summary: Option<Summary>) -> Result<()> {
     match summary {
         Some(s) if !s.passed => anyhow::bail!(
-            "check-text gate failed: {} unknown token(s), {} agreement error(s)",
+            "check-text gate failed: {} unknown token(s), {} agreement error(s), {} severe warning(s)",
             s.unknown,
-            s.agreement_errors
+            s.agreement_errors,
+            s.severe_warnings
         ),
         _ => Ok(()),
     }
@@ -936,6 +961,7 @@ mod summary_tests {
             probability: None,
             suggestions: Vec::new(),
             warning: None,
+            severity: None,
             prefer: Vec::new(),
             agreement: agreement.map(str::to_string),
         }
@@ -953,6 +979,7 @@ mod summary_tests {
             SummaryGate {
                 max_unknown: 0,
                 max_agreement: 0,
+                max_severe_warnings: None,
             },
         );
         assert_eq!((strict.unknown, strict.agreement_errors), (1, 1));
@@ -962,9 +989,41 @@ mod summary_tests {
             SummaryGate {
                 max_unknown: 1,
                 max_agreement: 1,
+                max_severe_warnings: None,
             },
         );
         assert!(lenient.passed);
+    }
+
+    /// V11 item 6: severe (primary-sense) warnings gate only when asked.
+    #[test]
+    fn severe_warning_gate_counts_high_and_medium_only() {
+        let mut warned = report("known-lemma", None);
+        warned.warning = Some("trap".into());
+        warned.severity = Some("high".into());
+        let mut colloquial = report("known-lemma", None);
+        colloquial.warning = Some("slangy".into());
+        colloquial.severity = Some("low".into());
+        let reports = vec![warned, colloquial];
+        let ungated = summarize(
+            &reports,
+            SummaryGate {
+                max_unknown: 0,
+                max_agreement: 0,
+                max_severe_warnings: None,
+            },
+        );
+        assert_eq!(ungated.severe_warnings, 1);
+        assert!(ungated.passed, "severity must not gate unless requested");
+        let gated = summarize(
+            &reports,
+            SummaryGate {
+                max_unknown: 0,
+                max_agreement: 0,
+                max_severe_warnings: Some(0),
+            },
+        );
+        assert!(!gated.passed);
     }
 }
 

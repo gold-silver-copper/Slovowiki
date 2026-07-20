@@ -366,7 +366,7 @@ fn holdout_pattern_stats(
 /// Wilson score-interval lower bound at ~95% (z = 1.96) for `k` successes in
 /// `n` trials — a conservative binomial rate estimate that shrinks toward 0 as
 /// `n` shrinks, so a thinly-observed pattern ships a lower probability.
-fn wilson_lower(k: usize, n: usize) -> f64 {
+pub(crate) fn wilson_lower(k: usize, n: usize) -> f64 {
     if n == 0 {
         return 0.0;
     }

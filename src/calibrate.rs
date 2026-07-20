@@ -16,6 +16,9 @@ use std::path::Path;
 
 /// Committed location of the fitted calibrator.
 pub const PATH: &str = "data/score-calibration.json";
+/// Committed location of the corpus-coverage calibrator (V11 item 5 /
+/// issue #90), fitted by `corpus-eval --fit` and only READ by `export`.
+pub const CORPUS_CALIBRATION_PATH: &str = "data/corpus-calibration.json";
 /// Score semantics accepted by the official-row pipeline calibrator.
 pub const PIPELINE_SCORE_DOMAIN: &str = "pipeline-candidate-score-v1";
 /// Reserved domain for a future calibrator fitted on cognate-set coverage
@@ -43,6 +46,75 @@ pub struct Calibration {
     /// Measured on the holdout split at [`REVIEW_T`]: (precision, recall).
     pub review_pr: (f64, f64),
     pub deciles: [f64; 10],
+}
+
+/// Decile-histogram isotonic fit (pool-adjacent-violators), the same recipe
+/// `evaluate` applies inline for the pipeline calibrator (kept separate there
+/// to leave the benchmark path byte-stable; a future refactor can unify).
+/// `samples` are (score, hit) pairs from the DEV split only.
+pub fn fit_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
+    let mut bins = [(0usize, 0usize); 10]; // (n, hits) per score decile
+    for (score, hit) in samples {
+        let b = ((score.clamp(0.0, 1.0) * 10.0) as usize).min(9);
+        bins[b].0 += 1;
+        bins[b].1 += *hit as usize;
+    }
+    let mut pools: Vec<(f64, f64)> = Vec::new(); // (weight, mean)
+    for (n, hits) in &bins {
+        if *n == 0 {
+            continue;
+        }
+        pools.push((*n as f64, *hits as f64 / *n as f64));
+        while pools.len() >= 2 && pools[pools.len() - 2].1 > pools[pools.len() - 1].1 {
+            let (w2, m2) = pools.pop().unwrap();
+            let (w1, m1) = pools.pop().unwrap();
+            pools.push((w1 + w2, (w1 * m1 + w2 * m2) / (w1 + w2)));
+        }
+    }
+    let mut iso = [0.0f64; 10];
+    let mut pi = 0usize;
+    let mut left = pools.first().map(|p| p.0).unwrap_or(0.0);
+    for (b, (n, _)) in bins.iter().enumerate() {
+        if *n == 0 {
+            iso[b] = pools.get(pi).map(|p| p.1).unwrap_or(0.0);
+            continue;
+        }
+        iso[b] = pools[pi].1;
+        left -= *n as f64;
+        if left <= 0.0 && pi + 1 < pools.len() {
+            pi += 1;
+            left = pools[pi].0;
+        }
+    }
+    iso
+}
+
+/// (ECE, Brier) of `samples` under an optional decile map (None = raw score
+/// as probability). Shared by fit-time holdout validation.
+pub fn ece_brier(samples: &[(f32, bool)], deciles: Option<&[f64; 10]>) -> (f64, f64) {
+    let mut b10 = [(0usize, 0.0f64, 0usize); 10];
+    let mut brier = 0.0f64;
+    for (score, hit) in samples {
+        let p = match deciles {
+            Some(d) => d[((score.clamp(0.0, 1.0) * 10.0) as usize).min(9)],
+            None => score.clamp(0.0, 1.0) as f64,
+        };
+        let y = *hit as u8 as f64;
+        brier += (p - y) * (p - y);
+        let b = ((p * 10.0) as usize).min(9);
+        b10[b].0 += 1;
+        b10[b].1 += p;
+        b10[b].2 += *hit as usize;
+    }
+    let n = samples.len().max(1) as f64;
+    let mut ece = 0.0f64;
+    for (bn, sp, hits) in &b10 {
+        if *bn == 0 {
+            continue;
+        }
+        ece += (*bn as f64 / n) * (sp / *bn as f64 - *hits as f64 / *bn as f64).abs();
+    }
+    (ece, brier / n)
 }
 
 impl Calibration {

@@ -13,12 +13,14 @@
 //! 2. **loose** — equal ASCII skeletons after additionally folding `y→i`
 //!    (ru корыстный → korystny vs koristny), stems ≥ [`LOOSE_MIN_CHARS`] only.
 //!
-//! Gloss overlap is a plain token comparison: lowercase, parentheticals
-//! stripped, stopwords removed, light plural/participle suffix strip. Zero
-//! shared tokens ⇒ divergent ⇒ a computed warning record. Official homographs
-//! pool their glosses first, so a sense the dictionary itself attests (žena
-//! 'woman, wife'; vonjati 'smell, stink') is *not* flagged — by design, unlike
-//! two of the old curated "ambiguous by attestation" notes.
+//! Gloss overlap (V11): token comparison with spelling-variant tolerance
+//! (autogyro≈autogiro), a mined synonym/hypernym closure ([`SynonymMates`]),
+//! junk-sense hygiene, and per-word PRIMARY-sense tracking that grades every
+//! note `high`/`medium`/`low` — a slang-only divergence (pl banan) reads as
+//! "colloquially also", never as THE meaning. Official homographs pool their
+//! glosses first, so a sense the dictionary itself attests (žena 'woman,
+//! wife'; vonjati 'smell, stink') is *not* flagged — by design, unlike two of
+//! the old curated "ambiguous by attestation" notes.
 
 use crate::dump::{LemmaCorpus, RawSlavicCorpus};
 use crate::official::OfficialEntry;
@@ -34,6 +36,15 @@ const MIN_KEY_CHARS: usize = 3;
 const MAX_WARNED_LANGS: usize = 4;
 /// At most this many divergent senses are quoted per colliding word.
 const MAX_QUOTED_SENSES: usize = 2;
+
+/// Sharding of the published notes artifact (V11 item 6): route by
+/// `fnv1a32(folded_key) % NOTES_SHARDS`, mirroring the suggest index.
+pub const NOTES_SHARDS: u32 = 64;
+/// First versioned notes schema — the monolithic unversioned `api/notes.json`
+/// is retired in favor of `api/notes/<n>.json` shards.
+pub const NOTES_SCHEMA_VERSION: u32 = 1;
+/// Frozen router inputs for `api/notes-selftest.json` ([key, shard] pairs).
+pub const NOTES_SELFTEST_SAMPLES: &[&str] = &["pytati", "jutro", "čas", "zakuska", "koristny"];
 
 /// Modern languages whose speakers the warnings address, in render order.
 /// English Wiktionary's `sh` macro-code covers Serbian/Croatian/Bosnian.
@@ -60,6 +71,10 @@ pub struct Collision {
     /// The divergent English Wiktionary glosses (deduped, parentheticals kept
     /// for display).
     pub glosses: Vec<String>,
+    /// True when the word's PRIMARY sense (first gloss of its first cache
+    /// record) agrees with the official gloss — the divergence is a
+    /// secondary/colloquial sense (pl banan: 'banana' first, slang later).
+    pub primary_agrees: bool,
 }
 
 /// A computed semantic-trap note for one folded Interslavic key. The
@@ -72,6 +87,10 @@ pub struct Note {
     /// Official lemmas whose gloss best covers the divergent sense (computed,
     /// e.g. urok trap 'lesson' → lekcija), possibly empty.
     pub prefer: Vec<String>,
+    /// `high` — the colliding word's primary sense diverges in ≥2 languages;
+    /// `medium` — primary-sense divergence in exactly 1 language;
+    /// `low` — only secondary/colloquial senses diverge anywhere.
+    pub severity: &'static str,
     pub collisions: Vec<Collision>,
 }
 
@@ -173,6 +192,27 @@ pub fn gloss_tokens(gloss: &str) -> BTreeSet<String> {
     out
 }
 
+/// Order-preserving variant of [`gloss_tokens`] for positional rules (the
+/// `X or Y` closure needs the token ADJACENT to the `or`, and a BTreeSet
+/// iterator would hand back the alphabetical extreme instead — which minted
+/// phantom pairs like evil≈event from unrelated glosses).
+fn ordered_tokens(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in strip_parens(text)
+        .to_lowercase()
+        .split(|c: char| !c.is_alphabetic())
+    {
+        if raw.is_empty() || STOPWORDS.contains(&raw) {
+            continue;
+        }
+        let t = light_stem(raw);
+        if t.chars().count() >= 2 && !STOPWORDS.contains(&t.as_str()) && !out.contains(&t) {
+            out.push(t);
+        }
+    }
+    out
+}
+
 fn light_stem(t: &str) -> String {
     let n = t.chars().count();
     for (suf, min_len) in [("ing", 6), ("ed", 5), ("es", 5), ("s", 4)] {
@@ -183,6 +223,210 @@ fn light_stem(t: &str) -> String {
         }
     }
     t.to_string()
+}
+
+/// Deterministic English synonym-mate pairs, mined from the committed data.
+/// Precision matters more than recall here — a wrong mate suppresses a real
+/// trap — so only three high-precision constructions feed the closure:
+///
+/// 1. **Official gloss lists** — comma items inside ONE official entry's
+///    gloss name the same meaning by the dictionary's own design
+///    ('lecture, lesson, class period').
+/// 2. **Definitional parentheticals** in cache glosses — 'kitten (young
+///    cat)' pairs the head with each short-parenthetical token.
+/// 3. **`X or Y` alternatives** inside one sense segment — 'a snack or
+///    appetizer' pairs the tokens adjacent to the `or`.
+///
+/// Deliberately NOT used: plain token co-occurrence inside a gloss. Slavic
+/// čas-family words gloss 'hour' and 'time' together because they ARE the
+/// false friend — polysemy co-occurrence is circular evidence, and using it
+/// suppressed the curated čas trap.
+pub struct SynonymMates {
+    /// Unordered synonym pairs (official lists, `X or Y` alternatives).
+    symmetric: std::collections::HashSet<(String, String)>,
+    /// Directed (head, paren) pairs from definitional parentheticals:
+    /// 'kitten (young cat)' ⇒ kitten is-defined-via cat. Direction matters:
+    /// a collision token that is the OFFICIAL word's hypernym is harmless
+    /// (kote/'cat'), but a collision token that is a hyponym of the official
+    /// gloss is exactly the curated čas trap ('hour' vs official 'time' —
+    /// 'hour (unit of time)' must NOT suppress it).
+    defined_via: std::collections::HashSet<(String, String)>,
+}
+
+impl SynonymMates {
+    /// Symmetric synonym-mates.
+    pub fn are_mates(&self, a: &str, b: &str) -> bool {
+        let pair = if a <= b { (a, b) } else { (b, a) };
+        self.symmetric
+            .contains(&(pair.0.to_string(), pair.1.to_string()))
+    }
+
+    /// True when `official_token` is defined via `collision_token` — the
+    /// collision names the official meaning's hypernym.
+    pub fn official_defined_via(&self, official_token: &str, collision_token: &str) -> bool {
+        self.defined_via
+            .contains(&(official_token.to_string(), collision_token.to_string()))
+    }
+
+    fn insert_pair(set: &mut std::collections::HashSet<(String, String)>, a: &str, b: &str) {
+        if a == b || a.chars().count() < 3 || b.chars().count() < 3 {
+            return;
+        }
+        let pair = if a <= b { (a, b) } else { (b, a) };
+        set.insert((pair.0.to_string(), pair.1.to_string()));
+    }
+
+    /// Top-level `(...)` group contents of a gloss.
+    fn paren_groups(gloss: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut depth = 0i32;
+        let mut cur = String::new();
+        for ch in gloss.chars() {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    if depth == 1 {
+                        cur.clear();
+                        continue;
+                    }
+                }
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        out.push(std::mem::take(&mut cur));
+                        continue;
+                    }
+                    depth = depth.max(0);
+                }
+                _ => {}
+            }
+            if depth >= 1 {
+                cur.push(ch);
+            }
+        }
+        out
+    }
+
+    fn build<'a>(
+        official_glosses: impl Iterator<Item = &'a str>,
+        cache_glosses: impl Iterator<Item = &'a str>,
+    ) -> Self {
+        const MAX_OFFICIAL_TOKENS: usize = 6;
+        // A true hypernym label is 1-2 content tokens ('young cat'); longer
+        // parentheticals are sentence definitions whose stopword-stripped
+        // token count shrinks under a looser cap — pl czas 'time (particular
+        // moment or hour…)' must not mint (time→hour)/(time→moment) pairs
+        // that suppress the curated čas trap.
+        const MAX_PAREN_TOKENS: usize = 2;
+        let mut symmetric: std::collections::HashSet<(String, String)> = Default::default();
+        let mut defined_via: std::collections::HashSet<(String, String)> = Default::default();
+        // 1. Official gloss lists: all pairs, capped length.
+        for g in official_glosses {
+            let toks: Vec<String> = gloss_tokens(g).into_iter().collect();
+            if toks.len() < 2 || toks.len() > MAX_OFFICIAL_TOKENS {
+                continue;
+            }
+            for i in 0..toks.len() {
+                for j in (i + 1)..toks.len() {
+                    Self::insert_pair(&mut symmetric, &toks[i], &toks[j]);
+                }
+            }
+        }
+        for g in cache_glosses {
+            // 2. Definitional parentheticals → DIRECTED (head, paren) pairs.
+            let head: Vec<String> = gloss_tokens(g).into_iter().collect();
+            if !head.is_empty() && head.len() <= MAX_PAREN_TOKENS {
+                for paren in Self::paren_groups(g) {
+                    let ptoks: Vec<String> = gloss_tokens(&paren).into_iter().collect();
+                    if ptoks.is_empty() || ptoks.len() > MAX_PAREN_TOKENS {
+                        continue;
+                    }
+                    for h in &head {
+                        for p in &ptoks {
+                            if h != p && h.chars().count() >= 3 && p.chars().count() >= 3 {
+                                defined_via.insert((h.clone(), p.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            // 3. `X or Y`: the tokens adjacent to the `or` within one segment.
+            for segment in strip_parens(g).split([',', ';']) {
+                let lower = segment.to_lowercase();
+                let parts: Vec<&str> = lower.split(" or ").collect();
+                for pair in parts.windows(2) {
+                    let left = ordered_tokens(pair[0]).pop();
+                    let right = ordered_tokens(pair[1]).into_iter().next();
+                    if let (Some(l), Some(r)) = (left, right) {
+                        Self::insert_pair(&mut symmetric, &l, &r);
+                    }
+                }
+            }
+        }
+        SynonymMates {
+            symmetric,
+            defined_via,
+        }
+    }
+}
+
+/// Spelling-variant tolerance: `autogyro`≈`autogiro` (edit distance 1),
+/// `chirrup`≈`chirp` (shared 4-char prefix, distance ≤2). Conservative
+/// lengths keep `market`≠`marketplace`-class pairs apart (distance 5).
+fn near_match(a: &str, b: &str) -> bool {
+    let (la, lb) = (a.chars().count(), b.chars().count());
+    let min = la.min(lb);
+    if min < 5 {
+        return false;
+    }
+    let d = crate::orthography::levenshtein(a, b);
+    if d <= 1 {
+        return true;
+    }
+    let prefix = a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
+    min >= 5 && prefix >= 4 && d <= 2
+}
+
+/// Token-set overlap for divergence testing (`collision` vs `official`):
+/// exact equality, spelling-variant near-match, mined synonym-mates, or the
+/// collision naming the official meaning's hypernym (directed).
+fn overlaps(
+    collision: &BTreeSet<String>,
+    official: &BTreeSet<String>,
+    mates: &SynonymMates,
+) -> bool {
+    collision.iter().any(|x| {
+        official.iter().any(|y| {
+            x == y || near_match(x, y) || mates.are_mates(x, y) || mates.official_defined_via(y, x)
+        })
+    })
+}
+
+/// A gloss fit for quoting in a warning: no proper-noun/pop-culture senses
+/// (any uppercase letter — 'YouTube poop', 'Christmas Eve dish'), clipped at
+/// the first ';', capped at a word boundary. Junk senses are also excluded
+/// from divergence tokens at ingestion.
+fn clean_quote(gloss: &str) -> Option<String> {
+    let g = gloss.trim();
+    if g.is_empty() || g.chars().any(|c| c.is_uppercase()) {
+        return None;
+    }
+    let g = g.split(';').next().unwrap_or(g).trim();
+    const MAX_QUOTE_CHARS: usize = 90;
+    if g.chars().count() <= MAX_QUOTE_CHARS {
+        return Some(g.to_string());
+    }
+    let mut cut = String::new();
+    for word in g.split_whitespace() {
+        if cut.chars().count() + word.chars().count() + 1 > MAX_QUOTE_CHARS {
+            break;
+        }
+        if !cut.is_empty() {
+            cut.push(' ');
+        }
+        cut.push_str(word);
+    }
+    Some(format!("{cut}…"))
 }
 
 /// The loose comparison key: ASCII skeleton with `y` folded onto `i`.
@@ -206,6 +450,8 @@ fn eligible_pos(pos: &str) -> bool {
 struct CacheWord {
     lang_idx: usize,
     word: String,
+    /// Wiktextract POS of the record ("noun"/"verb"/"adj"/"adv").
+    pos: String,
     glosses: Vec<String>,
     tokens: BTreeSet<String>,
 }
@@ -220,14 +466,32 @@ pub fn compute(
 ) -> BTreeMap<String, Note> {
     let lang_idx: HashMap<&str, usize> = LANGS.iter().enumerate().map(|(i, l)| (l.0, i)).collect();
 
+    // ---- 0. Synonym-mate closure from the committed data itself. ----
+    let mates = SynonymMates::build(
+        official.iter().map(|e| e.english.as_str()),
+        evidence
+            .into_iter()
+            .flat_map(|c| c.entries.iter().map(|e| e.gloss.as_str()))
+            .chain(raw.into_iter().flat_map(|c| {
+                c.lemmas
+                    .iter()
+                    .flat_map(|e| e.glosses.iter().map(String::as_str))
+            })),
+    );
+
     // ---- 1/2. Index cache records by read-as key (exact and loose). ----
     // Divergence is judged per RECORD (one POS/etymology entry of one word),
     // not per pooled word: pl jutro-the-adverb 'tomorrow' must fire even
     // though pl jutro-the-noun also lists an archaic 'morning' sense. Records
     // for the same (lang, word) later merge into one collision for display.
+    // Proper-noun/pop-culture senses (uppercase letters — 'YouTube poop')
+    // are dropped at ingestion, from both tokens and quotable glosses.
     let mut words: Vec<CacheWord> = Vec::new();
     let mut by_exact: HashMap<String, Vec<usize>> = HashMap::new();
     let mut by_loose: HashMap<String, Vec<usize>> = HashMap::new();
+    // (lang, word) → tokens of the PRIMARY sense: first clean gloss of the
+    // first cache record, in committed cache order.
+    let mut primary_tokens: HashMap<(usize, String), BTreeSet<String>> = HashMap::new();
     {
         let mut add = |lang: &str, word: &str, pos: &str, glosses: Vec<String>| {
             let Some(&li) = lang_idx.get(lang) else {
@@ -236,6 +500,10 @@ pub fn compute(
             if !eligible_pos(pos) || word.contains(' ') {
                 return;
             }
+            let glosses: Vec<String> = glosses
+                .into_iter()
+                .filter(|g| !g.trim().is_empty() && !g.chars().any(|c| c.is_uppercase()))
+                .collect();
             let tokens: BTreeSet<String> = glosses.iter().flat_map(|g| gloss_tokens(g)).collect();
             if tokens.is_empty() {
                 return;
@@ -244,6 +512,9 @@ pub fn compute(
             if key.chars().count() < MIN_KEY_CHARS {
                 return;
             }
+            primary_tokens
+                .entry((li, word.to_string()))
+                .or_insert_with(|| gloss_tokens(&glosses[0]));
             let idx = words.len();
             by_exact.entry(key.clone()).or_default().push(idx);
             if key.chars().count() >= LOOSE_MIN_CHARS {
@@ -252,6 +523,7 @@ pub fn compute(
             words.push(CacheWord {
                 lang_idx: li,
                 word: word.to_string(),
+                pos: pos.to_string(),
                 glosses,
                 tokens,
             });
@@ -312,20 +584,34 @@ pub fn compute(
             }
         }
         // Merge divergent records of the same (lang, word) into one collision.
-        let mut merged: BTreeMap<(usize, String), CacheWord> = BTreeMap::new();
+        struct Merged {
+            lang_idx: usize,
+            word: String,
+            poses: BTreeSet<String>,
+            glosses: Vec<String>,
+            tokens: BTreeSet<String>,
+            primary_agrees: bool,
+        }
+        let mut merged: BTreeMap<(usize, String), Merged> = BTreeMap::new();
         for w in candidate_idxs
             .into_iter()
             .map(|i| &words[i])
-            .filter(|w| w.tokens.is_disjoint(isv_tokens))
+            .filter(|w| !overlaps(&w.tokens, isv_tokens, &mates))
         {
+            let primary_agrees = primary_tokens
+                .get(&(w.lang_idx, w.word.clone()))
+                .is_some_and(|p| overlaps(p, isv_tokens, &mates));
             let slot = merged
                 .entry((w.lang_idx, w.word.clone()))
-                .or_insert_with(|| CacheWord {
+                .or_insert_with(|| Merged {
                     lang_idx: w.lang_idx,
                     word: w.word.clone(),
+                    poses: BTreeSet::new(),
                     glosses: Vec::new(),
                     tokens: BTreeSet::new(),
+                    primary_agrees,
                 });
+            slot.poses.insert(w.pos.clone());
             for g in &w.glosses {
                 if !slot.glosses.iter().any(|have| have == g) {
                     slot.glosses.push(g.clone());
@@ -336,52 +622,122 @@ pub fn compute(
         if merged.is_empty() {
             continue;
         }
-        let collisions: Vec<CacheWord> = merged.into_values().collect();
+        let collisions: Vec<Merged> = merged.into_values().collect();
+
+        // Severity: how many languages misread the word's PRIMARY sense.
+        let primary_divergent_langs: BTreeSet<usize> = collisions
+            .iter()
+            .filter(|c| !c.primary_agrees)
+            .map(|c| c.lang_idx)
+            .collect();
+        let severity = match primary_divergent_langs.len() {
+            0 => "low",
+            1 => "medium",
+            _ => "high",
+        };
 
         let (_, gloss_display) = &official_display[key];
         let mut warning = format!("Official meaning: '{}'.", gloss_display.join("' / '"));
+        // Quote primary-sense traps first, colloquial-only divergences after,
+        // each with wording that says which kind it is.
         let mut warned_langs: Vec<usize> = Vec::new();
-        for w in &collisions {
+        let quote_order = collisions
+            .iter()
+            .filter(|c| !c.primary_agrees)
+            .chain(collisions.iter().filter(|c| c.primary_agrees));
+        for w in quote_order {
             if warned_langs.contains(&w.lang_idx) || warned_langs.len() >= MAX_WARNED_LANGS {
                 continue;
             }
-            warned_langs.push(w.lang_idx);
-            let senses: Vec<&str> = w
+            let senses: Vec<String> = w
                 .glosses
                 .iter()
-                .map(|g| g.as_str())
+                .filter_map(|g| clean_quote(g))
                 .take(MAX_QUOTED_SENSES)
                 .collect();
+            if senses.is_empty() {
+                continue;
+            }
+            warned_langs.push(w.lang_idx);
+            let verb = if w.primary_agrees {
+                "speakers may colloquially also read it as"
+            } else {
+                "speakers may read it as"
+            };
             let _ = std::fmt::Write::write_fmt(
                 &mut warning,
                 format_args!(
-                    " {} speakers may read it as '{}' ({} {}).",
+                    " {} {} '{}' ({} {}).",
                     LANGS[w.lang_idx].1,
+                    verb,
                     senses.join("; "),
                     LANGS[w.lang_idx].0,
                     w.word
                 ),
             );
         }
+        if warned_langs.is_empty() {
+            // Every divergent sense was junk-filtered: nothing quotable means
+            // nothing warnable.
+            continue;
+        }
 
-        // `prefer`: the official lemma whose gloss best covers the divergent
-        // sense — the algorithmic replacement for the curated field. Score by
-        // *collision coverage* (the fraction of each colliding word's sense
-        // tokens the lemma's gloss covers, summed in integer ppm so the result
-        // is deterministic): urok → lekcija fully covers bg урок 'lesson',
-        // while oči 'eyes' only grazes the multi-token 'evil eye' senses.
+        // `prefer` (V11 item 2): the official lemma that covers the divergent
+        // sense — or NOTHING. A wrong suggestion actively misleads a
+        // translator (staja → stabiľny via English 'stable' polysemy), so:
+        // (a) the preferred lemma's POS must match a divergent record's POS
+        //     it draws coverage from (kills adjective 'stable' for a noun
+        //     sense, noun smŕť for verb 'execute');
+        // (b) coverage counts closure-aware matches (exact / near / mates),
+        //     scored per collision in integer ppm as before;
+        // (c) a best score under PREFER_MIN_COVERAGE emits an EMPTY prefer —
+        //     expected and accepted for most notes. Strictly MORE than half a
+        //     collision: the seed-42 sample showed exactly-half covers are the
+        //     single-token-graze class ('to acquire a tan' → iziskati via
+        //     'acquire' alone at 500k), while genuine prefers either fully
+        //     cover a sense (bazar→trg) or cover several tokens.
+        const PREFER_MIN_COVERAGE: usize = 600_000;
+        let pos_class = |p: crate::model::Pos| match p {
+            crate::model::Pos::Noun | crate::model::Pos::ProperNoun => "noun",
+            crate::model::Pos::Verb => "verb",
+            crate::model::Pos::Adjective => "adj",
+            crate::model::Pos::Adverb => "adv",
+            _ => "other",
+        };
         let mut scores: BTreeMap<usize, usize> = BTreeMap::new();
+        // Candidate discovery stays exact-token (the by_token index); the
+        // discovered candidates are then scored with the full closure-aware
+        // overlap against each POS-compatible collision.
+        let mut candidate_entries: BTreeSet<usize> = BTreeSet::new();
         for c in &collisions {
-            let mut per_entry: BTreeMap<usize, usize> = BTreeMap::new();
             for t in &c.tokens {
                 if let Some(eis) = by_token.get(t) {
-                    for &ei in eis {
-                        *per_entry.entry(ei).or_default() += 1;
-                    }
+                    candidate_entries.extend(eis.iter().copied());
                 }
             }
-            for (ei, o) in per_entry {
-                *scores.entry(ei).or_default() += o * 1_000_000 / c.tokens.len();
+        }
+        for &ei in &candidate_entries {
+            let e = &official[ei];
+            let entry_pos = pos_class(e.pos);
+            let entry_tokens = gloss_tokens(&e.english);
+            let mut total = 0usize;
+            for c in &collisions {
+                if !c.poses.iter().any(|p| p == entry_pos) {
+                    continue;
+                }
+                let covered = c
+                    .tokens
+                    .iter()
+                    .filter(|t| {
+                        entry_tokens
+                            .iter()
+                            .any(|y| *t == y || near_match(t, y) || mates.are_mates(t, y))
+                    })
+                    .count();
+                total += covered * 1_000_000 / c.tokens.len();
+            }
+            if total > 0 {
+                scores.insert(ei, total);
             }
         }
         let mut best: Option<(usize, f32, String)> = None; // (coverage, freq, lemma)
@@ -403,19 +759,24 @@ pub fn compute(
                 best = Some((overlap, freq, lemma));
             }
         }
-        let prefer: Vec<String> = best.map(|(_, _, lemma)| vec![lemma]).unwrap_or_default();
+        let prefer: Vec<String> = best
+            .filter(|(coverage, _, _)| *coverage >= PREFER_MIN_COVERAGE)
+            .map(|(_, _, lemma)| vec![lemma])
+            .unwrap_or_default();
 
         notes.insert(
             key.clone(),
             Note {
                 warning,
                 prefer,
+                severity,
                 collisions: collisions
                     .into_iter()
                     .map(|w| Collision {
                         lang: LANGS[w.lang_idx].0.to_string(),
-                        word: w.word.clone(),
-                        glosses: w.glosses.clone(),
+                        word: w.word,
+                        glosses: w.glosses,
+                        primary_agrees: w.primary_agrees,
                     })
                     .collect(),
             },
@@ -511,9 +872,13 @@ mod tests {
     fn note_volume_stays_sane() {
         let notes = notes();
         let collisions: usize = notes.values().map(|n| n.collisions.len()).sum();
+        let sev = |lvl: &str| notes.values().filter(|n| n.severity == lvl).count();
         eprintln!(
-            "false-friend notes: {} keys, {collisions} collisions",
-            notes.len()
+            "false-friend notes: {} keys, {collisions} collisions ({} high / {} medium / {} low)",
+            notes.len(),
+            sev("high"),
+            sev("medium"),
+            sev("low"),
         );
         assert!(
             notes.len() >= 100,
@@ -525,6 +890,83 @@ mod tests {
             "suspiciously many notes: {}",
             notes.len()
         );
+    }
+
+    /// V11 item 1: the observed false-positive classes must not fire (or
+    /// must be downgraded to colloquial/low severity).
+    /// V11 item 2: prefer must be POS-compatible and coverage-thresholded —
+    /// the observed misleading suggestions must be gone (empty is fine;
+    /// wrong is not).
+    #[test]
+    fn bad_prefers_are_fixed_or_empty() {
+        let notes = notes();
+        let not_prefers = |key: &str, bad: &str| {
+            if let Some(n) = notes.get(key) {
+                assert!(
+                    !n.prefer.iter().any(|p| p == bad),
+                    "{key} still prefers {bad}: {:?}",
+                    n.prefer
+                );
+            }
+        };
+        not_prefers("staja", "stabiľny"); // adjective for a noun sense
+        not_prefers("banan", "dětę"); // one grazed token of a slang sense
+        not_prefers("cvrkot", "mrdati"); // verb for a noun sense
+        not_prefers("kazniti", "smŕť"); // noun for a verb sense
+        not_prefers("gojiti", "vaga"); // noun for a verb sense
+    }
+
+    #[test]
+    fn observed_false_positives_are_fixed() {
+        let notes = notes();
+        // Spelling variants: 'autogyro' vs ru 'autogiro' (near-match).
+        assert!(
+            !notes.contains_key("avtožir"),
+            "avtožir spelling-variant FP"
+        );
+        // Synonyms via or-lists: 'snack' vs 'appetizer' — the uk/pl appetizer
+        // collisions must be gone; bg закуска 'breakfast' is a REAL trap and
+        // may stay.
+        if let Some(n) = notes.get("zakuska") {
+            assert!(
+                !n.collisions
+                    .iter()
+                    .any(|c| c.glosses.iter().any(|g| g.contains("appetizer"))),
+                "zakuska synonym FP: {:?}",
+                n.warning
+            );
+        }
+        // Hypernym via definitional parenthetical: 'kitten (young cat)' —
+        // ru котэ 'cat' is not a trap for official 'kitten'.
+        assert!(!notes.contains_key("kote"), "kote hypernym FP");
+        // Primary sense agrees → severity low, colloquial wording: pl banan
+        // primarily means banana; the slang senses must not read as THE
+        // meaning.
+        if let Some(n) = notes.get("banan") {
+            assert_eq!(n.severity, "low", "banan: {}", n.warning);
+            assert!(
+                n.warning.contains("colloquially"),
+                "banan wording: {}",
+                n.warning
+            );
+        }
+        // 'chirrup'≈'chirp' near-match: the chirp record agrees, so cvrkot is
+        // at most a colloquial note for the 'bustle, stir' sense.
+        if let Some(n) = notes.get("cvrkot") {
+            assert_eq!(n.severity, "low", "cvrkot: {}", n.warning);
+        }
+        // Junk glosses never appear in warnings ('YouTube poop').
+        if let Some(n) = notes.get("pup") {
+            assert!(
+                !n.warning.contains("YouTube"),
+                "pup junk gloss quoted: {}",
+                n.warning
+            );
+        }
+        // Severity sanity on the curated traps: primary-sense divergence in
+        // several languages.
+        assert_eq!(notes["urok"].severity, "high");
+        assert_eq!(notes["čas"].severity, "high");
     }
 
     #[test]

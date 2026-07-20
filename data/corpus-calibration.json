@@ -1,0 +1,25 @@
+{
+  "score_domain": "corpus-coverage-score-v1",
+  "fitted_on": "cache cognate sets gloss+POS-matched to official rows, dev split (14778 sets; 4952 holdout), generate_set coverage score",
+  "holdout_ece": 0.014212164063671855,
+  "propose_pr": [
+    0.0,
+    0.0
+  ],
+  "review_pr": [
+    0.43575418994413406,
+    0.2937853107344633
+  ],
+  "deciles": [
+    0.020202020202020204,
+    0.020202020202020204,
+    0.049591466182478436,
+    0.08823529411764706,
+    0.1255639097744361,
+    0.18742138364779873,
+    0.20885200553250347,
+    0.26666666666666666,
+    0.3597560975609756,
+    0.42824074074074076
+  ]
+}

@@ -467,6 +467,78 @@ pub(super) struct RawIntlCandidate {
     /// `"V+Z"`-style attesting branch combination (≥2 branches by
     /// construction, so always present).
     pub(super) branch_pattern: String,
+    /// For derivational completions (V11 item 4): the recovered noun this
+    /// verb was generated from, plus its `-uje` present stem when regular.
+    pub(super) deriv_of: Option<String>,
+    pub(super) present_stem: Option<String>,
+    /// Calibrated P(exact official form | this feature bucket), from the
+    /// leakage-free genesis=I holdout (V11 item 5) — model-specific,
+    /// suggestion-never-verification. None only when no calibration map was
+    /// supplied.
+    pub(super) probability: Option<f64>,
+}
+
+/// Feature bucket of one recovered candidate: (attesting languages clamped
+/// to 4, attesting branches clamped to 3).
+fn raw_intl_bucket(c: &RawIntlCandidate) -> (usize, usize) {
+    (
+        c.langs.len().min(4),
+        c.branch_pattern.split('+').count().min(3),
+    )
+}
+
+/// Fit per-bucket shipped probabilities for the raw-recovery pass, mirroring
+/// the derivation-probability recipe (Wilson-95 lower bound, capped): run the
+/// recovery UNFILTERED (empty `taken`, so official-colliding candidates are
+/// kept as measurement samples), take every candidate whose gloss matches an
+/// official internationalism row (genesis=I) as a sample, and score a hit
+/// when the candidate's form reproduces that row's lemma (normalized). The
+/// pipeline never reads the answer — official rows only SCORE aggregates.
+pub(super) fn raw_intl_probabilities(
+    lemmas: &[crate::dump::RawSlavicLemma],
+    official_entries: &[OfficialEntry],
+) -> BTreeMap<(usize, usize), f64> {
+    const CAP: f64 = 0.90;
+    let mut empty = std::collections::HashSet::new();
+    let candidates = raw_intl_candidates(lemmas, &mut empty, &BTreeMap::new());
+    // token → official intl row indices (single-token rows only).
+    let mut by_token: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, e) in official_entries.iter().enumerate() {
+        if e.genesis.trim() != "I" || e.isv.trim().contains(' ') || e.isv.trim().is_empty() {
+            continue;
+        }
+        for t in crate::falsefriends::gloss_tokens(&e.english) {
+            by_token.entry(t).or_default().push(i);
+        }
+    }
+    let mut buckets: BTreeMap<(usize, usize), (usize, usize)> = BTreeMap::new(); // (hits, n)
+    for c in &candidates {
+        if c.deriv_of.is_some() {
+            continue; // derivational completions inherit their noun's bucket
+        }
+        let mut rows: std::collections::BTreeSet<usize> = Default::default();
+        for t in crate::falsefriends::gloss_tokens(&c.gloss) {
+            if let Some(is) = by_token.get(&t) {
+                rows.extend(is.iter().copied());
+            }
+        }
+        if rows.is_empty() {
+            continue; // no gloss-matched official row: not a scorable sample
+        }
+        let hit = rows.iter().any(|&i| {
+            official_entries[i]
+                .citation_byforms()
+                .iter()
+                .any(|b| crate::orthography::normalized_match(&c.form, &b.form))
+        });
+        let slot = buckets.entry(raw_intl_bucket(c)).or_default();
+        slot.0 += hit as usize;
+        slot.1 += 1;
+    }
+    buckets
+        .into_iter()
+        .map(|(b, (hits, n))| (b, crate::derive::wilson_lower(hits, n).min(CAP)))
+        .collect()
 }
 
 /// Group raw lemmas into borrowed-internationalism cognate sets by
@@ -480,12 +552,14 @@ pub(super) struct RawIntlCandidate {
 pub(super) fn raw_intl_candidates(
     lemmas: &[crate::dump::RawSlavicLemma],
     taken: &mut std::collections::HashSet<String>,
+    probs: &BTreeMap<(usize, usize), f64>,
 ) -> Vec<RawIntlCandidate> {
     use crate::model::Pos;
     // (lang, word, gloss list) of one raw member.
     type Member = (String, String, Vec<String>);
     // (intl skeleton, pos class) → members.
     let mut groups: BTreeMap<(String, &'static str), Vec<Member>> = BTreeMap::new();
+    let mut verb_gloss_by_ck: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for l in lemmas {
         let word = l.word.trim();
         let modern = crate::lang::lang_info(&l.lang).is_some_and(|i| i.modern);
@@ -520,6 +594,39 @@ pub(super) fn raw_intl_candidates(
             word.to_string(),
             l.glosses.clone(),
         ));
+        // Raw VERB attestations, indexed by consonant fingerprint: the gate
+        // for the -ovati derivational completion below (V11 item 4 — pl
+        // teleportować and mk телепортира never share a fingerprint, so the
+        // verb can't form a set of its own; the noun family + any one verb
+        // attestation is the evidence instead).
+        if pc == "v" {
+            // Grammar/form-of descriptions are not definitions — 'first-person
+            // singular … of абсолютизи́рам' must not become a shipped gloss
+            // (its parenthesized transliteration even names the stem).
+            const FORM_OF_MARKERS: &[&str] = &[
+                "singular",
+                "plural",
+                "participle",
+                "indicative",
+                "imperative",
+                "aorist",
+                "imperfect",
+                "-person",
+                "form of",
+            ];
+            let entry = verb_gloss_by_ck
+                .entry(crate::orthography::consonant_key(&latin))
+                .or_default();
+            for gloss in l.glosses.iter().map(|g| g.trim()) {
+                if !gloss.is_empty()
+                    && !gloss.chars().any(|c| c.is_uppercase())
+                    && !FORM_OF_MARKERS.iter().any(|m| gloss.contains(m))
+                    && !entry.iter().any(|have| have == gloss)
+                {
+                    entry.push(gloss.to_string());
+                }
+            }
+        }
     }
 
     let cfg = ConsensusConfig::production();
@@ -632,14 +739,99 @@ pub(super) fn raw_intl_candidates(
         let Some(branch_pattern) = super::navigation::branch_pattern(&langs) else {
             continue;
         };
-        out.push(RawIntlCandidate {
+        let mut candidate = RawIntlCandidate {
             form,
             pos,
             gloss: gloss.to_string(),
             langs,
             branch_pattern,
+            deriv_of: None,
+            present_stem: None,
+            probability: None,
+        };
+        if !probs.is_empty() {
+            // Unobserved buckets ship at the review floor, mirroring the
+            // derivation-probability fallback: a low-confidence suggestion,
+            // never an unmeasured cap.
+            candidate.probability = Some(
+                probs
+                    .get(&raw_intl_bucket(&candidate))
+                    .copied()
+                    .unwrap_or(crate::calibrate::REVIEW_T),
+            );
+        }
+        out.push(candidate);
+    }
+    // ---- Cross-POS completion (V11 item 4): recovered -acija/-ija nouns
+    // whose verb IS attested in some raw language get their regular -ovati
+    // verb (organizacija↔organizovati pattern), keyed under the attesting
+    // verb's own English gloss. Derivational, not fingerprint-loosening:
+    // the noun family is the cognate evidence, the verb attestation is the
+    // existence gate.
+    let mut verbs: Vec<RawIntlCandidate> = Vec::new();
+    for c in &out {
+        if c.pos != Pos::Noun {
+            continue;
+        }
+        let Some(stem) = c
+            .form
+            .strip_suffix("acija")
+            .or_else(|| c.form.strip_suffix("ija"))
+        else {
+            continue;
+        };
+        let stem_ck = crate::orthography::consonant_key(stem);
+        if stem_ck.chars().count() < 4 {
+            continue;
+        }
+        // The attesting verb must be the stem's OWN verb, not any verb whose
+        // consonant fingerprint happens to prefix-match (that gate alone
+        // paired gubernija with 'to hibernate' and pauperizacija with 'to
+        // fry for a while'): some gloss token of the verb must share the
+        // stem's skeleton prefix (teleport → 'to teleport'; informatiz →
+        // 'to informatize'). That matching gloss — the right sense by
+        // construction — is also the one the completion ships under.
+        let stem_sk = crate::orthography::ascii_skeleton(stem);
+        let required = stem_sk.chars().count().clamp(4, 6);
+        let gloss_names_stem = |g: &str| {
+            g.split(|c: char| !c.is_alphabetic()).any(|t| {
+                crate::orthography::ascii_skeleton(t)
+                    .chars()
+                    .zip(stem_sk.chars())
+                    .take_while(|(a, b)| a == b)
+                    .count()
+                    >= required
+            })
+        };
+        let Some(gloss) = verb_gloss_by_ck
+            .iter()
+            .filter(|(ck, _)| ck.starts_with(&stem_ck))
+            .flat_map(|(_, glosses)| glosses.iter())
+            .find(|g| gloss_names_stem(g))
+            .cloned()
+        else {
+            continue;
+        };
+        let verb_form = format!("{stem}ovati");
+        let key = crate::forms::form_key(&verb_form);
+        if key.is_empty() || !taken.insert(key) {
+            continue;
+        }
+        verbs.push(RawIntlCandidate {
+            present_stem: crate::aspect::ovati_present_stem(&verb_form),
+            form: verb_form,
+            pos: Pos::Verb,
+            gloss,
+            langs: c.langs.clone(),
+            branch_pattern: c.branch_pattern.clone(),
+            deriv_of: Some(c.form.clone()),
+            // Derivational completion: inherits the source noun's bucket
+            // probability (the family is the evidence; the verb attestation
+            // is only the existence gate).
+            probability: c.probability,
         });
     }
+    out.extend(verbs);
     out.sort_by(|a, b| a.form.cmp(&b.form));
     out
 }

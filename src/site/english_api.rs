@@ -81,6 +81,9 @@ pub(super) struct EnglishCandidate {
     aspect: Option<String>,
     aspect_partners: Vec<AspectPartner>,
     warnings: Vec<String>,
+    /// Severity of the false-friend warning (`high`/`medium`/`low`),
+    /// present iff `warnings` is non-empty (V11 item 6).
+    warning_severity: Option<String>,
     prefer: Vec<String>,
     form_lookup: FormLookup,
     probability: Option<f64>,
@@ -490,7 +493,61 @@ struct EnLookupHit {
     step: &'static str,
     key: String,
     shard: u32,
+    /// Set when the TOP verified candidate matched only a gloss token while
+    /// an exact-gloss-head candidate exists lower in the list (V11 item 3:
+    /// 'staff' → verified 'načeľnik štaba' above the semantically right
+    /// posoh). Trust tiers are NOT reordered; this flags the situation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sense_note: Option<String>,
     candidates: Vec<serde_json::Value>,
+}
+
+/// Derive the sense note for one key's ranked candidate list. Deterministic
+/// and derivable by any consumer from the shard data alone — the static API
+/// shape is unchanged; the CLI (and this function's documented rule) is the
+/// reference: fires iff the first verified candidate's match is
+/// `gloss-token` and some candidate anywhere in the list is an
+/// `exact-gloss-head` or `phrase` match.
+fn sense_note_for(candidates: &[serde_json::Value]) -> Option<String> {
+    let first_verified = candidates
+        .iter()
+        .find(|c| matches!(c["status"].as_str(), Some("official" | "official-only")))?;
+    if first_verified["match"].as_str() != Some("gloss-token") {
+        return None;
+    }
+    let exact_lemmas: Vec<&str> = candidates
+        .iter()
+        .filter(|c| matches!(c["match"].as_str(), Some("exact-gloss-head" | "phrase")))
+        .filter_map(|c| c["lemma"].as_str())
+        .take(3)
+        .collect();
+    if exact_lemmas.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "top verified candidate '{}' matches this query only as a token inside its gloss \
+         ('{}') — likely a phrase/derived sense; exact-gloss-head candidates exist: {}. \
+         Read glosses before trusting.",
+        first_verified["lemma"].as_str().unwrap_or(""),
+        first_verified["gloss"].as_str().unwrap_or(""),
+        exact_lemmas.join(", "),
+    ))
+}
+
+/// Display order for the human CLI: when the sense note fires, exact-head /
+/// phrase matches print first (each keeps its own trust/match labels); the
+/// JSON candidate array is NEVER reordered.
+fn display_order(candidates: &[serde_json::Value], noted: bool) -> Vec<&serde_json::Value> {
+    if !noted {
+        return candidates.iter().collect();
+    }
+    let exactish =
+        |c: &serde_json::Value| matches!(c["match"].as_str(), Some("exact-gloss-head" | "phrase"));
+    candidates
+        .iter()
+        .filter(|c| exactish(c))
+        .chain(candidates.iter().filter(|c| !exactish(c)))
+        .collect()
 }
 
 fn en_shard_records(
@@ -542,9 +599,8 @@ fn en_selftest(en_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The full documented retry ladder over the exported static API. Stops at the
-/// first ladder level that yields any candidates.
-pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result<()> {
+/// Open the exported English API directory, verifying its selftests.
+fn en_api_dir(site_dir: &Path) -> anyhow::Result<std::path::PathBuf> {
     let en_dir = site_dir.join("api").join("en");
     anyhow::ensure!(
         en_dir.join("meta.json").exists(),
@@ -553,13 +609,22 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
         site_dir.display()
     );
     en_selftest(&en_dir)?;
+    Ok(en_dir)
+}
 
-    let mut cache: HashMap<u32, serde_json::Value> = HashMap::new();
+/// One query's full documented retry ladder over the exported static API,
+/// sharing `cache` across calls (the workhorse for `--batch`). Walks until a
+/// VERIFIED candidate surfaces; generated-only hits are kept but don't stop
+/// the walk.
+fn en_ladder(
+    en_dir: &Path,
+    cache: &mut HashMap<u32, serde_json::Value>,
+    query: &str,
+) -> anyhow::Result<(String, Vec<EnLookupHit>)> {
     let normalized = normalize_english_query(query);
     anyhow::ensure!(!normalized.is_empty(), "empty query after normalization");
 
-    // Ladder levels, in documented order. Each level is a set of keys tried
-    // together; the first level with hits wins.
+    // Ladder levels, in documented order.
     let mut levels: Vec<(&'static str, Vec<String>)> =
         vec![("normalized", vec![normalized.clone()])];
     for article in ["a ", "an ", "the "] {
@@ -595,10 +660,6 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
         levels.push(("desuffix", desuffixed));
     }
 
-    // Walk the ladder until a VERIFIED candidate surfaces (a generated-only
-    // hit is kept but does not stop the walk): 'healing' both hits its
-    // derived-english generated record AND still reaches verified lěčiti via
-    // the de-suffixed 'heal'.
     let mut hits: Vec<EnLookupHit> = Vec::new();
     let mut seen_keys: std::collections::HashSet<String> = Default::default();
     'ladder: for (step, keys) in levels {
@@ -606,7 +667,7 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
             if !seen_keys.insert(key.clone()) {
                 continue;
             }
-            let candidates = en_shard_records(&en_dir, &key, &mut cache)?;
+            let candidates = en_shard_records(en_dir, &key, cache)?;
             if !candidates.is_empty() {
                 let verified = candidates
                     .iter()
@@ -615,6 +676,7 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
                     step,
                     shard: english_shard_of(&key),
                     key,
+                    sense_note: sense_note_for(&candidates),
                     candidates,
                 });
                 if verified {
@@ -623,6 +685,117 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
             }
         }
     }
+    Ok((normalized, hits))
+}
+
+/// First candidate in ladder order matching `pred`, tagged with its hit's
+/// step and key.
+fn first_candidate(
+    hits: &[EnLookupHit],
+    pred: impl Fn(&serde_json::Value) -> bool,
+) -> Option<serde_json::Value> {
+    for h in hits {
+        if let Some(c) = h.candidates.iter().find(|c| pred(c)) {
+            let mut c = c.clone();
+            c["step"] = serde_json::json!(h.step);
+            c["key"] = serde_json::json!(h.key);
+            return Some(c);
+        }
+    }
+    None
+}
+
+/// `en --batch <file>`: one query per line (blank lines and #-comments
+/// skipped), ONE selftest pass, the shard cache reused across queries,
+/// output strictly in input order (V11 item 7). JSON per query: status
+/// (verified/generated/miss), best_verified, best_generated, sense_note.
+pub fn run_en_batch(site_dir: &Path, file: &Path, json: bool) -> anyhow::Result<()> {
+    let en_dir = en_api_dir(site_dir)?;
+    let mut cache: HashMap<u32, serde_json::Value> = HashMap::new();
+    let text = std::fs::read_to_string(file)?;
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    let mut counts = (0usize, 0usize, 0usize); // verified / generated / miss
+    for line in text.lines() {
+        let query = line.trim();
+        if query.is_empty() || query.starts_with('#') {
+            continue;
+        }
+        let (normalized, hits) = en_ladder(&en_dir, &mut cache, query)?;
+        let verified = first_candidate(&hits, |c| {
+            matches!(c["status"].as_str(), Some("official" | "official-only"))
+        });
+        let generated = first_candidate(&hits, |c| c["status"].as_str() == Some("generated"));
+        let status = if verified.is_some() {
+            counts.0 += 1;
+            "verified"
+        } else if generated.is_some() {
+            counts.1 += 1;
+            "generated"
+        } else {
+            counts.2 += 1;
+            "miss"
+        };
+        let sense_note = hits.iter().find_map(|h| h.sense_note.clone());
+        if !json {
+            let show = |c: &Option<serde_json::Value>| {
+                c.as_ref()
+                    .map(|c| {
+                        format!(
+                            "{} [{} via {}]",
+                            c["lemma"].as_str().unwrap_or(""),
+                            c["trust"].as_str().unwrap_or(""),
+                            c["step"].as_str().unwrap_or(""),
+                        )
+                    })
+                    .unwrap_or_else(|| "—".into())
+            };
+            println!(
+                "{query}	{status}	{}	{}{}",
+                show(&verified),
+                show(&generated),
+                if sense_note.is_some() {
+                    "	⚠ sense-note"
+                } else {
+                    ""
+                },
+            );
+        }
+        rows.push(serde_json::json!({
+            "query": query,
+            "normalized": normalized,
+            "status": status,
+            "best_verified": verified,
+            "best_generated": generated,
+            "sense_note": sense_note,
+        }));
+    }
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "queries": rows,
+                "summary": {
+                    "verified": counts.0,
+                    "generated_only": counts.1,
+                    "miss": counts.2,
+                },
+            }))?
+        );
+    } else {
+        println!(
+            "batch: {} verified / {} generated-only / {} miss",
+            counts.0, counts.1, counts.2
+        );
+    }
+    Ok(())
+}
+
+/// The full documented retry ladder over the exported static API, for one
+/// query (see [`en_ladder`]).
+pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result<()> {
+    let en_dir = en_api_dir(site_dir)?;
+    let mut cache: HashMap<u32, serde_json::Value> = HashMap::new();
+    let (normalized, hits) = en_ladder(&en_dir, &mut cache, query)?;
 
     if json {
         println!(
@@ -641,7 +814,11 @@ pub fn run_en_lookup(site_dir: &Path, query: &str, json: bool) -> anyhow::Result
     }
     for hit in &hits {
         println!("[{}] key '{}' (shard {}):", hit.step, hit.key, hit.shard);
-        for c in hit.candidates.iter().take(8) {
+        if let Some(note) = &hit.sense_note {
+            println!("  ⚠ sense note: {note}");
+        }
+        let ordered = display_order(&hit.candidates, hit.sense_note.is_some());
+        for c in ordered.iter().take(8) {
             let s = |f: &str| c[f].as_str().unwrap_or("").to_string();
             let warn = if c["warnings"].as_array().is_some_and(|w| !w.is_empty()) {
                 "  ⚠"
@@ -748,6 +925,7 @@ pub(super) fn build_english_index(
         let form_shard = forms::shard_of(&form_key);
         let note = notes.get(&form_key);
         let warnings = note.map(|n| vec![n.warning.clone()]).unwrap_or_default();
+        let warning_severity = note.map(|n| n.severity.to_string());
         let prefer = note.map(|n| n.prefer.clone()).unwrap_or_default();
 
         // Raw-intl records carry their evidence inline (entry_id 0 sentinel);
@@ -805,6 +983,7 @@ pub(super) fn build_english_index(
                 aspect: aspect.clone(),
                 aspect_partners: aspect_partners.clone(),
                 warnings: warnings.clone(),
+                warning_severity: warning_severity.clone(),
                 prefer: prefer.clone(),
                 form_lookup: FormLookup {
                     key: form_key.clone(),
@@ -834,8 +1013,18 @@ pub(super) fn build_english_index(
     }
     for values in by_key.values_mut() {
         values.sort_by(|a, b| {
+            // rank already encodes trust tier + match quality; within
+            // tier+match, the V10 ranking evidence breaks ties
+            // deterministically (higher official frequency, then broader
+            // attestation) before the lexicographic fallback (V11 item 3).
             b.rank
                 .cmp(&a.rank)
+                .then_with(|| {
+                    b.frequency
+                        .unwrap_or(0.0)
+                        .total_cmp(&a.frequency.unwrap_or(0.0))
+                })
+                .then_with(|| b.langs.cmp(&a.langs))
                 .then_with(|| a.lemma.cmp(&b.lemma))
                 .then_with(|| a.pos.cmp(&b.pos))
                 .then_with(|| a.entry_id.cmp(&b.entry_id))
@@ -939,7 +1128,8 @@ pub(super) fn write_en_api(
             "match": "why this candidate is indexed for this English key",
             "aspect": "ipf, pf, ipf/pf, or null",
             "aspect_partners": "known aspect partner entry ids and lemmas",
-            "warnings": "computed false-friend warnings (same records as api/notes.json)",
+            "warnings": "computed false-friend warnings (same records as the api/notes/<n>.json shards)",
+            "warning_severity": "high/medium (primary-sense trap) or low (colloquial-only), when warnings is non-empty",
             "prefer": "official lemma(s) covering the divergent sense, computed from gloss overlap",
             "form_lookup": "folded lemma key and api/forms shard for inflection lookup",
             "probability": "model-specific generated probability when available",
@@ -1200,6 +1390,94 @@ mod tests {
         assert_eq!(save[0].langs, 9);
         assert_eq!(save[0].branch_pattern.as_deref(), Some("V+Z+J"));
         assert!(!save[0].borrowed);
+    }
+
+    /// V11 item 3 frozen case: 'staff' — the top verified candidate is a
+    /// gloss-token phrase match (chief-of-staff) while the semantically right
+    /// exact-gloss-head candidates are generated. The sense note must fire,
+    /// the human display must lead with the exact-head block, and the JSON
+    /// candidate order must stay untouched.
+    #[test]
+    fn staff_case_sense_note_fires_and_display_reorders() {
+        let cand = |lemma: &str, status: &str, m: &str, gloss: &str| {
+            serde_json::json!({
+                "lemma": lemma, "status": status, "match": m, "gloss": gloss,
+            })
+        };
+        let staff = vec![
+            cand(
+                "načeľnik štaba",
+                "official-only",
+                "gloss-token",
+                "chief-of-staff",
+            ),
+            cand(
+                "drevko",
+                "generated",
+                "exact-gloss-head",
+                "shaft, pole, staff",
+            ),
+            cand("posoh", "generated", "exact-gloss-head", "staff, stick"),
+        ];
+        let note = sense_note_for(&staff).expect("sense note fires");
+        assert!(note.contains("načeľnik štaba"), "{note}");
+        assert!(note.contains("drevko"), "{note}");
+        let ordered = display_order(&staff, true);
+        assert_eq!(ordered[0]["lemma"], "drevko");
+        assert_eq!(ordered[2]["lemma"], "načeľnik štaba");
+        // No note when the top verified candidate is itself an exact head…
+        let clean = vec![
+            cand("mapa", "official", "exact-gloss-head", "map"),
+            cand("kartny", "generated", "exact-gloss-head", "pridavnik"),
+        ];
+        assert!(sense_note_for(&clean).is_none());
+        // …or when no exact-head alternative exists at all.
+        let token_only = vec![cand("x", "official", "gloss-token", "phrase with word")];
+        assert!(sense_note_for(&token_only).is_none());
+    }
+
+    /// V11 item 3: ranking-evidence tie-breakers within one rank.
+    #[test]
+    fn frequency_then_langs_break_rank_ties() {
+        let mk = |lemma: &str, freq: Option<f32>, langs: usize| {
+            let mut r = record(lemma, 1, "official", "carry", None);
+            r.lemma = lemma.to_string();
+            (r, freq, langs)
+        };
+        let mut evidence = BTreeMap::new();
+        let records: Vec<FormRecord> = ["nesti", "nositi"]
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let (mut r, freq, langs) = match *l {
+                    "nesti" => mk("nesti", Some(9000.0), 5),
+                    _ => mk("nositi", Some(100.0), 9),
+                };
+                r.entry_id = i + 1;
+                evidence.insert(
+                    i + 1,
+                    forms::RankEvidence {
+                        frequency: freq,
+                        langs,
+                        branch_pattern: None,
+                        borrowed: false,
+                    },
+                );
+                r
+            })
+            .collect();
+        let metas = vec![meta(1, Some("o1")), meta(2, Some("o2"))];
+        let index = build_english_index(
+            &records,
+            &metas,
+            &AspectMeta::new(),
+            &BTreeMap::new(),
+            &evidence,
+        );
+        let carry = index.get("carry").expect("carry key");
+        // Same status + same match kind ⇒ same rank; frequency decides.
+        assert_eq!(carry[0].lemma, "nesti");
+        assert_eq!(carry[1].lemma, "nositi");
     }
 
     #[test]
