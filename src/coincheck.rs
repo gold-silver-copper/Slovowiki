@@ -169,6 +169,22 @@ fn model_gender_label(g: crate::model::Gender) -> &'static str {
     }
 }
 
+/// Validate one constructed lexicon-row line through the SAME parse +
+/// semantic rules `check-text --lexicon` applies, returning the row on
+/// success. A `#`-initial word makes the line parse as a lexicon COMMENT
+/// (empty result) — that must be a rejection, never an index panic.
+fn validated_lexicon_row(index: &crate::check::Index, row: String, word: &str) -> Result<String> {
+    crate::check::parse_lexicon(&row)
+        .and_then(|rows| {
+            let parsed = rows.into_iter().next().ok_or_else(|| {
+                anyhow::anyhow!("the word makes the row parse as a lexicon comment, not a row")
+            })?;
+            crate::check::validate_lexicon_row(index, &parsed)
+        })
+        .map(|_pinned| row)
+        .map_err(|e| anyhow::anyhow!("--lexicon-row rejected for '{word}': {e:#}"))
+}
+
 /// The `coin-check` CLI entry point.
 pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) -> Result<()> {
     let word = word.trim();
@@ -335,11 +351,7 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
             pos.code(),
             overrides.gloss.as_deref().unwrap_or("").trim()
         );
-        let validated = crate::check::parse_lexicon(&row)
-            .and_then(|rows| crate::check::validate_lexicon_row(&index, &rows[0]))
-            .map(|_pinned| row)
-            .map_err(|e| anyhow::anyhow!("--lexicon-row rejected for '{word}': {e:#}"));
-        Some(validated)
+        Some(validated_lexicon_row(&index, row, word))
     } else {
         None
     };
@@ -561,6 +573,28 @@ mod tests {
         };
         assert_eq!(cell(true), ["žabervoka"], "animate acc.sg = gen.sg");
         assert_eq!(cell(false), ["žabervok"], "inanimate acc.sg = nom.sg");
+    }
+
+    /// Regression: a `#`-initial word makes the constructed TSV line parse
+    /// as a lexicon COMMENT (empty row set) — --lexicon-row must reject it
+    /// with an error, not panic on `rows[0]`.
+    #[test]
+    fn lexicon_row_rejects_comment_shaped_word() {
+        let index = crate::check::build_index(&[], None, Default::default());
+        let err = validated_lexicon_row(&index, "#foo\tnoun\tm\tanim\ttest".to_string(), "#foo")
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("rejected for '#foo'"),
+            "must reject, not panic: {err}"
+        );
+        // The happy path through the same helper still returns the row.
+        let ok = validated_lexicon_row(
+            &index,
+            "žabervok\tnoun\tm\tanim\tjabberwock".to_string(),
+            "žabervok",
+        )
+        .expect("clean coinage validates");
+        assert_eq!(ok, "žabervok\tnoun\tm\tanim\tjabberwock");
     }
 
     /// The crate's guess is exposed for the divergence report: 'žabervok'
