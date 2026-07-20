@@ -1324,6 +1324,19 @@ languages' caches (per-language word + glosses + exact/loose level), and
 the declension paradigm the guessed POS produces. Use it before shipping a
 coinage; adjust the ending to change the paradigm.
 
+The declinability axis reports the crate's guessed gender/animacy for the
+noun reading, and accepts explicit metadata — `--pos <noun|adj|verb>`,
+`--gender <m|f|n>`, `--animacy <anim|inanim>` — rendering the OVERRIDDEN
+paradigm (the `ISV::noun_with` call a real consumer makes; animate
+masculines take genitive-shaped accusatives) while still printing the guess
+and flagging every divergence ("ending suggests gender m; you declared f").
+With `--lexicon-row --gloss <english concept>` it emits the validated
+project-lexicon TSV row (see below; also a `lexicon_row` field in `--json`),
+so the coinage workflow chains mechanically:
+`coin-check → append row → check-text --lexicon`. The row is validated by
+the same rules `check-text --lexicon` applies — an invalid row fails here,
+not later in CI.
+
 ## Project lexicons (check-text --lexicon)
 
 A translation project's sanctioned coinages live in a project-lexicon TSV:

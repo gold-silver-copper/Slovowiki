@@ -117,6 +117,27 @@ enum Command {
         /// Emit machine-readable JSON instead of the human report.
         #[arg(long)]
         json: bool,
+        /// Override the POS guessed from the ending (noun|adj|verb) — the
+        /// declinability axis then renders the overridden paradigm and flags
+        /// divergence from the guess (V13 item 2).
+        #[arg(long)]
+        pos: Option<String>,
+        /// Declared noun gender (m|f|n) — the `ISV::noun_with` control a real
+        /// consumer exercises.
+        #[arg(long)]
+        gender: Option<String>,
+        /// Declared noun animacy (anim|inanim); animate masculines take
+        /// genitive-shaped accusatives.
+        #[arg(long)]
+        animacy: Option<String>,
+        /// English gloss of the source concept (required by --lexicon-row).
+        #[arg(long)]
+        gloss: Option<String>,
+        /// Emit the validated word's project-lexicon TSV row (see the agent
+        /// guide) so the coinage workflow chains mechanically:
+        /// coin-check → append row → check-text --lexicon.
+        #[arg(long)]
+        lexicon_row: bool,
         #[arg(long, default_value = DEFAULT_OFFICIAL)]
         official: PathBuf,
     },
@@ -338,10 +359,22 @@ fn main() -> Result<()> {
         Command::CoinCheck {
             word,
             json,
+            pos,
+            gender,
+            animacy,
+            gloss,
+            lexicon_row,
             official,
         } => {
             forms::install_cli_quiet_inflection_hook();
-            coincheck::run(&official, &word, json)
+            let overrides = coincheck::Overrides::parse(
+                pos.as_deref(),
+                gender.as_deref(),
+                animacy.as_deref(),
+                gloss,
+                lexicon_row,
+            )?;
+            coincheck::run(&official, &word, json, &overrides)
         }
         Command::En {
             query,

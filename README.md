@@ -475,6 +475,12 @@ cargo run --release -- en --batch words.txt --json   # lexicon-building mode
 # across ten languages, and the paradigm it would decline with:
 cargo run --release -- coin-check "akvator"
 cargo run --release -- coin-check "jabberwok" --json
+# Declared metadata (V13): render the paradigm the project will actually
+# use (ISV::noun_with semantics) and flag divergence from the ending-based
+# guess; --lexicon-row emits the validated project-lexicon TSV row so the
+# workflow chains: coin-check -> append row -> check-text --lexicon:
+cargo run --release -- coin-check "žabervok" --gender m --animacy anim \
+  --gloss jabberwock --lexicon-row
 ```
 
 ## Lexical verification API (for humans and AI agents)
