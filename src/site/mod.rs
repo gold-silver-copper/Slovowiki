@@ -8,9 +8,9 @@
 
 use self::assets::css;
 use self::coverage::{
-    inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
-    plan_raw_pages, raw_intl_candidates, raw_intl_probabilities, select_official_surface,
-    OfficialSurface,
+    inject_generated_derivatives, insert_official_byform_aliases, near_official_match,
+    official_surface_maps, plan_raw_pages, raw_intl_candidates, raw_intl_probabilities,
+    select_official_surface, OfficialSurface,
 };
 use self::entries::{
     branch_evidence, build_input, corpus_about, corpus_entry_page, corpus_home, derivation_block,
@@ -470,10 +470,10 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // by `corpus-eval --fit` on the dev split and holdout-validated), loaded
     // with a machine-checked score domain. Absent file → the V10 fail-closed
     // posture (null probabilities, proposals paused) remains.
-    let calibration: Option<crate::calibrate::Calibration> =
-        crate::calibrate::Calibration::load_for_domain(
+    let calibration: Option<crate::calibrate::CorpusCalibration> =
+        crate::calibrate::CorpusCalibration::load_for_domain(
             Path::new(crate::calibrate::CORPUS_CALIBRATION_PATH),
-            crate::calibrate::CORPUS_COVERAGE_SCORE_DOMAIN,
+            crate::calibrate::CORPUS_BANDED_DOMAIN,
         )?;
     match &calibration {
         Some(cal) => println!(
@@ -743,8 +743,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // data/semantic-notes.json): detected from the same evidence caches that
     // are already in memory, then shared by api/notes.json, the English API
     // candidates, and the checker index below.
-    let ff_notes =
-        crate::falsefriends::compute(&official_entries, Some(&corpus), raw_corpus.as_ref());
+    let ff_notes = crate::falsefriends::compute(
+        &official_entries,
+        Some(&corpus),
+        raw_corpus.as_ref(),
+        enrich.as_ref(),
+    );
     println!(
         "false-friends: {} computed notes ({} collisions) from cache surface × gloss divergence.",
         ff_notes.len(),
@@ -786,7 +790,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // (`prob` = None, like official-only pages — entries.json emits null,
         // matching the API posture). The calibrated PRIOR is kept separately
         // for the provenance transparency line only (issue #86).
-        let prior = calibration.as_ref().map(|c| c.probability(p.g.score));
+        let prior = calibration
+            .as_ref()
+            .map(|c| c.probability(p.g.score, p.g.n_langs));
         let mut meta = entry_meta(SiteEntryInput {
             id: p.id,
             title: &p.display,
@@ -1545,8 +1551,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let Some(cal) = calibration.as_ref() else {
             continue;
         };
-        let prob = cal.probability(p.g.score);
+        let prob = cal.probability(p.g.score, p.g.n_langs);
         if prob >= crate::calibrate::REVIEW_T {
+            // V12 item 3: a proposal one edit away from a gloss+POS-matched
+            // official byform is a reconstruction near-miss, not a novel
+            // word — reclassify with the official lemma cited.
+            let near = near_official_match(form, p.g.set.pos, &p.g.set.gloss, &official_entries);
             proposals.push(ProposalRow {
                 id: p.id,
                 form: form.to_string(),
@@ -1563,12 +1573,28 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                     l
                 },
                 gloss: p.g.set.gloss.clone(),
+                classification: if near.is_some() {
+                    "near-official"
+                } else {
+                    "novel"
+                },
+                official_lemma: near.unwrap_or_default(),
             });
         }
     }
     proposals.sort_by(|a, b| b.prob.total_cmp(&a.prob).then(a.id.cmp(&b.id)));
-    let mut tsv =
-        String::from("form\tpos\tprobability\tbucket\tancestor\tn_langs\tn_branches\tgloss\n");
+    let n_near = proposals
+        .iter()
+        .filter(|r| r.classification == "near-official")
+        .count();
+    println!(
+        "proposals: {} rows ({} truly novel, {n_near} near-official reconstruction diagnostics)",
+        proposals.len(),
+        proposals.len() - n_near,
+    );
+    let mut tsv = String::from(
+        "form\tpos\tprobability\tbucket\tancestor\tn_langs\tn_branches\tgloss\tclassification\tofficial\n",
+    );
     for r in &proposals {
         // Buckets are only meaningful in calibrated-probability space.
         let bucket = if r.prob >= crate::calibrate::PROPOSE_T {
@@ -1578,7 +1604,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         };
         let _ = writeln!(
             tsv,
-            "{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.form,
             r.pos,
             r.prob,
@@ -1587,6 +1613,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             r.n_langs,
             r.n_branches,
             r.gloss.replace(['\t', '\n'], " "),
+            r.classification,
+            r.official_lemma,
         );
     }
     // Committed data artifact AND a served copy, so the page's download link
@@ -1634,7 +1662,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             ),
         };
         let prob = if status == "generated" {
-            calibration.as_ref().map(|c| c.probability(p.g.score))
+            calibration
+                .as_ref()
+                .map(|c| c.probability(p.g.score, p.g.n_langs))
         } else {
             None
         };
@@ -2044,7 +2074,16 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     )?;
     std::fs::write(
         out_dir.join("metrics.html"),
-        metrics_page(calibration.as_ref()),
+        // The metrics page documents the PIPELINE calibrator
+        // (score-calibration.json) — not the corpus one (a V11 wiring slip
+        // had it rendering corpus fit stats under the pipeline heading).
+        metrics_page(
+            crate::calibrate::Calibration::load_for_domain(
+                Path::new(crate::calibrate::PATH),
+                crate::calibrate::PIPELINE_SCORE_DOMAIN,
+            )?
+            .as_ref(),
+        ),
     )?;
 
     // Dataset-coverage page (issue #35): documents which Slavic-Wiktionary datasets

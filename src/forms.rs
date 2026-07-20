@@ -1188,12 +1188,13 @@ row blindly.
   model-specific and may be null:
   - **cognate-set reconstructions** — `probability` is
     P(reproduces an official lemma, normalized) from the committed
-    corpus-coverage calibrator (`data/corpus-calibration.json`): an isotonic
-    decile map fitted on cache sets gloss+POS-matched to official dev rows
-    and holdout-validated (ECE ≈0.014). The separate official-row pipeline
-    calibrator is still deliberately rejected as incompatible. Top-decile
-    coverage calibrates to only ≈0.43 — even the best-attested
-    reconstruction is closer to a coin flip than to verification;
+    corpus-coverage calibrator (`data/corpus-calibration.json`), BANDED by
+    attesting languages (2-3 / 4-6 / 7+) with per-decile Wilson-95 lower
+    bounds, PAVA within each band, holdout-validated (pooled ECE ≈0.020).
+    The separate official-row pipeline calibrator is still deliberately
+    rejected as incompatible. Band ceilings on current data: ≈0.16 /
+    ≈0.30 / ≈0.40 — even the best-attested reconstruction is closer to a
+    coin flip than to verification;
   - **regular derivatives off attested bases** (the site's "Slovotvorstvo"
     families) — a base lemma's productive family (`-osť`, adverb, `-ńje`,
     `-telj`, `-ny`/`-sky`, `-ka`/`-ica`, `ne-`), restricted to members ABSENT
@@ -1237,6 +1238,16 @@ numeral paradigms** (toj-class, moj-class, kto/čto, veś, jedin, dva/tri/
 **3-token official lemmas**
 (try trigram → bigram → unigram when verifying).
 
+## Coinage validation (coin-check)
+
+`coin-check <word> [--json]` validates a coined word (fantasy names and
+other unavoidable neologisms) on four axes: phonotactics (the official
+lemmas' own character-bigram inventory — no hand list), collision with any
+existing lemma or inflected form, false-friend readings across the ten
+languages' caches (per-language word + glosses + exact/loose level), and
+the declension paradigm the guessed POS produces. Use it before shipping a
+coinage; adjust the ending to change the paradigm.
+
 ## Agreement warnings (check-text)
 
 `check-text --json` reports may carry an `agreement` field: a conservative
@@ -1261,8 +1272,13 @@ compatible and both tokens are POS-unambiguous verification-grade words.
    monolithic `api/notes.json` is retired). Each record: `warning` sentence,
    `severity` (`high`/`medium` = the word's primary sense diverges;
    `low` = colloquial-only), optional `prefer` official lemma covering the
-   divergent sense, and per-language `collisions` evidence with
-   `primary_agrees` flags.
+   divergent sense (V12: chosen by SLAVIC bridges — the colliding word or
+   its native synonyms appearing in the preferred lemma's own cognate
+   cells — with English token coverage only as a fallback), and
+   per-language `collisions` evidence with `primary_agrees` flags and a
+   `level` field (`exact` = same folded surface, the classic traps;
+   `loose` = y→i skeleton match). Rendered warnings quote exact-level
+   collisions first.
 5. For unknown tokens, use `api/suggest/<n>.json` (or `cargo run -- check-text`
    locally) to offer nearest known forms.
 6. Cite `entry/<entry_id>.html` when you need a human-checkable source.
