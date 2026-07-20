@@ -1027,6 +1027,9 @@ fn raw_intl_recovers_the_teleport_family() {
         mk("pl", "granat", "noun", "grenade"),
         mk("ru", "гранат", "noun", "pomegranate"),
     ];
+    // (verb completion asserted below: the pl/mk verb adaptations share no
+    // consonant fingerprint, so no verb SET can form — only the derivational
+    // completion off the recovered noun reaches teleportovati.)
     let mut taken = std::collections::HashSet::new();
     let out = super::coverage::raw_intl_candidates(&lemmas, &mut taken);
     let noun = out
@@ -1044,4 +1047,13 @@ fn raw_intl_recovers_the_teleport_family() {
         !out.iter().any(|c| c.gloss.contains("grenade")),
         "gloss-divergent same-shape words must not merge"
     );
+    // V11 item 4: the -ovati completion, gated on the raw verb attestation.
+    let verb = out
+        .iter()
+        .find(|c| c.pos == Pos::Verb)
+        .expect("teleport verb completion");
+    assert_eq!(verb.form, "teleportovati");
+    assert_eq!(verb.gloss, "to teleport");
+    assert_eq!(verb.deriv_of.as_deref(), Some("teleportacija"));
+    assert_eq!(verb.present_stem.as_deref(), Some("teleportuje"));
 }

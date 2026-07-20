@@ -1201,11 +1201,14 @@ row blindly.
     gate never saw (no etymology section on any Wiktionary member, e.g. the
     teleport family), recovered from raw attestations in ≥2 languages across
     ≥2 branches with gloss agreement, flavorized and adapted by the ordinary
-    pipeline. Their `analyses` carry a single
+    pipeline. Their `analyses` carry a
     `raw-intl:<langs>l:<branch-pattern>` tag (e.g. `raw-intl:2l:Z+J`), which
-    also feeds their ranking evidence (`borrowed: true`); `probability` is
-    null (no calibrator for this path — fail closed), and `entry_id` is the
-    `0` "no entry page" sentinel — do not fetch `entry/0.html`.
+    also feeds their ranking evidence (`borrowed: true`), and `entry_id` is
+    the `0` "no entry page" sentinel — do not fetch `entry/0.html`.
+    Recovered `-acija`/`-ija` nouns whose verb is attested in any raw
+    language additionally yield the regular `-ovati` verb (teleportacija →
+    teleportovati) with extra analyses `deriv:intl-ovati←<noun>` and
+    `pres:<stem>uje` marking the derivation and the regular present stem.
 - **Any non-null generated probability is still a suggestion, never
   verification.** Generated lemmas (all kinds) have NO inflection records on
   purpose: an inflected form of a

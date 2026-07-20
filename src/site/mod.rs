@@ -1792,19 +1792,29 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         // linguistic-logic CI guard requires nonzero ids to resolve there).
         // The attestation evidence rides in the provenance tag, which the
         // English API parses back out.
-        let feats = format!("raw-intl:{}l:{}", c.langs.len(), c.branch_pattern);
-        for sink in [&mut lemma_sink, &mut form_sink] {
-            sink.add(
-                &c.form,
-                &feats,
-                &c.form,
-                0,
-                c.pos.code(),
-                "lemma",
-                "generated",
-                None,
-                &c.gloss,
-            );
+        let mut feat_list = vec![format!("raw-intl:{}l:{}", c.langs.len(), c.branch_pattern)];
+        if let Some(noun) = &c.deriv_of {
+            // V11 item 4: derivational completion — provenance points at the
+            // recovered noun; the regular present stem rides along.
+            feat_list.push(format!("deriv:intl-ovati←{noun}"));
+            if let Some(stem) = &c.present_stem {
+                feat_list.push(format!("pres:{stem}"));
+            }
+        }
+        for feats in &feat_list {
+            for sink in [&mut lemma_sink, &mut form_sink] {
+                sink.add(
+                    &c.form,
+                    feats,
+                    &c.form,
+                    0,
+                    c.pos.code(),
+                    "lemma",
+                    "generated",
+                    None,
+                    &c.gloss,
+                );
+            }
         }
     }
     println!(

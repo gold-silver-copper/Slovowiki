@@ -467,6 +467,10 @@ pub(super) struct RawIntlCandidate {
     /// `"V+Z"`-style attesting branch combination (≥2 branches by
     /// construction, so always present).
     pub(super) branch_pattern: String,
+    /// For derivational completions (V11 item 4): the recovered noun this
+    /// verb was generated from, plus its `-uje` present stem when regular.
+    pub(super) deriv_of: Option<String>,
+    pub(super) present_stem: Option<String>,
 }
 
 /// Group raw lemmas into borrowed-internationalism cognate sets by
@@ -486,6 +490,7 @@ pub(super) fn raw_intl_candidates(
     type Member = (String, String, Vec<String>);
     // (intl skeleton, pos class) → members.
     let mut groups: BTreeMap<(String, &'static str), Vec<Member>> = BTreeMap::new();
+    let mut verb_gloss_by_ck: BTreeMap<String, String> = BTreeMap::new();
     for l in lemmas {
         let word = l.word.trim();
         let modern = crate::lang::lang_info(&l.lang).is_some_and(|i| i.modern);
@@ -520,6 +525,23 @@ pub(super) fn raw_intl_candidates(
             word.to_string(),
             l.glosses.clone(),
         ));
+        // Raw VERB attestations, indexed by consonant fingerprint: the gate
+        // for the -ovati derivational completion below (V11 item 4 — pl
+        // teleportować and mk телепортира never share a fingerprint, so the
+        // verb can't form a set of its own; the noun family + any one verb
+        // attestation is the evidence instead).
+        if pc == "v" {
+            if let Some(gloss) = l
+                .glosses
+                .iter()
+                .map(|g| g.trim())
+                .find(|g| !g.is_empty() && !g.chars().any(|c| c.is_uppercase()))
+            {
+                verb_gloss_by_ck
+                    .entry(crate::orthography::consonant_key(&latin))
+                    .or_insert_with(|| gloss.to_string());
+            }
+        }
     }
 
     let cfg = ConsensusConfig::production();
@@ -638,8 +660,55 @@ pub(super) fn raw_intl_candidates(
             gloss: gloss.to_string(),
             langs,
             branch_pattern,
+            deriv_of: None,
+            present_stem: None,
         });
     }
+    // ---- Cross-POS completion (V11 item 4): recovered -acija/-ija nouns
+    // whose verb IS attested in some raw language get their regular -ovati
+    // verb (organizacija↔organizovati pattern), keyed under the attesting
+    // verb's own English gloss. Derivational, not fingerprint-loosening:
+    // the noun family is the cognate evidence, the verb attestation is the
+    // existence gate.
+    let mut verbs: Vec<RawIntlCandidate> = Vec::new();
+    for c in &out {
+        if c.pos != Pos::Noun {
+            continue;
+        }
+        let Some(stem) = c
+            .form
+            .strip_suffix("acija")
+            .or_else(|| c.form.strip_suffix("ija"))
+        else {
+            continue;
+        };
+        let stem_ck = crate::orthography::consonant_key(stem);
+        if stem_ck.chars().count() < 4 {
+            continue;
+        }
+        let Some(gloss) = verb_gloss_by_ck
+            .iter()
+            .find(|(ck, _)| ck.starts_with(&stem_ck))
+            .map(|(_, g)| g.clone())
+        else {
+            continue;
+        };
+        let verb_form = format!("{stem}ovati");
+        let key = crate::forms::form_key(&verb_form);
+        if key.is_empty() || !taken.insert(key) {
+            continue;
+        }
+        verbs.push(RawIntlCandidate {
+            present_stem: crate::aspect::ovati_present_stem(&verb_form),
+            form: verb_form,
+            pos: Pos::Verb,
+            gloss,
+            langs: c.langs.clone(),
+            branch_pattern: c.branch_pattern.clone(),
+            deriv_of: Some(c.form.clone()),
+        });
+    }
+    out.extend(verbs);
     out.sort_by(|a, b| a.form.cmp(&b.form));
     out
 }
