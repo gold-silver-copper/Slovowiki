@@ -743,8 +743,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
     // data/semantic-notes.json): detected from the same evidence caches that
     // are already in memory, then shared by api/notes.json, the English API
     // candidates, and the checker index below.
-    let ff_notes =
-        crate::falsefriends::compute(&official_entries, Some(&corpus), raw_corpus.as_ref());
+    let ff_notes = crate::falsefriends::compute(
+        &official_entries,
+        Some(&corpus),
+        raw_corpus.as_ref(),
+        enrich.as_ref(),
+    );
     println!(
         "false-friends: {} computed notes ({} collisions) from cache surface × gloss divergence.",
         ff_notes.len(),

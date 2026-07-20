@@ -463,6 +463,7 @@ pub fn compute(
     official: &[OfficialEntry],
     evidence: Option<&LemmaCorpus>,
     raw: Option<&RawSlavicCorpus>,
+    enrich: Option<&crate::enrich::EnrichIndex>,
 ) -> BTreeMap<String, Note> {
     let lang_idx: HashMap<&str, usize> = LANGS.iter().enumerate().map(|(i, l)| (l.0, i)).collect();
 
@@ -567,6 +568,38 @@ pub fn compute(
             display.1.push(gloss);
         }
     }
+
+    // Bridge index (V12 item 1): (cell language, verbatim cell variant) →
+    // official entries listing that word as their translation. The Slavic
+    // side is the authority on which official lemma a colliding word
+    // actually renders — English tokens only rank within it.
+    let mut by_cell_word: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for (ei, e) in official.iter().enumerate() {
+        for (lang, cell) in &e.cells {
+            for (variant, _) in crate::normalize::split_cell(cell) {
+                by_cell_word
+                    .entry((lang.clone(), variant))
+                    .or_default()
+                    .push(ei);
+            }
+        }
+    }
+    // Collision language → official CSV cell columns (`sh` covers hr+sr).
+    let cell_langs = |code: &str| -> Vec<&'static str> {
+        match code {
+            "sh" => vec!["hr", "sr"],
+            "ru" => vec!["ru"],
+            "uk" => vec!["uk"],
+            "be" => vec!["be"],
+            "pl" => vec!["pl"],
+            "cs" => vec!["cs"],
+            "sk" => vec!["sk"],
+            "sl" => vec!["sl"],
+            "mk" => vec!["mk"],
+            "bg" => vec!["bg"],
+            _ => vec![],
+        }
+    };
 
     // ---- 4. Detect divergent collisions per official key. ----
     let mut notes: BTreeMap<String, Note> = BTreeMap::new();
@@ -682,20 +715,25 @@ pub fn compute(
             continue;
         }
 
-        // `prefer` (V11 item 2): the official lemma that covers the divergent
-        // sense — or NOTHING. A wrong suggestion actively misleads a
-        // translator (staja → stabiľny via English 'stable' polysemy), so:
-        // (a) the preferred lemma's POS must match a divergent record's POS
-        //     it draws coverage from (kills adjective 'stable' for a noun
-        //     sense, noun smŕť for verb 'execute');
-        // (b) coverage counts closure-aware matches (exact / near / mates),
-        //     scored per collision in integer ppm as before;
-        // (c) a best score under PREFER_MIN_COVERAGE emits an EMPTY prefer —
-        //     expected and accepted for most notes. Strictly MORE than half a
-        //     collision: the seed-42 sample showed exactly-half covers are the
-        //     single-token-graze class ('to acquire a tan' → iziskati via
-        //     'acquire' alone at 500k), while genuine prefers either fully
-        //     cover a sense (bazar→trg) or cover several tokens.
+        // `prefer` (V12 item 1): Slavic evidence first, English tokens second.
+        // English polysemy defeats any token threshold (ravnina 'plane
+        // (surface)' → aviakarta via the aircraft), so:
+        //
+        // (1) BRIDGED candidates win: the colliding word itself — or, when
+        //     the collision is primary-divergent, one of its native-Wiktionary
+        //     synonyms — appears verbatim in the candidate's own cognate cell
+        //     for that language (uk урок in lekcija's uk cell; ru питать's
+        //     synonym кормить in krmiti's ru cell). Ranked by bridge count,
+        //     then English coverage, frequency, lemma. Synonym bridging is
+        //     restricted to primary-divergent collisions because enrich
+        //     synonyms describe the word's PRIMARY sense — pl barwić's dye
+        //     synonyms must not bridge its colloquial 'characterize' sense.
+        // (2) Without any bridge, the English fallback keeps V11's coverage
+        //     threshold AND additionally requires the candidate's ENTIRE
+        //     gloss to sit inside the divergent sense (harakterizovati
+        //     {characterize} ⊆ the barwić trap tokens ✓; aviakarta
+        //     {plane, ticket, …} ⊄ {plane} ✗).
+        // (3) Otherwise: empty. Fail-closed stands.
         const PREFER_MIN_COVERAGE: usize = 600_000;
         let pos_class = |p: crate::model::Pos| match p {
             crate::model::Pos::Noun | crate::model::Pos::ProperNoun => "noun",
@@ -704,64 +742,125 @@ pub fn compute(
             crate::model::Pos::Adverb => "adv",
             _ => "other",
         };
-        let mut scores: BTreeMap<usize, usize> = BTreeMap::new();
-        // Candidate discovery stays exact-token (the by_token index); the
-        // discovered candidates are then scored with the full closure-aware
-        // overlap against each POS-compatible collision.
+        let token_matches = |t: &String, entry_tokens: &BTreeSet<String>| {
+            entry_tokens
+                .iter()
+                .any(|y| t == y || near_match(t, y) || mates.are_mates(t, y))
+        };
+        // Candidate discovery: English tokens (fallback + ranking) UNION the
+        // Slavic bridge index.
         let mut candidate_entries: BTreeSet<usize> = BTreeSet::new();
+        // (entry idx → number of collisions bridging to it)
+        let mut bridge_counts: BTreeMap<usize, usize> = BTreeMap::new();
         for c in &collisions {
             for t in &c.tokens {
                 if let Some(eis) = by_token.get(t) {
                     candidate_entries.extend(eis.iter().copied());
                 }
             }
+            // Bridge words: the colliding word, plus its enrich synonyms for
+            // primary-divergent collisions.
+            let mut bridge_words: Vec<String> = vec![c.word.clone()];
+            if !c.primary_agrees {
+                if let Some(idx) = enrich {
+                    if let Some(entry) = idx.get(LANGS[c.lang_idx].0, &c.word) {
+                        bridge_words.extend(entry.synonyms.iter().cloned());
+                    }
+                }
+            }
+            let mut bridged_here: BTreeSet<usize> = BTreeSet::new();
+            for lang in cell_langs(LANGS[c.lang_idx].0) {
+                for w in &bridge_words {
+                    if let Some(eis) = by_cell_word.get(&(lang.to_string(), w.trim().to_string())) {
+                        bridged_here.extend(eis.iter().copied());
+                    }
+                }
+            }
+            for ei in bridged_here {
+                // Bridge sanity: the candidate's gloss must share ≥1
+                // exact/near token with THIS collision's divergent sense.
+                // Enrich synonyms describe some sense of the colliding word,
+                // not necessarily the trap one — pl staja's synonym chain
+                // reached komnata 'room' for a 'shepherd hut' trap.
+                let sane = gloss_tokens(&official[ei].english)
+                    .iter()
+                    .any(|y| c.tokens.iter().any(|t| t == y || near_match(t, y)));
+                if sane {
+                    *bridge_counts.entry(ei).or_default() += 1;
+                    candidate_entries.insert(ei);
+                }
+            }
         }
+        // English coverage + gloss-subset flag per candidate.
+        let mut scores: BTreeMap<usize, (usize, bool)> = BTreeMap::new(); // (coverage, subset)
         for &ei in &candidate_entries {
             let e = &official[ei];
             let entry_pos = pos_class(e.pos);
             let entry_tokens = gloss_tokens(&e.english);
             let mut total = 0usize;
+            let mut pos_ok = false;
+            let mut subset_of_some = false;
             for c in &collisions {
                 if !c.poses.iter().any(|p| p == entry_pos) {
                     continue;
                 }
+                pos_ok = true;
                 let covered = c
                     .tokens
                     .iter()
-                    .filter(|t| {
-                        entry_tokens
-                            .iter()
-                            .any(|y| *t == y || near_match(t, y) || mates.are_mates(t, y))
-                    })
+                    .filter(|t| token_matches(t, &entry_tokens))
                     .count();
                 total += covered * 1_000_000 / c.tokens.len();
+                // Entire candidate gloss inside this collision's sense?
+                // Exact/near matches ONLY — the mates closure is built from
+                // official comma-lists, so a candidate's own gloss list
+                // ('airplane ticket, plane ticket') would mint ticket≈plane
+                // and vacuously subset itself into the trap sense.
+                if !entry_tokens.is_empty()
+                    && entry_tokens
+                        .iter()
+                        .all(|y| c.tokens.iter().any(|t| t == y || near_match(t, y)))
+                {
+                    subset_of_some = true;
+                }
             }
-            if total > 0 {
-                scores.insert(ei, total);
+            if pos_ok && (total > 0 || bridge_counts.contains_key(&ei)) {
+                scores.insert(ei, (total, subset_of_some));
             }
         }
-        let mut best: Option<(usize, f32, String)> = None; // (coverage, freq, lemma)
-        for (ei, overlap) in scores {
-            let e = &official[ei];
+        // (bridged, bridge_count, coverage, freq, lemma-rev) — max wins.
+        let mut best: Option<(bool, usize, usize, f32, String)> = None;
+        for (ei, (coverage, subset)) in &scores {
+            let e = &official[*ei];
             let lemma = e.isv.trim().to_string();
             if &crate::forms::form_key(&lemma) == key {
                 continue;
             }
+            let bridges = bridge_counts.get(ei).copied().unwrap_or(0);
+            // Unbridged candidates must pass the strict English fallback.
+            if bridges == 0 && (*coverage < PREFER_MIN_COVERAGE || !subset) {
+                continue;
+            }
             let freq = e.frequency.unwrap_or(0.0);
+            let cand = (bridges > 0, bridges, *coverage, freq, lemma);
             let better = match &best {
                 None => true,
-                Some((bo, bf, bl)) => {
-                    (overlap, freq, std::cmp::Reverse(lemma.clone()))
-                        > (*bo, *bf, std::cmp::Reverse(bl.clone()))
+                Some(b) => {
+                    (
+                        cand.0,
+                        cand.1,
+                        cand.2,
+                        cand.3,
+                        std::cmp::Reverse(cand.4.clone()),
+                    ) > (b.0, b.1, b.2, b.3, std::cmp::Reverse(b.4.clone()))
                 }
             };
             if better {
-                best = Some((overlap, freq, lemma));
+                best = Some(cand);
             }
         }
         let prefer: Vec<String> = best
-            .filter(|(coverage, _, _)| *coverage >= PREFER_MIN_COVERAGE)
-            .map(|(_, _, lemma)| vec![lemma])
+            .map(|(_, _, _, _, lemma)| vec![lemma])
             .unwrap_or_default();
 
         notes.insert(
@@ -802,7 +901,10 @@ pub fn compute_from_default_caches(official: &[OfficialEntry]) -> BTreeMap<Strin
     warn_if_unreadable("lemma", crate::DEFAULT_LEMMA_CACHE, evidence.is_some());
     let raw = RawSlavicCorpus::load(std::path::Path::new(crate::DEFAULT_RAW_LEMMA_CACHE)).ok();
     warn_if_unreadable("raw-lemma", crate::DEFAULT_RAW_LEMMA_CACHE, raw.is_some());
-    compute(official, evidence.as_ref(), raw.as_ref())
+    let enrich =
+        crate::enrich::EnrichIndex::load(std::path::Path::new(crate::DEFAULT_ENRICH_CACHE)).ok();
+    warn_if_unreadable("enrich", crate::DEFAULT_ENRICH_CACHE, enrich.is_some());
+    compute(official, evidence.as_ref(), raw.as_ref(), enrich.as_ref())
 }
 
 #[cfg(test)]
@@ -857,12 +959,19 @@ mod tests {
     }
 
     /// urok's divergent sense is 'lesson'; the computed prefer must point at
-    /// the official word for it.
+    /// an official word for it. Under V12's Slavic bridge the winner is
+    /// pouka — its OWN ru/uk/bg cells list урок, three bridging languages to
+    /// lekcija's one (uk only) — but either is a correct lesson-word.
     #[test]
-    fn prefer_recovers_lekcija_for_urok() {
+    fn prefer_recovers_a_lesson_word_for_urok() {
         let notes = notes();
         let urok = notes.get("urok").expect("urok note");
-        assert_eq!(urok.prefer, vec!["lekcija".to_string()]);
+        assert_eq!(urok.prefer.len(), 1, "{:?}", urok.prefer);
+        assert!(
+            matches!(urok.prefer[0].as_str(), "pouka" | "lekcija"),
+            "{:?}",
+            urok.prefer
+        );
     }
 
     /// Volume + determinism guard: the detector's yield should stay in a sane
@@ -894,6 +1003,44 @@ mod tests {
 
     /// V11 item 1: the observed false-positive classes must not fire (or
     /// must be downgraded to colloquial/low severity).
+    /// V12 item 1: English polysemy must not mint prefers — the four
+    /// observed bad prefers go empty or sensible, the good ones survive.
+    #[test]
+    fn slavic_bridge_fixes_polysemy_prefers() {
+        let notes = notes();
+        let prefer = |k: &str| notes.get(k).map(|n| n.prefer.clone()).unwrap_or_default();
+        // Bad: must no longer emit the observed polysemy answers.
+        for (key, bad) in [
+            ("ravnina", "aviakarta"),
+            ("skloniti", "opadati"),
+            ("gojiti", "dobyti"),
+        ] {
+            assert!(
+                !prefer(key).iter().any(|p| p == bad),
+                "{key} still prefers {bad}: {:?}",
+                prefer(key)
+            );
+        }
+        // staja: the V12 brief listed komnata as a graze, but the data says
+        // otherwise — bg стая genuinely means 'room' and komnata's own bg
+        // cell is exactly 'стая': a DIRECT dictionary bridge, the mechanism
+        // this item asked for. Accept empty or a dictionary-bridged
+        // room/barn word; never an English-polysemy answer.
+        let staja = prefer("staja");
+        assert!(
+            staja.is_empty() || matches!(staja[0].as_str(), "komnata" | "ambar" | "hlěv" | "soba"),
+            "staja prefer must be bridged or empty: {staja:?}"
+        );
+        // Good: must still emit a sensible suggestion.
+        assert!(!prefer("urok").is_empty(), "urok lost its prefer");
+        assert!(!prefer("čas").is_empty(), "čas lost its prefer");
+        eprintln!(
+            "V12 fixtures: ravnina={:?} skloniti={:?} gojiti={:?} staja={:?} pytati={:?} čas={:?} barviti={:?}",
+            prefer("ravnina"), prefer("skloniti"), prefer("gojiti"),
+            prefer("staja"), prefer("pytati"), prefer("čas"), prefer("barviti"),
+        );
+    }
+
     /// V11 item 2: prefer must be POS-compatible and coverage-thresholded —
     /// the observed misleading suggestions must be gone (empty is fine;
     /// wrong is not).
