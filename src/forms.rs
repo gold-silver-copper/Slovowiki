@@ -1657,8 +1657,7 @@ mod tests {
         assert!(analyses(&ty, "tebe").iter().any(|a| a == "gen."));
         assert!(analyses(&ty, "tę").iter().any(|a| a == "akuz. klit."));
         assert!(
-            ty.iter()
-                .all(|r| !r.form.starts_with('n') || r.form == "ne"),
+            ty.iter().all(|r| !r.form.starts_with('n')),
             "non-3rd-person pronouns have no n- series"
         );
         let sebe = recs("sebe");

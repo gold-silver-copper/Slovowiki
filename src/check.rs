@@ -1727,7 +1727,7 @@ mod tests {
         for tok in [
             "njego", "njej", "njim", "njih", "njejų", "njemu", // n- forms
             "mę", "tę", "mi", "ti", "sę", "si", // clitics
-            "mnojų", "tobojų", "sobojų", "sobě", // full obliques
+            "mnojų", "tobojų", "sobojų", "sobě", "jejų", "je", // full obliques
             "pisala", "pisalo", "pisali", "šla", "šli", "viděla", "směli", // l-participles
         ] {
             let reps = check_tokens(&index, &tokenize(tok));
