@@ -1564,8 +1564,12 @@ gender is still required because adjective agreement needs it. `check-text
 `check-text --json` reports may carry an `agreement` field: a conservative
 grammar check (adjacent adjective–noun case/number/gender, preposition
 government from the dictionary's own `(+N)` annotations, pronoun–verb
-person/number) that fires only when NO combination of the tokens' analyses is
-compatible and both tokens are POS-unambiguous verification-grade words.
+person/number, and — V14 — verb VALENCE: an intransitive-only verb, per the
+dictionary's own `v.intr.` tag, followed by an unambiguously object-shaped
+noun form, i.e. the animate accusative-genitive syncretism, with `ne`
+negation and plural/partitive genitives abstaining) that fires only when NO
+combination of the tokens' analyses is compatible and both tokens are
+POS-unambiguous verification-grade words.
 
 ## Verification workflow (Interslavic text)
 

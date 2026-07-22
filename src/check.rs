@@ -53,6 +53,17 @@ pub struct Index {
     /// Project-lexicon rows (V13 item 1), in file order; empty when no
     /// `--lexicon` was supplied. Drives the consistency check.
     pub lexicon: Vec<LexiconRow>,
+    /// Noun lemma key (folded) → dictionary animacy ('a' = tagged anim,
+    /// 'n' = untagged), absorbing on conflict. Official nouns decline
+    /// INANIMATE on purpose (the CSV animacy tag is too unreliable to
+    /// reshape paradigms), so the valence check reads animacy from here
+    /// instead of from the paradigm shape.
+    pub noun_animate: HashMap<String, char>,
+    /// Verb lemma key (folded) → valence from the dictionary's own pos tag
+    /// (V14 item 3): 't' = v.tr., 'i' = v.intr., 'r' = v.refl.; ' ' = mixed
+    /// senses, aux, or untagged — the same absorbing-homograph discipline as
+    /// `noun_gender`, so ambiguity always abstains.
+    pub verb_valence: HashMap<String, char>,
 }
 
 /// Build the verification index from the official dictionary (lemmas + full
@@ -68,6 +79,8 @@ pub fn build_index(
     forms::closed_class_records(&mut sink);
     let mut seen: HashSet<String> = HashSet::new();
     let mut noun_gender: HashMap<String, char> = HashMap::new();
+    let mut noun_animate: HashMap<String, char> = HashMap::new();
+    let mut verb_valence: HashMap<String, char> = HashMap::new();
     // Preposition government comes from the same shared table used by entry
     // rendering; no site-only copy may drift from checker behavior.
     let prep_cases = preposition_government();
@@ -87,6 +100,19 @@ pub fn build_index(
             // via the general bigram lookup; only 3+-token phrases stay
             // lemma-only.
             let single = !isv.contains(' ') || isv.ends_with(" sę");
+            if e.pos == Pos::Verb {
+                let v = valence_char(&e.pos_raw);
+                if v != ' ' {
+                    absorb_insert(&mut verb_valence, forms::form_key(isv), v);
+                }
+            }
+            if e.pos == Pos::Noun {
+                absorb_insert(
+                    &mut noun_animate,
+                    forms::form_key(isv),
+                    if e.noun_traits.animate { 'a' } else { 'n' },
+                );
+            }
             if e.pos == Pos::Noun {
                 if let Some(g) = e.noun_traits.gender {
                     let c = match g {
@@ -206,9 +232,39 @@ pub fn build_index(
         lemma_keys,
         notes,
         noun_gender,
+        noun_animate,
         prep_cases,
         lexicon: Vec::new(),
+        verb_valence,
     }
+}
+
+/// Valence from the official pos tag. `.intr` is tested BEFORE `.tr`
+/// (substring safety); aux and untagged verbs yield ' ' (abstain).
+fn valence_char(pos_raw: &str) -> char {
+    let s = pos_raw.to_lowercase();
+    if s.contains(".intr") {
+        'i'
+    } else if s.contains(".refl") {
+        'r'
+    } else if s.contains(".tr") {
+        't'
+    } else {
+        ' '
+    }
+}
+
+/// Insert with the absorbing-ambiguity rule shared by `noun_gender` and
+/// `verb_valence`: once conflicting official senses make a key ambiguous,
+/// later rows must not restore a concrete value.
+fn absorb_insert(map: &mut HashMap<String, char>, key: String, c: char) {
+    map.entry(key)
+        .and_modify(|known| {
+            if *known != ' ' && *known != c {
+                *known = ' ';
+            }
+        })
+        .or_insert(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -919,6 +975,14 @@ struct TokenGrammar {
     prep: Option<Vec<&'static str>>,
     /// Personal-pronoun subject (person, number), e.g. ja → ('1','j').
     subject: Option<(char, char)>,
+    /// Every noun lemma of this token is dictionary-tagged animate.
+    noun_all_animate: bool,
+    /// Verb valence when EVERY official verb lemma of this token agrees:
+    /// 't'/'i'/'r', else ' ' (V14 item 3).
+    valence: char,
+    /// The token is the negation particle `ne` — genitive-of-negation
+    /// constructions must never trip the valence check.
+    negation: bool,
     official: bool,
     /// Every record is the given POS — the ambiguity gates for the
     /// conservative agreement checks ('malo' is adj AND adverb: skipped).
@@ -935,6 +999,9 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
     let mut official = false;
     let pure = |p: &str| !recs.is_empty() && recs.iter().all(|r| r.pos == p);
     let (pure_adj, pure_noun, pure_verb) = (pure("adj"), pure("noun"), pure("verb"));
+    let mut valence = ' ';
+    let mut valence_lemmas_seen = false;
+    let mut noun_all_animate = true; // falsified by any non-animate noun lemma
     for r in recs {
         // DELIBERATE (V13): `project` records count as verification-grade
         // here, so sanctioned coinages participate in the conservative
@@ -944,15 +1011,34 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
         if r.status != "generated" {
             official = true;
         }
+        if r.pos == "verb" {
+            // Valence must hold for EVERY verb lemma this surface can
+            // belong to; any lemma without a concrete tag abstains.
+            let v = index
+                .verb_valence
+                .get(&forms::form_key(&r.lemma))
+                .copied()
+                .unwrap_or(' ');
+            if !valence_lemmas_seen {
+                valence = v;
+                valence_lemmas_seen = true;
+            } else if valence != v {
+                valence = ' ';
+            }
+        }
         let feats = parse_feats(&r.analyses);
         match r.pos {
             "adj" => adj.extend(feats),
             "noun" => {
                 noun.extend(feats);
+                let lemma_key = forms::form_key(&r.lemma);
                 if noun_gender == ' ' {
-                    if let Some(g) = index.noun_gender.get(&forms::form_key(&r.lemma)) {
+                    if let Some(g) = index.noun_gender.get(&lemma_key) {
                         noun_gender = *g;
                     }
+                }
+                if index.noun_animate.get(&lemma_key) != Some(&'a') {
+                    noun_all_animate = false;
                 }
             }
             "verb" => prez.extend(parse_prez(&r.analyses)),
@@ -976,6 +1062,9 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
         prez,
         prep,
         subject,
+        noun_all_animate,
+        valence,
+        negation: matched_key == "ne",
         official,
         pure_adj,
         pure_noun,
@@ -1042,6 +1131,41 @@ fn agreement_pass(
                 ));
             }
             continue;
+        }
+        // Valence (V14 item 3): an intransitive-only verb followed by a
+        // noun form whose EVERY reading is object-shaped. Requiring both an
+        // akuz and a gen reading targets the animate accusative-genitive
+        // syncretism (`netopyŕa`) — and by construction excludes accusative
+        // durations (`zimų`: akuz-only) and bare partitive genitives
+        // (gen-only), the two grammatical patterns nearest the trap. A
+        // preceding `ne` abstains (genitive of negation).
+        if a.pure_verb
+            && a.valence == 'i'
+            && b.pure_noun
+            && !b.noun.is_empty()
+            && !(i > 0 && grammar[i - 1].negation && !breaks.get(i).copied().unwrap_or(false))
+        {
+            // Two ways a form is unambiguously object-shaped:
+            // - it carries BOTH akuz and gen readings and nothing else —
+            //   the animate acc=gen syncretism as project-lexicon nouns
+            //   decline it (explicit animacy);
+            // - it is gen-SINGULAR-only and every lemma is dictionary-
+            //   tagged animate — the same syncretism as official nouns
+            //   surface it (their paradigms decline inanimate on purpose).
+            //   Plural genitives are excluded: partitives live there.
+            let akuz_gen_both = b.noun.iter().all(|f| matches!(f.case, "akuz" | "gen"))
+                && b.noun.iter().any(|f| f.case == "akuz")
+                && b.noun.iter().any(|f| f.case == "gen");
+            let animate_gen_sg =
+                b.noun_all_animate && b.noun.iter().all(|f| f.case == "gen" && f.number == 'j');
+            if akuz_gen_both || animate_gen_sg {
+                reports[i + 1].agreement = Some(format!(
+                    "glagol '{}' je neprěhodny (v.intr.), ale '{}' imaje jedino objektne padeže (akuz./gen.)",
+                    reports[i].token,
+                    reports[i + 1].token
+                ));
+                continue;
+            }
         }
         // Personal pronoun + present-tense verb: person/number.
         if let Some((p, n)) = a.subject {
@@ -1506,6 +1630,30 @@ pub const AGREEMENT_ERRORS: &[&str] = &[
     "K vodu idemo.",            // government: k + accusative
 ];
 
+/// Valence gold sentences (V14 item 3): grammatical patterns adjacent to
+/// the intransitive-object trap — accusative of duration, negation
+/// genitive, reflexive government, transitive objects, preposition
+/// government, inverted subjects, numeral phrases — zero flags expected.
+pub const VALENCE_GOLD: &[&str] = &[
+    "On spal zimų.",         // accusative of duration (akuz-only form)
+    "Ne bųde vojaka.",       // genitive of negation (+ aux abstains)
+    "Muž sę boji netopyŕa.", // reflexive governs its own cases
+    "Vidiš netopyŕa.",       // transitive: object is the point
+    "Pęť vojakov spi.",      // numeral phrase precedes the verb
+    "On hodi do lěsa.",      // preposition between verb and noun
+    "Umre vojak.",           // inverted nominative subject escapes
+    "Ona ide spati.",        // verb + infinitive, no noun involved
+];
+
+/// Each sentence seeds exactly one valence error that MUST be flagged: an
+/// intransitive-only verb with an object-shaped (akuz/gen-syncretic
+/// animate) noun.
+pub const VALENCE_ERRORS: &[&str] = &[
+    "Hybiš netopyŕa.", // THE motivating blind-spot survivor
+    "On spi vojaka.",
+    "Idemo medvěda.",
+];
+
 /// A nonsense verb form: must stay `unknown` (tests unknown-handling, never
 /// an agreement flag).
 pub const UNKNOWN_PROBE: &str = "On vidita rěku.";
@@ -1536,6 +1684,20 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
         .collect();
     let errors_flagged = error_hits.iter().filter(|x| **x).count();
+    let valence_gold_flags: usize = VALENCE_GOLD
+        .iter()
+        .map(|s| {
+            check_text(&index, s)
+                .iter()
+                .filter(|r| r.agreement.is_some())
+                .count()
+        })
+        .sum();
+    let valence_hits: Vec<bool> = VALENCE_ERRORS
+        .iter()
+        .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
+        .collect();
+    let valence_flagged = valence_hits.iter().filter(|x| **x).count();
     let probe_unknown = check_text(&index, UNKNOWN_PROBE)
         .iter()
         .any(|r| r.status == "unknown");
@@ -1555,6 +1717,12 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         errors_flagged,
         error_hits.len(),
         if probe_unknown { "ok" } else { "FAILED" }
+    );
+    println!(
+        "  valence (V14): gold sentences {} false flags / seeded errors {}/{} flagged",
+        valence_gold_flags,
+        valence_flagged,
+        valence_hits.len(),
     );
 
     std::fs::create_dir_all(out_dir)?;
@@ -1583,6 +1751,15 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         s,
         "| seeded errors flagged | **{errors_flagged} / {}** |",
         error_hits.len()
+    )?;
+    writeln!(
+        s,
+        "| valence gold false alarms | **{valence_gold_flags}** |"
+    )?;
+    writeln!(
+        s,
+        "| seeded valence errors flagged | **{valence_flagged} / {}** |",
+        valence_hits.len()
     )?;
     writeln!(
         s,
@@ -1719,6 +1896,26 @@ mod tests {
         let reps = check_text(&index, UNKNOWN_PROBE);
         assert!(reps.iter().any(|r| r.status == "unknown"));
         assert!(reps.iter().all(|r| r.agreement.is_none()));
+        // Valence (V14 item 3): the gold set — every grammatical pattern
+        // adjacent to the intransitive-object trap — stays silent, and
+        // every seeded valence error is flagged.
+        for s in VALENCE_GOLD {
+            let reps = check_text(&index, s);
+            assert!(
+                reps.iter().all(|r| r.agreement.is_none()),
+                "valence gold falsely flagged: {s}"
+            );
+        }
+        for s in VALENCE_ERRORS {
+            let reps = check_text(&index, s);
+            assert!(
+                reps.iter().any(|r| r
+                    .agreement
+                    .as_deref()
+                    .is_some_and(|w| w.contains("neprěhodny"))),
+                "seeded valence error NOT flagged: {s}"
+            );
+        }
     }
 
     #[test]
@@ -1835,6 +2032,8 @@ mod tests {
             noun_gender: HashMap::new(),
             prep_cases: government,
             lexicon: Vec::new(),
+            verb_valence: HashMap::new(),
+            noun_animate: HashMap::new(),
         };
         assert_eq!(suggest(&index, "domm"), vec!["dom", "doma"]);
         let dir = std::env::temp_dir().join(format!(
