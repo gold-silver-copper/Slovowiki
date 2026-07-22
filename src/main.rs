@@ -11,7 +11,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use interslavic_wiktionary_lab::{
-    check, coincheck, derive, dump, enrich, eval, forms, inflect_eval, official, site,
+    check, coincheck, derive, dump, enrich, eval, forms, inflect_eval, official, release, site,
     DEFAULT_DUMP, DEFAULT_ENRICH_CACHE, DEFAULT_LEMMA_CACHE, DEFAULT_OFFICIAL, DEFAULT_PROTO_CACHE,
     DEFAULT_RAW_LEMMA_CACHE, DEFAULT_WIKI_DIR,
 };
@@ -154,6 +154,29 @@ enum Command {
         probe: PathBuf,
         #[arg(long, default_value = "target/eval")]
         out: PathBuf,
+    },
+    /// Verify data/MANIFEST.json against the working tree (default), or
+    /// regenerate it with --write. The manifest is the pinnable-release
+    /// contract (V14 item 4 / #74): sha256 + size of every committed data/
+    /// artifact plus the crate pin, form-index schema, and probe baseline.
+    /// Consumers pin `data-vN` tags whose trees pass this check.
+    DataManifest {
+        /// Regenerate data/MANIFEST.json instead of verifying it.
+        #[arg(long)]
+        write: bool,
+    },
+    /// Install a freshly (MANUALLY) downloaded interslavic-dictionary.com
+    /// export and prepend the id-keyed row diff to data/refresh-changelog.md.
+    /// Refuses no-op refreshes; the benchmark before/after table is filled
+    /// by the docs/DATA-REFRESH.md ceremony. No build or benchmark path
+    /// ever touches the network — this tool reads a local file only.
+    RefreshOfficial {
+        /// The downloaded export to install.
+        input: PathBuf,
+        #[arg(long, default_value = DEFAULT_OFFICIAL)]
+        official: PathBuf,
+        #[arg(long, default_value = "data/refresh-changelog.md")]
+        changelog: PathBuf,
     },
     /// Explain the generator's output for one word or gloss (manual spot-check).
     Explain {
@@ -403,6 +426,12 @@ fn main() -> Result<()> {
             (Some(q), None) => site::run_en_lookup(&site, &q, json),
             _ => anyhow::bail!("pass exactly one of <QUERY> or --batch <file>"),
         },
+        Command::DataManifest { write } => release::run_manifest(write),
+        Command::RefreshOfficial {
+            input,
+            official,
+            changelog,
+        } => release::run_refresh(&input, &official, &changelog),
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::CorpusEval { official, fit } => eval::run_corpus_eval(&official, fit),

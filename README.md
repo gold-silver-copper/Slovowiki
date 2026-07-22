@@ -645,6 +645,18 @@ target/eval/cluster-selection.md                 cluster-selection probe (blind 
 target/eval/translation-probe.md                 tracked 219-word game-vocabulary probe (reported, not gated)
 ```
 
+## Pinning slovowiki (data releases)
+
+Downstream consumers pin **`data-vN` tags**, not commit hashes:
+`data/MANIFEST.json` records sha256 + size for every committed data
+artifact plus the crate pin, form-index schema, and the probe baseline
+(`data-manifest` verifies it; CI enforces freshness). Dictionary re-pulls
+happen only through the `refresh-official` tool and the
+[docs/DATA-REFRESH.md](docs/DATA-REFRESH.md) ceremony, each leaving an
+id-keyed row diff and benchmark before/after in
+[data/refresh-changelog.md](data/refresh-changelog.md) — drift is a
+visible, versioned event, never a slow skew.
+
 The V7 full-pipeline review (stage-attribution histogram, oracle ladder, and the
 ranked list of kept/reverted fixes) is written up in **[IMPROVEMENT_REPORT_V7.md](IMPROVEMENT_REPORT_V7.md)**.
 

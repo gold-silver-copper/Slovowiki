@@ -54,6 +54,17 @@ jobs:
       # against the recorded baseline and always succeeds on movement.
       - name: Translation probe (reported metric)
         run: cargo run --release -- translation-probe --site /tmp/slovowiki-aspect-ci
+      # Pinnable-release guards (V14 item 4 / #74): the committed manifest
+      # must match the tree, and an official-dictionary change must carry a
+      # refresh-changelog entry (docs/DATA-REFRESH.md ceremony).
+      - name: Data release guards
+        run: |
+          cargo run --release -- data-manifest
+          git fetch origin master --depth=1 2>/dev/null || true
+          if git rev-parse origin/master >/dev/null 2>&1 && ! git diff --quiet origin/master...HEAD -- data/official-isv.csv 2>/dev/null; then
+            git diff --name-only origin/master...HEAD | grep -q '^data/refresh-changelog.md$' \
+              || { echo "::error::data/official-isv.csv changed without a refresh-changelog entry (see docs/DATA-REFRESH.md)"; exit 1; }
+          fi
       - name: Accuracy regression floor (exact top-1 must stay >= 39.5%)
         run: |
           out=$(cargo run --release -- evaluate)

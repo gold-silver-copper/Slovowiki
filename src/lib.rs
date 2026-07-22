@@ -25,6 +25,7 @@ pub mod orthography;
 pub mod pipeline;
 pub mod proto;
 pub mod proto_link;
+pub mod release;
 pub mod site;
 pub mod thesaurus;
 
