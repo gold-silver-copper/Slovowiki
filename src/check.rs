@@ -220,9 +220,31 @@ pub fn build_index(
     let mut by_key: HashMap<String, Vec<FormRecord>> = HashMap::new();
     let mut lemma_keys: Vec<(String, String)> = Vec::new();
     let mut lemma_seen: HashSet<String> = HashSet::new();
-    for r in records {
+    for mut r in records {
         if r.source == "lemma" && lemma_seen.insert(r.key.clone()) {
             lemma_keys.push((r.key.clone(), r.lemma.clone()));
+        }
+        // V14.1 (review findings 2+4): the animate accusative-genitive
+        // syncretism, stated ONCE at the record layer as a READING. Official
+        // paradigms deliberately decline inanimate (cell surfaces are never
+        // reshaped by the CSV animacy tag), so masculine dictionary-animate
+        // nouns' genitive-shaped forms gain the parallel accusative analysis
+        // here — every reading consumer (preposition government, valence)
+        // then handles animates through the same rule as explicitly-animate
+        // project nouns, with no per-consumer special cases. This index is
+        // check-text/coin-check only; the exported site is untouched.
+        if r.pos == "noun" {
+            let lemma_key = forms::form_key(&r.lemma);
+            if noun_animate.get(&lemma_key) == Some(&'a')
+                && noun_gender.get(&lemma_key) == Some(&'m')
+            {
+                for (gen, akuz) in [("gen.jd.", "akuz.jd."), ("gen.mn.", "akuz.mn.")] {
+                    if r.analyses.iter().any(|a| a == gen) && !r.analyses.iter().any(|a| a == akuz)
+                    {
+                        r.analyses.push(akuz.to_string());
+                    }
+                }
+            }
         }
         by_key.entry(r.key.clone()).or_default().push(r);
     }
@@ -975,8 +997,6 @@ struct TokenGrammar {
     prep: Option<Vec<&'static str>>,
     /// Personal-pronoun subject (person, number), e.g. ja → ('1','j').
     subject: Option<(char, char)>,
-    /// Every noun lemma of this token is dictionary-tagged animate.
-    noun_all_animate: bool,
     /// Verb valence when EVERY official verb lemma of this token agrees:
     /// 't'/'i'/'r', else ' ' (V14 item 3).
     valence: char,
@@ -1001,7 +1021,6 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
     let (pure_adj, pure_noun, pure_verb) = (pure("adj"), pure("noun"), pure("verb"));
     let mut valence = ' ';
     let mut valence_lemmas_seen = false;
-    let mut noun_all_animate = true; // falsified by any non-animate noun lemma
     for r in recs {
         // DELIBERATE (V13): `project` records count as verification-grade
         // here, so sanctioned coinages participate in the conservative
@@ -1031,14 +1050,10 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
             "adj" => adj.extend(feats),
             "noun" => {
                 noun.extend(feats);
-                let lemma_key = forms::form_key(&r.lemma);
                 if noun_gender == ' ' {
-                    if let Some(g) = index.noun_gender.get(&lemma_key) {
+                    if let Some(g) = index.noun_gender.get(&forms::form_key(&r.lemma)) {
                         noun_gender = *g;
                     }
-                }
-                if index.noun_animate.get(&lemma_key) != Some(&'a') {
-                    noun_all_animate = false;
                 }
             }
             "verb" => prez.extend(parse_prez(&r.analyses)),
@@ -1062,7 +1077,6 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
         prez,
         prep,
         subject,
-        noun_all_animate,
         valence,
         negation: matched_key == "ne",
         official,
@@ -1145,20 +1159,19 @@ fn agreement_pass(
             && !b.noun.is_empty()
             && !(i > 0 && grammar[i - 1].negation && !breaks.get(i).copied().unwrap_or(false))
         {
-            // Two ways a form is unambiguously object-shaped:
-            // - it carries BOTH akuz and gen readings and nothing else —
-            //   the animate acc=gen syncretism as project-lexicon nouns
-            //   decline it (explicit animacy);
-            // - it is gen-SINGULAR-only and every lemma is dictionary-
-            //   tagged animate — the same syncretism as official nouns
-            //   surface it (their paradigms decline inanimate on purpose).
-            //   Plural genitives are excluded: partitives live there.
-            let akuz_gen_both = b.noun.iter().all(|f| matches!(f.case, "akuz" | "gen"))
+            // Object-shaped = every reading is a SINGULAR akuz or gen and
+            // both are present: the animate accusative-genitive syncretism,
+            // one rule for project nouns (explicit animacy) and official
+            // nouns alike — build_index's enrichment gives the latter their
+            // akuz readings. The singular guard keeps plural genitives out:
+            // partitives live there ('Pribyvaje žabervokov').
+            let object_shaped = b
+                .noun
+                .iter()
+                .all(|f| matches!(f.case, "akuz" | "gen") && f.number == 'j')
                 && b.noun.iter().any(|f| f.case == "akuz")
                 && b.noun.iter().any(|f| f.case == "gen");
-            let animate_gen_sg =
-                b.noun_all_animate && b.noun.iter().all(|f| f.case == "gen" && f.number == 'j');
-            if akuz_gen_both || animate_gen_sg {
+            if object_shaped {
                 reports[i + 1].agreement = Some(format!(
                     "glagol '{}' je neprěhodny (v.intr.), ale '{}' imaje jedino objektne padeže (akuz./gen.)",
                     reports[i].token,
@@ -1620,6 +1633,11 @@ pub const AGREEMENT_GOLD: &[&str] = &[
     "My pijemo čistu vodu s prijateljami.",
     "Ona pisala oba pisma za pęť minut.",
     "Dobri ljudi pomagajųt vsim dětam.",
+    // V14.1 finding 4: animate accusatives after akuz-governing
+    // prepositions are grammatical — the enrichment gives the gen-shaped
+    // forms their akuz reading, singular and plural.
+    "Ględaš črěz netopyŕa.",
+    "Ględajemo na vojakov.",
 ];
 
 /// Each sentence seeds exactly one agreement error that MUST be flagged.
@@ -1643,6 +1661,11 @@ pub const VALENCE_GOLD: &[&str] = &[
     "On hodi do lěsa.",      // preposition between verb and noun
     "Umre vojak.",           // inverted nominative subject escapes
     "Ona ide spati.",        // verb + infinitive, no noun involved
+    // V14.1 finding 2: quantitative genitive PLURAL after an intransitive
+    // is grammatical even for animate project nouns — the singular guard
+    // must keep it silent (the eval and tests run the valence sets against
+    // a lexicon-loaded index).
+    "Pribyvaje žabervokov.",
 ];
 
 /// Each sentence seeds exactly one valence error that MUST be flagged: an
@@ -1684,10 +1707,19 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
         .collect();
     let errors_flagged = error_hits.iter().filter(|x| **x).count();
+    // The valence sets include project-lexicon nouns (plural-partitive
+    // gold), so they run against a lexicon-loaded index (V14.1 finding 2).
+    let mut lex_index = build_index(&entries, None, BTreeMap::new());
+    let lex_rows = parse_lexicon(
+        &std::fs::read_to_string("data/project-lexicon-fixture.tsv")
+            .expect("committed lexicon fixture"),
+    )
+    .expect("lexicon parses");
+    apply_lexicon(&mut lex_index, lex_rows).expect("lexicon validates");
     let valence_gold_flags: usize = VALENCE_GOLD
         .iter()
         .map(|s| {
-            check_text(&index, s)
+            check_text(&lex_index, s)
                 .iter()
                 .filter(|r| r.agreement.is_some())
                 .count()
@@ -1695,7 +1727,11 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         .sum();
     let valence_hits: Vec<bool> = VALENCE_ERRORS
         .iter()
-        .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
+        .map(|s| {
+            check_text(&lex_index, s)
+                .iter()
+                .any(|r| r.agreement.is_some())
+        })
         .collect();
     let valence_flagged = valence_hits.iter().filter(|x| **x).count();
     let probe_unknown = check_text(&index, UNKNOWN_PROBE)
@@ -1896,18 +1932,41 @@ mod tests {
         let reps = check_text(&index, UNKNOWN_PROBE);
         assert!(reps.iter().any(|r| r.status == "unknown"));
         assert!(reps.iter().all(|r| r.agreement.is_none()));
+        // V14.1 findings 2+4: the enrichment states the animate
+        // accusative-genitive syncretism at the record layer — the
+        // gen-shaped forms of masculine dictionary-animate nouns carry the
+        // akuz reading, singular and plural.
+        for (form, akuz) in [("netopyŕa", "akuz.jd."), ("vojakov", "akuz.mn.")] {
+            let reps = check_tokens(&index, &tokenize(form));
+            assert!(
+                reps[0].analyses.iter().any(|a| a == akuz),
+                "'{form}' must carry '{akuz}' after enrichment: {:?}",
+                reps[0].analyses
+            );
+        }
         // Valence (V14 item 3): the gold set — every grammatical pattern
         // adjacent to the intransitive-object trap — stays silent, and
-        // every seeded valence error is flagged.
+        // every seeded valence error is flagged. Runs against a
+        // lexicon-loaded index: the plural-partitive gold uses a project
+        // noun (V14.1 finding 2).
+        let mut lex_index = build_index(&entries, None, Default::default());
+        apply_lexicon(
+            &mut lex_index,
+            parse_lexicon(
+                &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
+            )
+            .expect("lexicon parses"),
+        )
+        .expect("lexicon validates");
         for s in VALENCE_GOLD {
-            let reps = check_text(&index, s);
+            let reps = check_text(&lex_index, s);
             assert!(
                 reps.iter().all(|r| r.agreement.is_none()),
                 "valence gold falsely flagged: {s}"
             );
         }
         for s in VALENCE_ERRORS {
-            let reps = check_text(&index, s);
+            let reps = check_text(&lex_index, s);
             assert!(
                 reps.iter().any(|r| r
                     .agreement

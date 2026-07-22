@@ -1566,10 +1566,16 @@ grammar check (adjacent adjective–noun case/number/gender, preposition
 government from the dictionary's own `(+N)` annotations, pronoun–verb
 person/number, and — V14 — verb VALENCE: an intransitive-only verb, per the
 dictionary's own `v.intr.` tag, followed by an unambiguously object-shaped
-noun form, i.e. the animate accusative-genitive syncretism, with `ne`
-negation and plural/partitive genitives abstaining) that fires only when NO
-combination of the tokens' analyses is compatible and both tokens are
-POS-unambiguous verification-grade words.
+SINGULAR noun form, i.e. the animate accusative-genitive syncretism, with
+`ne` negation and plural/partitive genitives abstaining) that fires only
+when NO combination of the tokens' analyses is compatible and both tokens
+are POS-unambiguous verification-grade words. The checker's index states
+that syncretism once, at the record layer: masculine dictionary-animate
+nouns' genitive-shaped forms carry the parallel accusative READING
+(`netopyŕa` = gen.jd. + akuz.jd.), so preposition government and valence
+treat official and project animates identically. The CSV animacy tag is
+trusted for readings and warnings only — never to reshape paradigm cell
+surfaces, which stay inanimate-declined on purpose.
 
 ## Verification workflow (Interslavic text)
 
