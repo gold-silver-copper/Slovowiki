@@ -88,7 +88,18 @@ pub fn build_index(
     // Preposition government comes from the same shared table used by entry
     // rendering; no site-only copy may drift from checker behavior.
     let prep_cases = preposition_government();
-    for e in entries {
+    // Real entry identity (V14.3 item 1): the sink dedups on
+    // (key, lemma_key, entry_id), and a shared 0 collapsed every
+    // same-surface official homograph into one record carrying only the
+    // first CSV row's POS/gloss — the confirmed 'děti' pin failure (verb
+    // row swallowed the noun 'children'). Ids are the entry's position + 1;
+    // 0 remains the closed-class supplement's sentinel.
+    debug_assert!(
+        entries.len() < 1_000_000,
+        "official entry count crossed the novel-row id offset"
+    );
+    for (entry_idx, e) in entries.iter().enumerate() {
+        let entry_id = entry_idx + 1;
         // ~230 rows list byform variants in one cell ("iměti, imati",
         // "srědnji, srědny") — each variant is its own lemma.
         for byform in e.citation_byforms() {
@@ -119,7 +130,7 @@ pub fn build_index(
                 isv,
                 "",
                 isv,
-                0,
+                entry_id,
                 e.pos.code(),
                 "lemma",
                 "official",
@@ -138,7 +149,7 @@ pub fn build_index(
                     isv,
                     e.pos,
                     e.noun_traits.gender,
-                    0,
+                    entry_id,
                     "official",
                     None,
                     &e.english,
@@ -148,7 +159,9 @@ pub fn build_index(
                 && matches!(e.pos, Pos::Pronoun | Pos::Numeral)
                 && seen.insert(format!("{isv}|{}", e.pos.code()))
             {
-                forms::pronoun_numeral_records(&mut sink, isv, e.pos, 0, "official", &e.english);
+                forms::pronoun_numeral_records(
+                    &mut sink, isv, e.pos, entry_id, "official", &e.english,
+                );
             }
         }
     }
@@ -182,9 +195,12 @@ pub fn build_index(
             // homograph PROPOSALS are distinct concepts (tur/aurochs vs
             // tur/prison), but the sink dedups on (key, lemma, entry_id) —
             // with a shared sentinel id the second gloss silently vanished
-            // and its concept was unadoptable. The offset keeps these ids
-            // clear of real official entry ids sharing an index; nothing
-            // exports them (this index is CLI-side only).
+            // and its concept was unadoptable. The 1M offset stays clear of
+            // the real official ids this index carries (position+1, count
+            // debug-asserted below 1M). NOTE the ids themselves never leave
+            // the process — the site export builds this index too, but only
+            // its lemma_keys reach an artifact (the suggest shards' [key,
+            // lemma] rows).
             sink.add(
                 form,
                 "",
@@ -2470,6 +2486,71 @@ mod tests {
             dvema.iter().all(|r| r.status == "unknown"),
             "the dual-archaic dvěma must stay unknown (crate instrumental is dvoma): {:?}",
             dvema.iter().map(|r| r.status).collect::<Vec<_>>()
+        );
+    }
+
+    /// V14.3 item 1: official same-surface homographs are DISTINCT records
+    /// (real entry ids), so pinning the non-first sense works and the token
+    /// carries every official reading. The confirmed failure: 'děti' verb
+    /// (CSV row 1191) swallowed 'děti' f.pl. 'children' (row 4832).
+    #[test]
+    fn official_homographs_are_distinct_records() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(&entries, None, Default::default());
+        let pin = parse_lexicon("děti\tnoun\tf\tanim\tchildren").unwrap();
+        assert_eq!(
+            validate_lexicon_row(&index, &pin[0]).expect("the noun sense must be pinnable"),
+            RowDisposition::OfficialPin
+        );
+        let recs = index.by_key.get(&forms::form_key("děti")).unwrap();
+        let lemma_pos: HashSet<&str> = recs
+            .iter()
+            .filter(|r| r.source == "lemma" && r.status == "official")
+            .map(|r| r.pos)
+            .collect();
+        assert!(
+            lemma_pos.contains("verb") && lemma_pos.contains("noun"),
+            "both official senses must exist as lemma records: {lemma_pos:?}"
+        );
+    }
+
+    /// V14.3 item 1 canary: a novel proposal folding equal to an OFFICIAL
+    /// lemma of a DIFFERENT POS would stand beside it and poison the
+    /// pure_* gates, silently disabling agreement checks on the official
+    /// word. Currently none exist; a refresh that introduces one must fail
+    /// here and force a decision.
+    #[test]
+    fn no_novel_proposal_shadows_official_pos() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let mut official_pos: HashMap<String, HashSet<&str>> = HashMap::new();
+        for e in &entries {
+            for byform in e.citation_byforms() {
+                if let Some(clean) = forms::citation(byform.form.as_str()) {
+                    official_pos
+                        .entry(forms::form_key(&clean))
+                        .or_default()
+                        .insert(byform.entry.pos.code());
+                }
+            }
+        }
+        let tsv = std::fs::read_to_string("data/novel-words.tsv").expect("novel words");
+        let mut offenders: Vec<String> = Vec::new();
+        for line in tsv.lines().skip(1) {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() < 8 {
+                continue;
+            }
+            let key = forms::form_key(cols[0]);
+            if let Some(pos_set) = official_pos.get(&key) {
+                if !pos_set.contains(cols[1]) {
+                    offenders.push(format!("{} ({}) vs official {pos_set:?}", cols[0], cols[1]));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "novel proposals now shadow official lemmas of another POS — decide whether the \
+             purity poisoning is acceptable for: {offenders:?}"
         );
     }
 
