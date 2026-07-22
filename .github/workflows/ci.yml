@@ -60,9 +60,18 @@ jobs:
       - name: Data release guards
         run: |
           cargo run --release -- data-manifest
-          git fetch origin master --depth=1 2>/dev/null || true
-          if git rev-parse origin/master >/dev/null 2>&1 && ! git diff --quiet origin/master...HEAD -- data/official-isv.csv 2>/dev/null; then
-            git diff --name-only origin/master...HEAD | grep -q '^data/refresh-changelog.md$' \
+          # Two-dot TREE diff against FETCH_HEAD on purpose: the shallow PR
+          # checkout (depth-1 merge commit, grafted parents) has no merge
+          # base, so the old three-dot form exited 128 — which, with stderr
+          # suppressed, was misread as "CSV changed" and failed EVERY pull
+          # request. Two-dot needs no merge base, and FETCH_HEAD (unlike
+          # refs/remotes/origin/master) is written by the fetch regardless
+          # of the checkout's restricted refspec. No stderr suppression
+          # either: a git failure must fail this step as itself, never
+          # masquerade as a policy violation.
+          git fetch origin master --depth=1
+          if ! git diff --quiet FETCH_HEAD HEAD -- data/official-isv.csv; then
+            git diff --name-only FETCH_HEAD HEAD | grep -q '^data/refresh-changelog.md$' \
               || { echo "::error::data/official-isv.csv changed without a refresh-changelog entry (see docs/DATA-REFRESH.md)"; exit 1; }
           fi
       - name: Accuracy regression floor (exact top-1 must stay >= 39.5%)
