@@ -194,7 +194,7 @@ pub fn build_index(
             );
             String::new()
         });
-        for line in tsv.lines().skip(1) {
+        for (i, line) in tsv.lines().skip(1).enumerate() {
             let cols: Vec<&str> = line.split('\t').collect();
             if cols.len() < 8 {
                 continue;
@@ -208,11 +208,18 @@ pub fn build_index(
                 "proper_noun" => "proper_noun",
                 _ => "other",
             };
+            // Per-row entry ids (V14.2 item 2): same-surface same-POS
+            // homograph PROPOSALS are distinct concepts (tur/aurochs vs
+            // tur/prison), but the sink dedups on (key, lemma, entry_id) —
+            // with a shared sentinel id the second gloss silently vanished
+            // and its concept was unadoptable. The offset keeps these ids
+            // clear of real official entry ids sharing an index; nothing
+            // exports them (this index is CLI-side only).
             sink.add(
                 form,
                 "",
                 form,
-                0,
+                1_000_000 + i,
                 pos,
                 "lemma",
                 "generated",
@@ -423,7 +430,7 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
 }
 
 /// What a validated lexicon row IS, relative to the existing index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowDisposition {
     /// A clean coinage: no existing record under its key.
     Coinage,
@@ -433,8 +440,10 @@ pub enum RowDisposition {
     /// Adopts a GENERATED lemma of the same surface and POS (V14 item 2):
     /// the project vouches for the reconstruction and supplies the
     /// gender/animacy metadata the generated record lacks, so the paradigm
-    /// can be indexed as `project`.
-    GeneratedAdoption,
+    /// can be indexed as `project`. Carries the ADOPTED proposal's gloss —
+    /// the record that actually passed the guards, so reporting can never
+    /// re-derive a different one (V14.2 item 2).
+    GeneratedAdoption { adopted_gloss: String },
 }
 
 /// The animacy-column vocabulary, defined ONCE (V14.1 finding 10) — the
@@ -519,8 +528,14 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDispos
                 && forms::form_key(&r.lemma) == row.lemma_key
         });
         if all_generated_lemmas {
-            let proposal = recs.iter().find(|r| r.pos == row.pos.code());
-            let Some(proposal) = proposal else {
+            // EVERY same-POS proposal is a candidate (V14.2 item 2 — the
+            // committed data already has same-surface same-POS homograph
+            // proposals, e.g. tur/aurochs and tur/prison): a row adopts the
+            // FIRST candidate, in deterministic record order, that passes
+            // both guards. Rejections aggregate honestly.
+            let candidates: Vec<&FormRecord> =
+                recs.iter().filter(|r| r.pos == row.pos.code()).collect();
+            if candidates.is_empty() {
                 anyhow::bail!(
                     "lexicon lemma '{}' adopts generated '{}' but declares pos '{}' while the proposal is '{}'",
                     row.lemma,
@@ -528,25 +543,41 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDispos
                     row.pos.code(),
                     recs[0].pos
                 );
-            };
+            }
+            let spelled: Vec<&&FormRecord> =
+                candidates.iter().filter(|r| r.lemma == row.lemma).collect();
             anyhow::ensure!(
-                proposal.lemma == row.lemma,
-                "lexicon lemma '{}' would adopt the generated proposal spelled '{}' — match its spelling exactly or coin another surface",
+                !spelled.is_empty(),
+                "lexicon lemma '{}' would adopt a generated proposal spelled {} — match the spelling exactly or coin another surface",
                 row.lemma,
-                proposal.lemma
+                candidates
+                    .iter()
+                    .map(|r| format!("'{}'", r.lemma))
+                    .collect::<Vec<_>>()
+                    .join(" / ")
             );
-            let proposal_tokens = crate::site::english_gloss_tokens(&proposal.gloss);
-            anyhow::ensure!(
-                proposal_tokens
+            for proposal in &spelled {
+                let proposal_tokens = crate::site::english_gloss_tokens(&proposal.gloss);
+                if proposal_tokens
                     .intersection(&row.gloss_tokens)
                     .next()
-                    .is_some(),
-                "lexicon lemma '{}' adopts a proposal glossed '{}', which shares no concept token with the row gloss '{}' — an unrelated same-surface proposal must not be adopted silently",
+                    .is_some()
+                {
+                    return Ok(RowDisposition::GeneratedAdoption {
+                        adopted_gloss: proposal.gloss.clone(),
+                    });
+                }
+            }
+            anyhow::bail!(
+                "lexicon lemma '{}' adopts no proposal: none of the glosses [{}] shares a concept token with the row gloss '{}' — an unrelated same-surface proposal must not be adopted silently",
                 row.lemma,
-                proposal.gloss,
+                spelled
+                    .iter()
+                    .map(|r| format!("'{}'", r.gloss))
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 row.gloss
             );
-            return Ok(RowDisposition::GeneratedAdoption);
         }
         let c = &recs[0];
         anyhow::bail!(
@@ -590,11 +621,11 @@ fn gender_char(g: Option<crate::model::Gender>) -> char {
 }
 
 impl RowDisposition {
-    pub fn label(self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
             RowDisposition::Coinage => "coinage",
             RowDisposition::OfficialPin => "official pin",
-            RowDisposition::GeneratedAdoption => "generated adoption",
+            RowDisposition::GeneratedAdoption { .. } => "generated adoption",
         }
     }
 }
@@ -646,21 +677,19 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<Applied
     let mut applied = AppliedLexicon::default();
     for row in &rows {
         let disposition = validate_lexicon_row(index, row)?;
-        match disposition {
+        match &disposition {
             RowDisposition::Coinage => applied.coinages += 1,
-            RowDisposition::OfficialPin => applied.pins += 1,
-            RowDisposition::GeneratedAdoption => {
-                let gloss = index
-                    .by_key
-                    .get(&row.lemma_key)
-                    .and_then(|recs| recs.iter().find(|r| r.pos == row.pos.code()))
-                    .map(|r| r.gloss.clone())
-                    .unwrap_or_default();
-                applied.adoptions.push((row.lemma.clone(), gloss));
+            RowDisposition::OfficialPin => {
+                applied.pins += 1;
+                continue; // the official paradigm is already indexed
             }
-        }
-        if disposition == RowDisposition::OfficialPin {
-            continue; // the official paradigm is already indexed
+            // The gloss travels in the disposition — reporting can never
+            // pick a different record than the one that passed the guards.
+            RowDisposition::GeneratedAdoption { adopted_gloss } => {
+                applied
+                    .adoptions
+                    .push((row.lemma.clone(), adopted_gloss.clone()));
+            }
         }
         let mut sink = RecordSink::default();
         sink.add(
@@ -690,7 +719,7 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<Applied
         for r in sink.into_records() {
             if r.source == "lemma"
                 && r.key == row.lemma_key
-                && disposition != RowDisposition::GeneratedAdoption
+                && !matches!(disposition, RowDisposition::GeneratedAdoption { .. })
             {
                 // Adopted lemmas are already in lemma_keys via the generated
                 // record; pushing again would duplicate suggestions.
@@ -2505,9 +2534,13 @@ mod tests {
         .unwrap();
         let mut synthetic = build_index(&[], Some(&tsv), Default::default());
         let adopt = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
-        assert_eq!(
-            validate_lexicon_row(&synthetic, &adopt[0]).expect("adoption validates"),
-            RowDisposition::GeneratedAdoption
+        let disposition = validate_lexicon_row(&synthetic, &adopt[0]).expect("adoption validates");
+        assert!(
+            matches!(
+                &disposition,
+                RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss == "emu bird"
+            ),
+            "{disposition:?}"
         );
         apply_lexicon(&mut synthetic, adopt).unwrap();
         let reps = check_tokens(&synthetic, &tokenize("emuka"));
@@ -2529,7 +2562,7 @@ mod tests {
         assert!(err.to_string().contains("spelled"), "{err}");
         let unrelated = parse_lexicon("emuk\tnoun\tm\tanim\ttreasure chest").unwrap();
         let err = validate_lexicon_row(&fresh, &unrelated[0]).unwrap_err();
-        assert!(err.to_string().contains("no concept token"), "{err}");
+        assert!(err.to_string().contains("adopts no proposal"), "{err}");
         let again = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
         let applied = apply_lexicon(&mut fresh, again).expect("adoption applies");
         assert_eq!(
@@ -2539,6 +2572,38 @@ mod tests {
         assert_eq!(applied.adoptions[0].0, "emuk");
         assert!(applied.adoptions[0].1.contains("emu bird"));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// V14.2 item 2: adoption considers EVERY same-POS proposal — the
+    /// committed novel-words data has real same-surface homograph proposals
+    /// (tur/aurochs and tur/"prison, jail"), and each concept must be
+    /// adoptable while an unrelated gloss rejects quoting ALL candidates.
+    #[test]
+    fn adoption_handles_same_pos_homograph_proposals() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(
+            &entries,
+            Some(Path::new("data/novel-words.tsv")),
+            Default::default(),
+        );
+        let prison = parse_lexicon("tur\tnoun\tm\tinanim\tprison cell").unwrap();
+        let d = validate_lexicon_row(&index, &prison[0]).expect("prison sense adopts");
+        assert!(
+            matches!(&d, RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss.contains("prison")),
+            "{d:?}"
+        );
+        let aurochs = parse_lexicon("tur\tnoun\tm\tanim\taurochs bull").unwrap();
+        let d = validate_lexicon_row(&index, &aurochs[0]).expect("aurochs sense adopts");
+        assert!(
+            matches!(&d, RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss.contains("aurochs")),
+            "{d:?}"
+        );
+        let unrelated = parse_lexicon("tur\tnoun\tm\tinanim\ttreasure chest").unwrap();
+        let err = validate_lexicon_row(&index, &unrelated[0]).unwrap_err();
+        assert!(
+            err.to_string().contains("aurochs") && err.to_string().contains("prison"),
+            "rejection must quote every candidate gloss: {err}"
+        );
     }
 
     /// V13 item 1: a broken lexicon is a hard error, never a silent
