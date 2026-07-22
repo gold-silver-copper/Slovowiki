@@ -389,8 +389,7 @@ fn international_ending(word: &str, pos: Pos) -> Option<(String, &'static str, &
     // Verb internationalisms: Latin -ate/-ise/-ize / German -ieren → -ovati.
     if pos == Pos::Verb {
         for suf in [
-            "ovati", "ować", "ovať", "ovat", " irovati", "irovať", "izovati", "izovať", "izirati",
-            "izovat", "ovac",
+            "ować", "ovať", "ovat", "irovať", "izovať", "izirati", "izovat", "ovac",
         ] {
             if word.ends_with(suf) && !word.ends_with("ovati") {
                 // Normalize any -ova(ć/ť/t/c) tail to -ovati.

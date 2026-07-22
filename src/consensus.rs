@@ -225,38 +225,6 @@ impl ConsensusConfig {
             proto_link_deep_corroboration: false,
         }
     }
-
-    pub fn full() -> Self {
-        ConsensusConfig {
-            branch_balanced: true,
-            prefer_south_representative: true,
-            nasal_from_polish: true,
-            palatal_from_south: true,
-            depleophony: true,
-            jat_reconstruction: true,
-            lemma_endings: true,
-            internationalism: true,
-            six_subgroup_vote: true,
-            prefix_normalization: true,
-            y_recovery: true,
-            adj_longform_rep: true,
-            proto_derived_form: true,
-            internationalism_preference: true,
-            adj_fleeting_drop: true,
-            explicit_etymology: true,
-            synonym_alternatives: true,
-            proto_prefix_stripping: true,
-            loan_stem_repair: true,
-            verb_class_repair: true,
-            voicing_repair: true,
-            medoid_representative: true,
-            derivational_suffixes: true,
-            loan_hiatus: true,
-            spirantization_repair: true,
-            proto_stem_class_endings: true,
-            proto_link_deep_corroboration: true,
-        }
-    }
 }
 
 /// Surface-representative language priority: closest-to-Interslavic first.

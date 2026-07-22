@@ -120,10 +120,6 @@ impl GlossXref {
         }
         out
     }
-
-    pub fn token_count(&self) -> usize {
-        self.by_token.len()
-    }
 }
 
 /// Extract the head-synonym tokens of a gloss list: for each gloss element take

@@ -52,12 +52,7 @@ pub struct Index {
     /// Project-lexicon rows (V13 item 1), in file order; empty when no
     /// `--lexicon` was supplied. Drives the consistency check.
     pub lexicon: Vec<LexiconRow>,
-    /// Noun lemma key (folded) → dictionary animacy ('a' = tagged anim,
-    /// 'n' = untagged), absorbing on conflict. Official nouns decline
-    /// INANIMATE on purpose (the CSV animacy tag is too unreliable to
-    /// reshape paradigms), so the valence check reads animacy from here
-    /// instead of from the paradigm shape.
-    pub noun_animate: HashMap<String, char>,
+
     /// Verb lemma key (folded) → valence from the dictionary's own pos tag
     /// (V14 item 3): 't' = v.tr., 'i' = v.intr., 'r' = v.refl.; ' ' = mixed
     /// senses, aux, or untagged — the same absorbing-homograph discipline as
@@ -236,7 +231,6 @@ pub fn build_index(
         lemma_keys,
         notes,
         noun_gender,
-        noun_animate,
         prep_cases,
         lexicon: Vec::new(),
         verb_valence,
@@ -1037,7 +1031,7 @@ fn check_tokens_impl(
         reports.push(report);
         i += consumed;
     }
-    agreement_pass(index, &grammar, &report_breaks, &mut reports);
+    agreement_pass(&grammar, &report_breaks, &mut reports);
     reports
 }
 
@@ -1273,13 +1267,7 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
 /// The conservative agreement pass (issue #13 §3): a warning fires ONLY when
 /// no combination of the two tokens' analyses is compatible, both tokens are
 /// verification-grade, and each is unambiguously the expected part of speech.
-fn agreement_pass(
-    index: &Index,
-    grammar: &[TokenGrammar],
-    breaks: &[bool],
-    reports: &mut [TokenReport],
-) {
-    let _ = index;
+fn agreement_pass(grammar: &[TokenGrammar], breaks: &[bool], reports: &mut [TokenReport]) {
     for i in 0..reports.len().saturating_sub(1) {
         let (a, b) = (&grammar[i], &grammar[i + 1]);
         if !a.official || !b.official {
@@ -1767,7 +1755,6 @@ pub fn run(
             s.project,
         );
     }
-    let _ = json_escape("");
     fail_gate_if_needed(summary)
 }
 
@@ -2355,7 +2342,6 @@ mod tests {
             prep_cases: government,
             lexicon: Vec::new(),
             verb_valence: HashMap::new(),
-            noun_animate: HashMap::new(),
         };
         assert_eq!(suggest(&index, "domm"), vec!["dom", "doma"]);
         let dir = std::env::temp_dir().join(format!(

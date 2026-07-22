@@ -139,9 +139,6 @@ pub fn fit_wilson_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
 }
 /// Score semantics accepted by the official-row pipeline calibrator.
 pub const PIPELINE_SCORE_DOMAIN: &str = "pipeline-candidate-score-v1";
-/// Reserved domain for a future calibrator fitted on cognate-set coverage
-/// scores. Those scores are not compatible with [`PIPELINE_SCORE_DOMAIN`].
-pub const CORPUS_COVERAGE_SCORE_DOMAIN: &str = "corpus-coverage-score-v1";
 
 /// Novel-word bucket thresholds on the calibrated probability. The measured
 /// precision/recall AT these cutoffs is persisted in [`Calibration`] by every
@@ -316,7 +313,7 @@ mod tests {
         assert!(Calibration::load_for_domain(&path, PIPELINE_SCORE_DOMAIN)
             .unwrap()
             .is_some());
-        let err = Calibration::load_for_domain(&path, CORPUS_COVERAGE_SCORE_DOMAIN)
+        let err = Calibration::load_for_domain(&path, "some-other-domain-v9")
             .unwrap_err()
             .to_string();
         assert!(err.contains("score domain"), "{err}");

@@ -226,23 +226,13 @@ pub fn read_csv_records(text: &str) -> Vec<Vec<String>> {
     records
 }
 
-/// Detect the delimiter (comma for the full export, tab for the metadata TSV).
-fn looks_like_tsv(header: &str) -> bool {
-    header.contains('\t') && !header.starts_with("id,")
-}
-
 pub fn load(path: &Path) -> Result<Vec<OfficialEntry>> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("read official dictionary {}", path.display()))?;
-    let first_line = text.lines().next().unwrap_or("");
 
-    let records: Vec<Vec<String>> = if looks_like_tsv(first_line) {
-        text.lines()
-            .map(|l| l.split('\t').map(|s| s.to_string()).collect())
-            .collect()
-    } else {
-        read_csv_records(&text)
-    };
+    // The undocumented TSV branch is gone (V15 item 1): it had no in-repo
+    // caller and used a quote-blind splitter beside the real RFC-4180 parser.
+    let records: Vec<Vec<String>> = read_csv_records(&text);
 
     let mut it = records.into_iter();
     let header = it.next().context("empty dictionary file")?;

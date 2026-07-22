@@ -341,7 +341,6 @@ const PREFIX_VARIANTS: &[(&str, &str)] = &[
     ("bez", "bez"),
     ("bes", "bez"),
     ("voz", "vȯz"),
-    ("voz", "vȯz"),
     ("pod", "pod"),
     ("nad", "nad"),
     ("pri", "pri"),

@@ -130,18 +130,6 @@ fn naive_family(base: &str, pos: Pos) -> Vec<Derived> {
 // Pair mining (inverse lookup) + the derive-eval benchmark.
 // ---------------------------------------------------------------------------
 
-/// Undo the first palatalization (for inverse base lookup). Returns the
-/// alternates to try INCLUDING the unchanged stem.
-fn inverse_palatalization(stem: &str) -> Vec<String> {
-    interslavic::phono::inverse_palatalization(stem)
-}
-
-/// Undo iotation (for inverse -jeńje lookup). Includes the unchanged stem so
-/// hushing-final stems (učiti → uč-) resolve too.
-fn inverse_iotation(t: &str) -> Vec<String> {
-    interslavic::phono::inverse_iotation(t)
-}
-
 struct Pair {
     base: usize,
     derived: usize,
@@ -218,7 +206,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
                     cands.push(format!("{s}ti"));
                 }
                 if let Some(t) = s.strip_suffix('e') {
-                    for inv in inverse_iotation(t) {
+                    for inv in interslavic::phono::inverse_iotation(t) {
                         cands.push(format!("{inv}iti"));
                     }
                 }
@@ -246,7 +234,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
                     }
                 } else if n > 4 {
                     // diminutive -ka ← feminine noun
-                    let cands: Vec<String> = inverse_palatalization(s)
+                    let cands: Vec<String> = interslavic::phono::inverse_palatalization(s)
                         .into_iter()
                         .map(|c| format!("{c}a"))
                         .collect();
@@ -258,7 +246,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
             // -ica ← feminine noun
             if let Some(s) = w.strip_suffix("ica") {
                 if n > 5 {
-                    let cands: Vec<String> = inverse_palatalization(s)
+                    let cands: Vec<String> = interslavic::phono::inverse_palatalization(s)
                         .into_iter()
                         .map(|c| format!("{c}a"))
                         .collect();
@@ -273,7 +261,7 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
             for suf in ["ny", "sky"] {
                 if let Some(t) = w.strip_suffix(suf) {
                     let mut cands: Vec<String> = Vec::new();
-                    for inv in inverse_palatalization(t) {
+                    for inv in interslavic::phono::inverse_palatalization(t) {
                         cands.push(inv.clone());
                         for v in ["a", "o", "e"] {
                             cands.push(format!("{inv}{v}"));

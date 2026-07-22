@@ -308,7 +308,6 @@ impl Pos {
             || s == "f"
             || s == "n"
             || s.starts_with("m/")
-            || s.starts_with("m.")
         {
             return Pos::Noun;
         }

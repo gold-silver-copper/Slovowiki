@@ -669,7 +669,7 @@ id-keyed row diff and benchmark before/after in
 visible, versioned event, never a slow skew.
 
 The V7 full-pipeline review (stage-attribution histogram, oracle ladder, and the
-ranked list of kept/reverted fixes) is written up in **[IMPROVEMENT_REPORT_V7.md](IMPROVEMENT_REPORT_V7.md)**.
+ranked list of kept/reverted fixes) is written up in **[IMPROVEMENT_REPORT_V7.md](docs/history/IMPROVEMENT_REPORT_V7.md)**.
 
 ## License & attribution
 
