@@ -451,7 +451,7 @@ cargo run -- explain "computer"
 # known-lemma / known-form / generated / unknown, computed false-friend
 # warnings, nearest-lemma suggestions; --json for agents):
 cargo run --release -- check-text tekst.txt
-cargo run --release -- check-text tekst.txt --json
+cargo run --release -- check-text tekst.txt --json   # versioned envelope, schema 1
 # CI gate: summary + nonzero exit when unknown tokens / agreement errors
 # exceed the (default 0) thresholds:
 cargo run --release -- check-text tekst.txt --summary --max-unknown 0
@@ -460,9 +460,16 @@ cargo run --release -- check-text tekst.txt --summary --max-unknown 0
 # sanctioned coinage in full and classifies its tokens `project`, so game
 # text full of runtime-inflected coinages still gates on --max-unknown 0;
 # official synonyms of a row's gloss raise `consistency` warnings
-# (register drift), gate them with --max-consistency N:
+# (register drift), gate them with --max-consistency N; `indecl` in the
+# animacy column marks indeclinable loans (lemma-only, V14):
 cargo run --release -- check-text tekst.txt --summary --max-unknown 0 \
   --lexicon project-lexicon.tsv
+# Every lexicon load reports row dispositions (coinage / official pin /
+# generated adoption): a human summary line, or the `lexicon` field of the
+# --json envelope. check-text --json emits ONE versioned object
+# {schema_version, tokens, summary?, lexicon?} (schema 1, V14.3 — the old
+# bare token array is retired); coin-check --json names its row's
+# disposition as `lexicon_row_disposition`.
 
 # English → Interslavic lookup against a prior export's static API — the
 # reference client for the documented normalization/routing/retry ladder:
@@ -562,7 +569,7 @@ checker. The CLI equivalent:
 
 ```bash
 cargo run --release -- check-text tekst.txt          # human summary
-cargo run --release -- check-text tekst.txt --json   # for agents
+cargo run --release -- check-text tekst.txt --json   # for agents (envelope, schema 1)
 ```
 
 classifies every token (known-lemma / known-form / generated / unknown with
@@ -570,7 +577,12 @@ nearest-lemma suggestions; multi-word official lemmas resolve via trigram →
 bigram lookup), runs **conservative grammar-agreement checks** (adjacent
 adjective–noun case/number/gender — gender in the singular only, preposition
 government parsed from the dictionary's own `(+N)` annotations, pronoun–verb
-person/number; a warning fires only when NO combination of analyses is
+person/number, and verb **valence** — an intransitive-only verb per the
+dictionary's own `v.intr.` tag followed by an object-shaped singular
+animate noun form, with `ne` negation and plural/partitive genitives
+abstaining; the animate accusative-genitive syncretism is stated once at
+the record layer, in `api/forms` and the CLI alike (`netopyŕa` carries
+gen.jd. AND akuz.jd. readings; surfaces stay inanimate-declined); a warning fires only when NO combination of analyses is
 compatible, never across punctuation) and applies
 **computed false-friend notes** (`src/falsefriends.rs`: a language's word that
 folds onto an official lemma's surface but whose English Wiktionary glosses
@@ -643,6 +655,18 @@ target/eval/rep-selection.md                     representative-selection probe 
 target/eval/cluster-selection.md                 cluster-selection probe (blind rules vs oracle)
 target/eval/translation-probe.md                 tracked 219-word game-vocabulary probe (reported, not gated)
 ```
+
+## Pinning slovowiki (data releases)
+
+Downstream consumers pin **`data-vN` tags**, not commit hashes:
+`data/MANIFEST.json` records sha256 + size for every committed data
+artifact plus the crate pin, form-index schema, and the probe baseline
+(`data-manifest` verifies it; CI enforces freshness). Dictionary re-pulls
+happen only through the `refresh-official` tool and the
+[docs/DATA-REFRESH.md](docs/DATA-REFRESH.md) ceremony, each leaving an
+id-keyed row diff and benchmark before/after in
+[data/refresh-changelog.md](data/refresh-changelog.md) — drift is a
+visible, versioned event, never a slow skew.
 
 The V7 full-pipeline review (stage-attribution histogram, oracle ladder, and the
 ranked list of kept/reverted fixes) is written up in **[IMPROVEMENT_REPORT_V7.md](IMPROVEMENT_REPORT_V7.md)**.

@@ -665,7 +665,7 @@ fn noun_paradigm_into_sink(
         for (cf, case) in CASES {
             sink.add(
                 &clean_cell(forms.get(case, num)),
-                &format!("{cf}.{nf}."),
+                &noun_feature_label(cf, nf),
                 lemma,
                 entry_id,
                 pos.code(),
@@ -674,6 +674,62 @@ fn noun_paradigm_into_sink(
                 probability,
                 gloss,
             );
+        }
+    }
+}
+
+/// The noun feature-label shape ("gen.jd.") — the ONE formatter behind both
+/// record emission and the animate-reading enrichment, so a label change
+/// breaks loudly at compile/test instead of silently unmatching (V14.2).
+pub fn noun_feature_label(case: &str, number: &str) -> String {
+    format!("{case}.{number}.")
+}
+
+/// The animate accusative-genitive syncretism, stated ONCE for every
+/// consumer (V14.2 item 3): masculine dictionary-animate nouns' genitive
+/// records gain the parallel accusative READING. Cell surfaces are never
+/// reshaped — paradigms stay inanimate-declined on purpose; this is reading
+/// metadata. Called by BOTH index builders (check-text's and the site
+/// export's), which is what the module doctrine above promises. The `'m'`
+/// restriction is linguistically required: feminine a-stems have distinct
+/// accusatives (enriching `ženy` would be wrong), and neuter accusatives
+/// are nominative-shaped. The PLURAL readings serve preposition government
+/// and API consumers (`na vojakov`); the valence check deliberately never
+/// fires on plurals (conceded to the partitive — see the agent guide).
+pub fn enrich_animate_accusatives(
+    records: &mut [FormRecord],
+    masc_animate_keys: &std::collections::HashSet<String>,
+) {
+    let pairs = [
+        (
+            noun_feature_label("gen", "jd"),
+            noun_feature_label("akuz", "jd"),
+        ),
+        (
+            noun_feature_label("gen", "mn"),
+            noun_feature_label("akuz", "mn"),
+        ),
+    ];
+    for r in records.iter_mut() {
+        if r.pos != "noun" {
+            continue;
+        }
+        // Cheap reject before any allocation: only genitive-bearing records
+        // can be enriched.
+        if !r
+            .analyses
+            .iter()
+            .any(|a| a == &pairs[0].0 || a == &pairs[1].0)
+        {
+            continue;
+        }
+        if !masc_animate_keys.contains(&form_key(&r.lemma)) {
+            continue;
+        }
+        for (gen, akuz) in &pairs {
+            if r.analyses.iter().any(|a| a == gen) && !r.analyses.iter().any(|a| a == akuz) {
+                r.analyses.push(akuz.clone());
+            }
         }
     }
 }
@@ -1468,6 +1524,10 @@ row blindly.
     teleportovati) with extra analyses `deriv:intl-ovati←<noun>` and
     `pres:<stem>uje` marking the derivation and the regular present stem;
     the verb inherits its source noun's bucket probability.
+- Same-surface homograph readings (official `děti` verb/noun, generated
+  `tur` aurochs/prison) are DISTINCT records: `check-text` reports such
+  tokens `ambiguous: true`, and when homograph proposals carry different
+  probabilities the reported value is the conservative MINIMUM (V14.3).
 - **Any non-null generated probability is still a suggestion, never
   verification.** Generated lemmas (all kinds) have NO inflection records on
   purpose: an inflected form of a
@@ -1511,7 +1571,11 @@ paradigm (the `ISV::noun_with` call a real consumer makes; animate
 masculines take genitive-shaped accusatives) while still printing the guess
 and flagging every divergence ("ending suggests gender m; you declared f").
 With `--lexicon-row --gloss <english concept>` it emits the validated
-project-lexicon TSV row (see below; also a `lexicon_row` field in `--json`),
+project-lexicon TSV row for ANY supported POS — verbs and adjectives as
+mechanically as nouns (`coin-check mråviti --gloss "to antify"
+--lexicon-row` → `mråviti	verb			to antify`), with `--animacy indecl`
+carried through for indeclinable loans (see below; also a `lexicon_row`
+field in `--json`),
 so the coinage workflow chains mechanically:
 `coin-check → append row → check-text --lexicon`. The row is validated by
 the same rules `check-text --lexicon` applies — an invalid row fails here,
@@ -1527,10 +1591,14 @@ one row per word, five tab-separated columns
     lemma	pos	gender	animacy	gloss
 
 with `pos` ∈ `noun|adj|verb`, `gender` ∈ `m|f|n` and `animacy` ∈
-`anim|inanim` (both REQUIRED for nouns — the lexicon exists to control the
-paradigm explicitly — and forbidden otherwise), and a non-empty English
-`gloss` naming the source concept. Blank lines and `#` comments are
-skipped. `check-text --lexicon <file>` then:
+`anim|inanim|indecl` (both REQUIRED for nouns — the lexicon exists to
+control the paradigm explicitly — and forbidden otherwise), and a non-empty
+English `gloss` naming the source concept. Blank lines and `#` comments are
+skipped. `indecl` marks an indeclinable loan (`emu`, `zombi`): its one
+invariant surface carries EVERY case reading (so adjective agreement
+genuinely consults the required gender — `zelena emu` flags, `zeleny emu`
+is clean), while a wrongly-inflected form (`emua`) has no record and stays
+`unknown`. `check-text --lexicon <file>` then:
 
 - builds each row's full paradigm in memory (same machinery as the official
   paradigms) and classifies matching tokens with status `project` — so a
@@ -1540,9 +1608,24 @@ skipped. `check-text --lexicon <file>` then:
   declared genders are explicit project decisions), so a case error in a
   coinage's usage is caught too;
 - validates the lexicon on load, as HARD errors: rows must parse, verbs must
-  cite `-ti`, adjectives `-y`/`-i`, nouns must be declinable, and every
-  lemma must either collide with nothing (coin-check's collision axis) or
-  pin an official lemma whose POS/gender agree with the declaration;
+  cite `-ti`, adjectives `-y`/`-i`, declinable nouns must decline, and every
+  lemma must either collide with nothing (coin-check's collision axis), pin
+  an official lemma whose POS/gender agree with the declaration, or ADOPT a
+  generated proposal — same POS, EXACT surface spelling, and at least one
+  shared gloss content token, so an unrelated same-surface proposal arriving
+  with a data refresh is a loud error, never a silent adoption. The project
+  vouches for the reconstruction and supplies the gender/animacy it lacks;
+  its paradigm then indexes as `project`, and the dispositions are always
+  visible: the human report prints the load summary ("lexicon: 5 rows —
+  3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"), while EVERY
+  `--json` invocation carries the same data machine-readably in the
+  envelope's `lexicon` field ({{rows, coinages, official_pins, adoptions:
+  [{{lemma, adopted_gloss}}]}}). **check-text JSON schema 1 (V14.3
+  migration)**: `--json` always emits one versioned object
+  {{schema_version, tokens, summary?, lexicon?}} — the pre-V14.3 bare token
+  array is retired; parse `schema_version` before the rest. coin-check's
+  `--json` carries `schema_version` too, and its `--lexicon-row` output
+  (`lexicon_row_disposition`) names the disposition;
 - emits `consistency` warnings when a verification-grade official token's
   gloss overlaps a row's gloss (deterministic token overlap, same
   normalization as the English API) but the token is NOT that row's lemma —
@@ -1554,8 +1637,22 @@ skipped. `check-text --lexicon <file>` then:
 `check-text --json` reports may carry an `agreement` field: a conservative
 grammar check (adjacent adjective–noun case/number/gender, preposition
 government from the dictionary's own `(+N)` annotations, pronoun–verb
-person/number) that fires only when NO combination of the tokens' analyses is
-compatible and both tokens are POS-unambiguous verification-grade words.
+person/number, and — V14 — verb VALENCE: an intransitive-only verb, per the
+dictionary's own `v.intr.` tag, followed by an unambiguously object-shaped
+SINGULAR noun form, i.e. the animate accusative-genitive syncretism, with
+`ne` negation abstaining — and plural object-shaped forms NEVER firing, a
+deliberate concession: an animate genitive plural after an intransitive is
+indistinguishable from a quantitative/partitive genitive) that fires only
+when NO combination of the tokens' analyses is compatible and both tokens
+are POS-unambiguous verification-grade words. The record layer states the
+masculine animate accusative-genitive syncretism once, EVERYWHERE:
+genitive-shaped forms of dictionary-animate masculine nouns carry the
+parallel accusative READING (`netopyŕa` = gen.jd. + akuz.jd.) in
+`api/forms` and in the CLI alike, so preposition government, valence, and
+any API consumer's own agreement logic treat official and project animates
+identically. The CSV animacy tag is trusted for readings and warnings
+only — never to reshape paradigm cell SURFACES, which stay
+inanimate-declined on purpose.
 
 ## Verification workflow (Interslavic text)
 

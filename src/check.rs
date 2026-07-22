@@ -21,7 +21,6 @@ use crate::official::{self, OfficialEntry};
 use crate::orthography as ortho;
 use anyhow::Result;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
 use std::path::Path;
 
 pub const SUGGEST_SHARDS: u32 = 64;
@@ -53,6 +52,17 @@ pub struct Index {
     /// Project-lexicon rows (V13 item 1), in file order; empty when no
     /// `--lexicon` was supplied. Drives the consistency check.
     pub lexicon: Vec<LexiconRow>,
+    /// Noun lemma key (folded) → dictionary animacy ('a' = tagged anim,
+    /// 'n' = untagged), absorbing on conflict. Official nouns decline
+    /// INANIMATE on purpose (the CSV animacy tag is too unreliable to
+    /// reshape paradigms), so the valence check reads animacy from here
+    /// instead of from the paradigm shape.
+    pub noun_animate: HashMap<String, char>,
+    /// Verb lemma key (folded) → valence from the dictionary's own pos tag
+    /// (V14 item 3): 't' = v.tr., 'i' = v.intr., 'r' = v.refl.; ' ' = mixed
+    /// senses, aux, or untagged — the same absorbing-homograph discipline as
+    /// `noun_gender`, so ambiguity always abstains.
+    pub verb_valence: HashMap<String, char>,
 }
 
 /// Build the verification index from the official dictionary (lemmas + full
@@ -67,11 +77,28 @@ pub fn build_index(
     let mut sink = RecordSink::default();
     forms::closed_class_records(&mut sink);
     let mut seen: HashSet<String> = HashSet::new();
-    let mut noun_gender: HashMap<String, char> = HashMap::new();
+    // Gender and animacy maps come from the shared trait-map builder — the
+    // same absorbing discipline the site export's enrichment set uses
+    // (`družba` friendship f. / best man m. absorbs to ' '; issue #89
+    // B04/G12): once conflicting senses make a key ambiguous, later rows
+    // must not restore a concrete value.
+    let (noun_gender, noun_animate) = noun_trait_maps(entries);
+    let mut verb_valence: HashMap<String, char> = HashMap::new();
     // Preposition government comes from the same shared table used by entry
     // rendering; no site-only copy may drift from checker behavior.
     let prep_cases = preposition_government();
-    for e in entries {
+    // Real entry identity (V14.3 item 1): the sink dedups on
+    // (key, lemma_key, entry_id), and a shared 0 collapsed every
+    // same-surface official homograph into one record carrying only the
+    // first CSV row's POS/gloss — the confirmed 'děti' pin failure (verb
+    // row swallowed the noun 'children'). Ids are the entry's position + 1;
+    // 0 remains the closed-class supplement's sentinel.
+    debug_assert!(
+        entries.len() < 1_000_000,
+        "official entry count crossed the novel-row id offset"
+    );
+    for (entry_idx, e) in entries.iter().enumerate() {
+        let entry_id = entry_idx + 1;
         // ~230 rows list byform variants in one cell ("iměti, imati",
         // "srědnji, srědny") — each variant is its own lemma.
         for byform in e.citation_byforms() {
@@ -87,38 +114,22 @@ pub fn build_index(
             // via the general bigram lookup; only 3+-token phrases stay
             // lemma-only.
             let single = !isv.contains(' ') || isv.ends_with(" sę");
-            if e.pos == Pos::Noun {
-                if let Some(g) = e.noun_traits.gender {
-                    let c = match g {
-                        crate::model::Gender::Masculine => 'm',
-                        crate::model::Gender::Feminine => 'f',
-                        crate::model::Gender::Neuter => 'n',
-                        _ => ' ',
-                    };
-                    if c != ' ' {
-                        // A spelling can name nouns of different genders
-                        // (`družba` friendship f. / best man m.). Agreement must
-                        // abstain instead of letting CSV order choose a gender
-                        // for every homograph (issue #89 B04/G12).
-                        noun_gender
-                            .entry(forms::form_key(isv))
-                            .and_modify(|known| {
-                                // Once conflicting senses make the key
-                                // ambiguous, later rows must not restore a
-                                // concrete gender.
-                                if *known != ' ' && *known != c {
-                                    *known = ' ';
-                                }
-                            })
-                            .or_insert(c);
-                    }
-                }
+            if e.pos == Pos::Verb {
+                // Untagged/aux senses absorb too (V14.1 finding 5): a
+                // homograph with one tagged and one untagged sense must
+                // read ' ' (abstain), exactly as both doc comments promise
+                // — iměti (v.tr. + v.aux.) is the live case.
+                absorb_insert(
+                    &mut verb_valence,
+                    forms::form_key(isv),
+                    valence_char(&e.pos_raw),
+                );
             }
             sink.add(
                 isv,
                 "",
                 isv,
-                0,
+                entry_id,
                 e.pos.code(),
                 "lemma",
                 "official",
@@ -137,7 +148,7 @@ pub fn build_index(
                     isv,
                     e.pos,
                     e.noun_traits.gender,
-                    0,
+                    entry_id,
                     "official",
                     None,
                     &e.english,
@@ -147,7 +158,9 @@ pub fn build_index(
                 && matches!(e.pos, Pos::Pronoun | Pos::Numeral)
                 && seen.insert(format!("{isv}|{}", e.pos.code()))
             {
-                forms::pronoun_numeral_records(&mut sink, isv, e.pos, 0, "official", &e.english);
+                forms::pronoun_numeral_records(
+                    &mut sink, isv, e.pos, entry_id, "official", &e.english,
+                );
             }
         }
     }
@@ -163,7 +176,7 @@ pub fn build_index(
             );
             String::new()
         });
-        for line in tsv.lines().skip(1) {
+        for (i, line) in tsv.lines().skip(1).enumerate() {
             let cols: Vec<&str> = line.split('\t').collect();
             if cols.len() < 8 {
                 continue;
@@ -177,11 +190,21 @@ pub fn build_index(
                 "proper_noun" => "proper_noun",
                 _ => "other",
             };
+            // Per-row entry ids (V14.2 item 2): same-surface same-POS
+            // homograph PROPOSALS are distinct concepts (tur/aurochs vs
+            // tur/prison), but the sink dedups on (key, lemma, entry_id) —
+            // with a shared sentinel id the second gloss silently vanished
+            // and its concept was unadoptable. The 1M offset stays clear of
+            // the real official ids this index carries (position+1, count
+            // debug-asserted below 1M). NOTE the ids themselves never leave
+            // the process — the site export builds this index too, but only
+            // its lemma_keys reach an artifact (the suggest shards' [key,
+            // lemma] rows).
             sink.add(
                 form,
                 "",
                 form,
-                0,
+                1_000_000 + i,
                 pos,
                 "lemma",
                 "generated",
@@ -194,6 +217,13 @@ pub fn build_index(
     let mut by_key: HashMap<String, Vec<FormRecord>> = HashMap::new();
     let mut lemma_keys: Vec<(String, String)> = Vec::new();
     let mut lemma_seen: HashSet<String> = HashSet::new();
+    // The animate-reading enrichment is the SHARED pass in forms.rs (V14.2
+    // item 3): the site export applies the same call before write_api, so
+    // check-text, coin-check, and api/forms carry identical readings — the
+    // one-pipeline doctrine, restored.
+    let masc_animate = masc_animate_from_maps(&noun_gender, &noun_animate);
+    let mut records = records;
+    forms::enrich_animate_accusatives(&mut records, &masc_animate);
     for r in records {
         if r.source == "lemma" && lemma_seen.insert(r.key.clone()) {
             lemma_keys.push((r.key.clone(), r.lemma.clone()));
@@ -206,9 +236,39 @@ pub fn build_index(
         lemma_keys,
         notes,
         noun_gender,
+        noun_animate,
         prep_cases,
         lexicon: Vec::new(),
+        verb_valence,
     }
+}
+
+/// Valence from the official pos tag. `.intr` is tested BEFORE `.tr`
+/// (substring safety); aux and untagged verbs yield ' ' (abstain).
+fn valence_char(pos_raw: &str) -> char {
+    let s = pos_raw.to_lowercase();
+    if s.contains(".intr") {
+        'i'
+    } else if s.contains(".refl") {
+        'r'
+    } else if s.contains(".tr") {
+        't'
+    } else {
+        ' '
+    }
+}
+
+/// Insert with the absorbing-ambiguity rule shared by `noun_gender` and
+/// `verb_valence`: once conflicting official senses make a key ambiguous,
+/// later rows must not restore a concrete value.
+fn absorb_insert(map: &mut HashMap<String, char>, key: String, c: char) {
+    map.entry(key)
+        .and_modify(|known| {
+            if *known != ' ' && *known != c {
+                *known = ' ';
+            }
+        })
+        .or_insert(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +294,9 @@ pub struct LexiconRow {
     /// otherwise.
     pub gender: Option<crate::model::Gender>,
     pub animate: bool,
+    /// Indeclinable loan (V14 item 2): lemma record only, NO paradigm — a
+    /// wrongly-inflected form of it must stay `unknown`.
+    pub indeclinable: bool,
     /// English gloss of the source concept — drives the consistency check.
     pub gloss: String,
     /// Content tokens of `gloss`, normalized exactly as the English API
@@ -286,26 +349,22 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
                 anyhow::bail!("lexicon line {n}: gender must be m|f|n or blank, got '{other}'")
             }
         };
-        let animate = match animacy_raw {
-            "" => None,
-            "anim" => Some(true),
-            "inanim" => Some(false),
-            other => {
-                anyhow::bail!(
-                    "lexicon line {n}: animacy must be anim|inanim or blank, got '{other}'"
-                )
-            }
-        };
+        // `indecl` is a VALUE of the animacy column, not a sixth column —
+        // the 5-column format and the coin-check hand-off stay intact.
+        let (animate, indeclinable) =
+            parse_animacy(animacy_raw).map_err(|e| anyhow::anyhow!("lexicon line {n}: {e}"))?;
         if pos == Pos::Noun {
             // A project lexicon exists to control the paradigm explicitly
             // (`ISV::noun_with`); a guessed gender would silently weaken it.
+            // Indeclinables still declare gender — adjective agreement needs
+            // it (`zeleny emu`).
             anyhow::ensure!(
                 gender.is_some(),
                 "lexicon line {n}: nouns must declare gender (m|f|n)"
             );
             anyhow::ensure!(
                 animate.is_some(),
-                "lexicon line {n}: nouns must declare animacy (anim|inanim)"
+                "lexicon line {n}: nouns must declare animacy (anim|inanim|indecl)"
             );
         } else {
             anyhow::ensure!(
@@ -332,6 +391,7 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
             pos,
             gender,
             animate: animate.unwrap_or(false),
+            indeclinable,
             gloss: gloss.to_string(),
             gloss_tokens: crate::site::english_gloss_tokens(gloss),
         });
@@ -339,13 +399,44 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
     Ok(rows)
 }
 
+/// What a validated lexicon row IS, relative to the existing index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowDisposition {
+    /// A clean coinage: no existing record under its key.
+    Coinage,
+    /// Pins an official (or grammar-supplement) lemma — its paradigm is
+    /// already indexed; declared metadata must agree with the dictionary.
+    OfficialPin,
+    /// Adopts a GENERATED lemma of the same surface and POS (V14 item 2):
+    /// the project vouches for the reconstruction and supplies the
+    /// gender/animacy metadata the generated record lacks, so the paradigm
+    /// can be indexed as `project`. Carries the ADOPTED proposal's gloss —
+    /// the record that actually passed the guards, so reporting can never
+    /// re-derive a different one (V14.2 item 2).
+    GeneratedAdoption { adopted_gloss: String },
+}
+
+/// The animacy-column vocabulary, defined ONCE (V14.1 finding 10) — the
+/// coin-check→check-text row contract cannot drift when both sides parse
+/// through this. Returns (animate, indeclinable); `indecl` implies
+/// inanimate-declension semantics with NO paradigm at all.
+pub fn parse_animacy(raw: &str) -> Result<(Option<bool>, bool)> {
+    match raw {
+        "" => Ok((None, false)),
+        "anim" => Ok((Some(true), false)),
+        "inanim" => Ok((Some(false), false)),
+        "indecl" => Ok((Some(false), true)),
+        other => anyhow::bail!("animacy must be anim|inanim|indecl or blank, got '{other}'"),
+    }
+}
+
 /// Validate one lexicon row against the built index: the row must pass
 /// coin-check's collision axis (no existing lemma or inflected form under its
-/// key) OR pin an official lemma whose POS/gender agree with the declaration.
-/// The crate's citation-form requirements (verbs cite `-ti`, adjectives
-/// `-y`/`-i`, nouns must be declinable) are enforced too. Returns `true` when
-/// the row pins an official word (its paradigm is already indexed).
-pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
+/// key), pin an official lemma whose POS/gender agree with the declaration,
+/// or adopt a same-surface generated lemma of the same POS. The crate's
+/// citation-form requirements (verbs cite `-ti`, adjectives `-y`/`-i`,
+/// declinable nouns must decline) are enforced too.
+pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDisposition> {
     match row.pos {
         Pos::Verb => {
             anyhow::ensure!(
@@ -366,6 +457,7 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
                 row.lemma
             );
         }
+        Pos::Noun if row.indeclinable => {} // nothing to decline, nothing to probe
         Pos::Noun => {
             let declinable = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 forms::noun_paradigm_forms_with_animacy(&row.lemma, row.gender, row.animate)
@@ -380,7 +472,7 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
         _ => anyhow::bail!("lexicon lemma '{}': unsupported POS", row.lemma),
     }
     let Some(recs) = index.by_key.get(&row.lemma_key) else {
-        return Ok(false); // clean coinage: no collision
+        return Ok(RowDisposition::Coinage); // no collision
     };
     let pins: Vec<&FormRecord> = recs
         .iter()
@@ -391,6 +483,72 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
         })
         .collect();
     if pins.is_empty() {
+        // Adoption path (V14.1 finding 8 — explicit and guarded): EVERY
+        // colliding record is a generated LEMMA under this key (generated
+        // lemmas carry no inflections, so anything else is a real
+        // collision), and the adopted proposal must match the row on POS,
+        // EXACT surface spelling (folded-equal is not enough — a flavored
+        // respelling of a proposal is a divergence, not an adoption), and
+        // CONCEPT: the row's gloss must share a content token with the
+        // proposal's, so a data refresh emitting an unrelated same-surface
+        // proposal turns into a loud error instead of a silent adoption.
+        let all_generated_lemmas = recs.iter().all(|r| {
+            r.status == "generated"
+                && r.source == "lemma"
+                && forms::form_key(&r.lemma) == row.lemma_key
+        });
+        if all_generated_lemmas {
+            // EVERY same-POS proposal is a candidate (V14.2 item 2 — the
+            // committed data already has same-surface same-POS homograph
+            // proposals, e.g. tur/aurochs and tur/prison): a row adopts the
+            // FIRST candidate, in deterministic record order, that passes
+            // both guards. Rejections aggregate honestly.
+            let candidates: Vec<&FormRecord> =
+                recs.iter().filter(|r| r.pos == row.pos.code()).collect();
+            if candidates.is_empty() {
+                anyhow::bail!(
+                    "lexicon lemma '{}' adopts generated '{}' but declares pos '{}' while the proposal is '{}'",
+                    row.lemma,
+                    recs[0].lemma,
+                    row.pos.code(),
+                    recs[0].pos
+                );
+            }
+            let spelled: Vec<&&FormRecord> =
+                candidates.iter().filter(|r| r.lemma == row.lemma).collect();
+            anyhow::ensure!(
+                !spelled.is_empty(),
+                "lexicon lemma '{}' would adopt a generated proposal spelled {} — match the spelling exactly or coin another surface",
+                row.lemma,
+                candidates
+                    .iter()
+                    .map(|r| format!("'{}'", r.lemma))
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            );
+            for proposal in &spelled {
+                let proposal_tokens = crate::site::english_gloss_tokens(&proposal.gloss);
+                if proposal_tokens
+                    .intersection(&row.gloss_tokens)
+                    .next()
+                    .is_some()
+                {
+                    return Ok(RowDisposition::GeneratedAdoption {
+                        adopted_gloss: proposal.gloss.clone(),
+                    });
+                }
+            }
+            anyhow::bail!(
+                "lexicon lemma '{}' adopts no proposal: none of the glosses [{}] shares a concept token with the row gloss '{}' — an unrelated same-surface proposal must not be adopted silently",
+                row.lemma,
+                spelled
+                    .iter()
+                    .map(|r| format!("'{}'", r.gloss))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                row.gloss
+            );
+        }
         let c = &recs[0];
         anyhow::bail!(
             "lexicon lemma '{}' collides with existing {} {} of '{}' ({}) — run coin-check and choose another surface",
@@ -420,7 +578,66 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
             );
         }
     }
-    Ok(true)
+    Ok(RowDisposition::OfficialPin)
+}
+
+/// The absorbing noun gender/animacy maps over the official entries'
+/// citation byforms — ONE builder for `build_index` and
+/// [`masc_animate_lemma_keys`], so the checker and the site export can
+/// never disagree about which lemmas are animate-masculine.
+pub(crate) fn noun_trait_maps(
+    entries: &[OfficialEntry],
+) -> (HashMap<String, char>, HashMap<String, char>) {
+    let mut gender: HashMap<String, char> = HashMap::new();
+    let mut animate: HashMap<String, char> = HashMap::new();
+    for e in entries {
+        for byform in e.citation_byforms() {
+            let e = byform.entry;
+            if e.pos != Pos::Noun {
+                continue;
+            }
+            let Some(clean) = forms::citation(byform.form.as_str()) else {
+                continue;
+            };
+            let key = forms::form_key(&clean);
+            absorb_insert(
+                &mut animate,
+                key.clone(),
+                if e.noun_traits.animate { 'a' } else { 'n' },
+            );
+            let c = gender_char(e.noun_traits.gender);
+            if c != ' ' {
+                absorb_insert(&mut gender, key, c);
+            }
+        }
+    }
+    (gender, animate)
+}
+
+/// Lemma keys eligible for the animate-accusative reading enrichment
+/// ([`forms::enrich_animate_accusatives`]): dictionary-animate AND
+/// unambiguously masculine. Mixed-gender-absorbed animate homographs
+/// deliberately abstain — a canary test pins that the current data has
+/// none, so a refresh introducing one is a visible event, not silent
+/// coverage loss.
+pub fn masc_animate_lemma_keys(entries: &[OfficialEntry]) -> HashSet<String> {
+    let (gender, animate) = noun_trait_maps(entries);
+    masc_animate_from_maps(&gender, &animate)
+}
+
+/// THE eligibility predicate (V14.3 item 6), existing once: both index
+/// builders derive their enrichment set through this function, so a future
+/// widening (e.g. after the absorbed-gender canary trips) cannot reach
+/// `api/forms` while missing check-text or vice versa.
+pub(crate) fn masc_animate_from_maps(
+    gender: &HashMap<String, char>,
+    animate: &HashMap<String, char>,
+) -> HashSet<String> {
+    animate
+        .iter()
+        .filter(|(k, a)| **a == 'a' && gender.get(*k) == Some(&'m'))
+        .map(|(k, _)| k.clone())
+        .collect()
 }
 
 fn gender_char(g: Option<crate::model::Gender>) -> char {
@@ -432,15 +649,76 @@ fn gender_char(g: Option<crate::model::Gender>) -> char {
     }
 }
 
+impl RowDisposition {
+    pub fn label(&self) -> &'static str {
+        match self {
+            RowDisposition::Coinage => "coinage",
+            RowDisposition::OfficialPin => "official pin",
+            RowDisposition::GeneratedAdoption { .. } => "generated adoption",
+        }
+    }
+}
+
+/// What `apply_lexicon` did, for the load summary (V14.1 finding 8: a
+/// disposition must be VISIBLE — it can flip across data refreshes).
+#[derive(Debug, Default)]
+pub struct AppliedLexicon {
+    pub coinages: usize,
+    pub pins: usize,
+    /// (row lemma, adopted proposal's gloss).
+    pub adoptions: Vec<(String, String)>,
+}
+
+impl AppliedLexicon {
+    /// The human load-summary line — singularized as the agent guide
+    /// documents ("1 official pin, 1 adoption"), unit-testable here
+    /// instead of living as format soup inside `run()`.
+    pub fn summary_line(&self, rows: usize) -> String {
+        fn count(n: usize, noun: &str) -> String {
+            format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+        }
+        let adoptions = self
+            .adoptions
+            .iter()
+            .map(|(lemma, gloss)| format!("{lemma} ← '{gloss}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "lexicon: {} — {}, {}, {}{}",
+            count(rows, "row"),
+            count(self.coinages, "coinage"),
+            count(self.pins, "official pin"),
+            count(self.adoptions.len(), "adoption"),
+            if adoptions.is_empty() {
+                String::new()
+            } else {
+                format!(" ({adoptions})")
+            }
+        )
+    }
+}
+
 /// Validate every row and index the coinages' full paradigms (status
 /// `project`), exactly as the official paradigms are indexed — so inflected
 /// sanctioned coinages (`žabervoka`, `žabervokom`) classify instead of
 /// drowning the `--max-unknown` gate. Any invalid row is a hard error.
-pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
+pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<AppliedLexicon> {
+    let mut applied = AppliedLexicon::default();
     for row in &rows {
-        let pinned = validate_lexicon_row(index, row)?;
-        if pinned {
-            continue; // the official paradigm is already indexed
+        let disposition = validate_lexicon_row(index, row)?;
+        match &disposition {
+            RowDisposition::Coinage => applied.coinages += 1,
+            RowDisposition::OfficialPin => {
+                applied.pins += 1;
+                continue; // the official paradigm is already indexed
+            }
+            // The gloss travels in the disposition — reporting can never
+            // pick a different record than the one that passed the guards.
+            RowDisposition::GeneratedAdoption { adopted_gloss } => {
+                applied
+                    .adoptions
+                    .push((row.lemma.clone(), adopted_gloss.clone()));
+            }
         }
         let mut sink = RecordSink::default();
         sink.add(
@@ -454,17 +732,48 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
             None,
             &row.gloss,
         );
-        forms::project_paradigm_records(
-            &mut sink,
-            &row.lemma,
-            row.pos,
-            row.gender,
-            row.animate,
-            "project",
-            &row.gloss,
-        );
+        if row.indeclinable {
+            // An indeclinable noun's single surface IS its every case
+            // (V14.2 item 8): the lemma record carries the full case×number
+            // reading set on the one invariant spelling, so adjective
+            // agreement genuinely consults the REQUIRED gender ('zelena
+            // emu' flags, 'zeleny emu' is clean) — while wrongly-inflected
+            // forms ('emua') still have no record and stay unknown. The
+            // all-case readings also keep it out of the valence trigger
+            // (a form with a nominative reading is never object-shaped).
+            for (nf, _) in forms::NUMBERS {
+                for (cf, _) in forms::CASES {
+                    sink.add(
+                        &row.lemma,
+                        &forms::noun_feature_label(cf, nf),
+                        &row.lemma,
+                        0,
+                        row.pos.code(),
+                        "inflection",
+                        "project",
+                        None,
+                        &row.gloss,
+                    );
+                }
+            }
+        } else {
+            forms::project_paradigm_records(
+                &mut sink,
+                &row.lemma,
+                row.pos,
+                row.gender,
+                row.animate,
+                "project",
+                &row.gloss,
+            );
+        }
         for r in sink.into_records() {
-            if r.source == "lemma" && r.key == row.lemma_key {
+            if r.source == "lemma"
+                && r.key == row.lemma_key
+                && !matches!(disposition, RowDisposition::GeneratedAdoption { .. })
+            {
+                // Adopted lemmas are already in lemma_keys via the generated
+                // record; pushing again would duplicate suggestions.
                 index.lemma_keys.push((r.key.clone(), r.lemma.clone()));
             }
             index.by_key.entry(r.key.clone()).or_default().push(r);
@@ -473,20 +782,12 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
         // gender does (same absorbing homograph logic).
         let c = gender_char(row.gender);
         if row.pos == Pos::Noun && c != ' ' {
-            index
-                .noun_gender
-                .entry(row.lemma_key.clone())
-                .and_modify(|known| {
-                    if *known != ' ' && *known != c {
-                        *known = ' ';
-                    }
-                })
-                .or_insert(c);
+            absorb_insert(&mut index.noun_gender, row.lemma_key.clone(), c);
         }
     }
     index.lemma_keys.sort();
     index.lexicon = rows;
-    Ok(())
+    Ok(applied)
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -494,7 +795,9 @@ pub struct TokenReport {
     pub token: String,
     /// known-lemma | known-form | project | generated | unknown
     pub status: &'static str,
-    /// Distinct lemmas this surface can belong to.
+    /// Distinct lemma spellings this surface can belong to. `ambiguous`
+    /// is broader (V14.3): true when the surface has multiple lexical
+    /// READINGS, including same-spelling homographs.
     pub lemmas: Vec<String>,
     /// Analyses of the matching records (feature strings).
     pub analyses: Vec<String>,
@@ -642,6 +945,7 @@ fn check_tokens_impl(
                 let mut lemmas: Vec<String> = Vec::new();
                 let mut analyses: Vec<String> = Vec::new();
                 let mut is_lemma = false;
+                let mut lemma_readings = 0usize;
                 let mut official = false;
                 let mut project = false;
                 let mut probability: Option<f64> = None;
@@ -656,12 +960,24 @@ fn check_tokens_impl(
                     }
                     if r.source == "lemma" {
                         is_lemma = true;
+                        // Homograph honesty (V14.3 item 3): distinct
+                        // LEXICAL READINGS, not distinct spellings —
+                        // same-surface homographs (official děti verb/noun,
+                        // proposal tur aurochs/prison) are separate records
+                        // now and must read as ambiguous.
+                        lemma_readings += 1;
                     }
                     match r.status {
                         "generated" => {
-                            if probability.is_none() {
-                                probability = r.probability;
-                            }
+                            // Disagreeing homograph proposals report the
+                            // MINIMUM probability — under-claiming is the
+                            // honest direction for a field documented as
+                            // never-verification; a single concept passes
+                            // through unchanged.
+                            probability = match (probability, r.probability) {
+                                (Some(a), Some(b)) => Some(a.min(b)),
+                                (a, b) => a.or(b),
+                            };
                         }
                         "project" => project = true,
                         _ => official = true,
@@ -683,7 +999,7 @@ fn check_tokens_impl(
                     consistency: consistency_warning(index, rs, &display),
                     token: display,
                     status,
-                    ambiguous: lemmas.len() > 1,
+                    ambiguous: lemmas.len() > 1 || lemma_readings > 1,
                     lemmas,
                     analyses,
                     probability: if official || project {
@@ -865,6 +1181,12 @@ struct TokenGrammar {
     prep: Option<Vec<&'static str>>,
     /// Personal-pronoun subject (person, number), e.g. ja → ('1','j').
     subject: Option<(char, char)>,
+    /// Verb valence when EVERY official verb lemma of this token agrees:
+    /// 't'/'i'/'r', else ' ' (V14 item 3).
+    valence: char,
+    /// The token is the negation particle `ne` — genitive-of-negation
+    /// constructions must never trip the valence check.
+    negation: bool,
     official: bool,
     /// Every record is the given POS — the ambiguity gates for the
     /// conservative agreement checks ('malo' is adj AND adverb: skipped).
@@ -881,6 +1203,8 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
     let mut official = false;
     let pure = |p: &str| !recs.is_empty() && recs.iter().all(|r| r.pos == p);
     let (pure_adj, pure_noun, pure_verb) = (pure("adj"), pure("noun"), pure("verb"));
+    let mut valence = ' ';
+    let mut valence_lemmas_seen = false;
     for r in recs {
         // DELIBERATE (V13): `project` records count as verification-grade
         // here, so sanctioned coinages participate in the conservative
@@ -889,6 +1213,21 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
         // genders into `noun_gender`. Only `generated` stays excluded.
         if r.status != "generated" {
             official = true;
+        }
+        if r.pos == "verb" {
+            // Valence must hold for EVERY verb lemma this surface can
+            // belong to; any lemma without a concrete tag abstains.
+            let v = index
+                .verb_valence
+                .get(&forms::form_key(&r.lemma))
+                .copied()
+                .unwrap_or(' ');
+            if !valence_lemmas_seen {
+                valence = v;
+                valence_lemmas_seen = true;
+            } else if valence != v {
+                valence = ' ';
+            }
         }
         let feats = parse_feats(&r.analyses);
         match r.pos {
@@ -922,6 +1261,8 @@ fn token_grammar(index: &Index, recs: &[FormRecord], matched_key: &str) -> Token
         prez,
         prep,
         subject,
+        valence,
+        negation: matched_key == "ne",
         official,
         pure_adj,
         pure_noun,
@@ -988,6 +1329,40 @@ fn agreement_pass(
                 ));
             }
             continue;
+        }
+        // Valence (V14 item 3): an intransitive-only verb followed by a
+        // noun form whose EVERY reading is object-shaped. Requiring both an
+        // akuz and a gen reading targets the animate accusative-genitive
+        // syncretism (`netopyŕa`) — and by construction excludes accusative
+        // durations (`zimų`: akuz-only) and bare partitive genitives
+        // (gen-only), the two grammatical patterns nearest the trap. A
+        // preceding `ne` abstains (genitive of negation).
+        if a.pure_verb
+            && a.valence == 'i'
+            && b.pure_noun
+            && !b.noun.is_empty()
+            && !(i > 0 && grammar[i - 1].negation && !breaks.get(i).copied().unwrap_or(false))
+        {
+            // Object-shaped = every reading is a SINGULAR akuz or gen and
+            // both are present: the animate accusative-genitive syncretism,
+            // one rule for project nouns (explicit animacy) and official
+            // nouns alike — build_index's enrichment gives the latter their
+            // akuz readings. The singular guard keeps plural genitives out:
+            // partitives live there ('Pribyvaje žabervokov').
+            let object_shaped = b
+                .noun
+                .iter()
+                .all(|f| matches!(f.case, "akuz" | "gen") && f.number == 'j')
+                && b.noun.iter().any(|f| f.case == "akuz")
+                && b.noun.iter().any(|f| f.case == "gen");
+            if object_shaped {
+                reports[i + 1].agreement = Some(format!(
+                    "glagol '{}' je neprěhodny (v.intr.), ale '{}' imaje jedino objektne padeže (akuz./gen.)",
+                    reports[i].token,
+                    reports[i + 1].token
+                ));
+                continue;
+            }
         }
         // Personal pronoun + present-tense verb: person/number.
         if let Some((p, n)) = a.subject {
@@ -1189,6 +1564,66 @@ pub fn summarize(reports: &[TokenReport], gate: SummaryGate) -> Summary {
     }
 }
 
+/// check-text's JSON schema (V14.3 item 2): ONE versioned envelope for
+/// every `--json` invocation — `{schema_version, tokens, summary?,
+/// lexicon?}`. The pre-V14.3 bare token array is retired; this constant is
+/// the migration point future shape changes bump.
+pub const CHECKTEXT_JSON_SCHEMA: u32 = 1;
+
+#[derive(serde::Serialize)]
+struct AdoptionReport<'a> {
+    lemma: &'a str,
+    adopted_gloss: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct LexiconReport<'a> {
+    rows: usize,
+    coinages: usize,
+    official_pins: usize,
+    adoptions: Vec<AdoptionReport<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct CheckTextEnvelope<'a> {
+    schema_version: u32,
+    tokens: &'a [TokenReport],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<&'a Summary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lexicon: Option<LexiconReport<'a>>,
+}
+
+/// Render the REAL `--json` output — one serde pass, no string splicing;
+/// the envelope struct is the single owner of every field name, and the
+/// regression tests parse this function's actual output (the V14.2 test
+/// only exercised a hand-copied shape and could not catch drift).
+fn render_json(
+    reports: &[TokenReport],
+    summary: Option<&Summary>,
+    lexicon: Option<(usize, &AppliedLexicon)>,
+) -> Result<String> {
+    let lexicon = lexicon.map(|(rows, applied)| LexiconReport {
+        rows,
+        coinages: applied.coinages,
+        official_pins: applied.pins,
+        adoptions: applied
+            .adoptions
+            .iter()
+            .map(|(lemma, adopted_gloss)| AdoptionReport {
+                lemma,
+                adopted_gloss,
+            })
+            .collect(),
+    });
+    Ok(serde_json::to_string(&CheckTextEnvelope {
+        schema_version: CHECKTEXT_JSON_SCHEMA,
+        tokens: reports,
+        summary,
+        lexicon,
+    })?)
+}
+
 /// The `check-text` CLI entry point. With `gate` set (`--summary`), a summary
 /// is emitted and the process exits nonzero when the text fails the gate.
 /// `warnings: false` skips the false-friend computation entirely (it loads
@@ -1208,9 +1643,11 @@ pub fn run(
         BTreeMap::new()
     };
     let mut index = build_index(&entries, Some(Path::new("data/novel-words.tsv")), notes);
+    let mut lexicon_applied: Option<(usize, AppliedLexicon)> = None;
     if let Some(path) = lexicon {
         let rows = parse_lexicon(&std::fs::read_to_string(path)?)?;
-        apply_lexicon(&mut index, rows)?;
+        let n = rows.len();
+        lexicon_applied = Some((n, apply_lexicon(&mut index, rows)?));
     }
     let index = index;
     let text = std::fs::read_to_string(text_path)?;
@@ -1218,25 +1655,30 @@ pub fn run(
     let summary = gate.map(|g| summarize(&reports, g));
 
     if json {
-        let mut s = String::from("[\n");
-        for (i, r) in reports.iter().enumerate() {
-            if i > 0 {
-                s.push_str(",\n");
-            }
-            let _ = write!(s, "{}", serde_json::to_string(r)?);
-        }
-        s.push_str("\n]\n");
-        match &summary {
-            // --json --summary: an object with the token array AND the
-            // summary, so agents get both in one parse.
-            Some(summary) => println!(
-                "{{\"tokens\":{},\"summary\":{}}}",
-                s.trim_end(),
-                serde_json::to_string(summary)?
-            ),
-            None => println!("{s}"),
-        }
+        // One versioned envelope in EVERY json mode (V14.3 item 2): the
+        // lexicon dispositions ride along whether or not --summary gates —
+        // 'must never happen silently' now holds on the bare invocation
+        // too, and schema_version is the migration point the old bare
+        // array never had.
+        println!(
+            "{}",
+            render_json(
+                &reports,
+                summary.as_ref(),
+                lexicon_applied
+                    .as_ref()
+                    .map(|(rows, applied)| (*rows, applied)),
+            )?
+        );
         return fail_gate_if_needed(summary);
+    }
+
+    // The human disposition summary is part of the report (V14.1 finding 8:
+    // adoptions can appear or vanish across data refreshes and must never
+    // happen silently) — but only of the HUMAN report; JSON consumers read
+    // the `lexicon` field above.
+    if let Some((n, applied)) = &lexicon_applied {
+        println!("{}", applied.summary_line(*n));
     }
 
     let n = reports.len();
@@ -1442,6 +1884,11 @@ pub const AGREEMENT_GOLD: &[&str] = &[
     "My pijemo čistu vodu s prijateljami.",
     "Ona pisala oba pisma za pęť minut.",
     "Dobri ljudi pomagajųt vsim dětam.",
+    // V14.1 finding 4: animate accusatives after akuz-governing
+    // prepositions are grammatical — the enrichment gives the gen-shaped
+    // forms their akuz reading, singular and plural.
+    "Ględaš črěz netopyŕa.",
+    "Ględajemo na vojakov.",
 ];
 
 /// Each sentence seeds exactly one agreement error that MUST be flagged.
@@ -1450,6 +1897,35 @@ pub const AGREEMENT_ERRORS: &[&str] = &[
     "Bez voda ne možemo žiti.", // government: bez + nominative
     "Vidimo velikogo ženu.",    // gender: masc-anim acc adj + fem noun
     "K vodu idemo.",            // government: k + accusative
+];
+
+/// Valence gold sentences (V14 item 3): grammatical patterns adjacent to
+/// the intransitive-object trap — accusative of duration, negation
+/// genitive, reflexive government, transitive objects, preposition
+/// government, inverted subjects, numeral phrases — zero flags expected.
+pub const VALENCE_GOLD: &[&str] = &[
+    "On spal zimų.",         // accusative of duration (akuz-only form)
+    "Ne bųde vojaka.",       // genitive of negation (+ aux abstains)
+    "Muž sę boji netopyŕa.", // reflexive governs its own cases
+    "Vidiš netopyŕa.",       // transitive: object is the point
+    "Pęť vojakov spi.",      // numeral phrase precedes the verb
+    "On hodi do lěsa.",      // preposition between verb and noun
+    "Umre vojak.",           // inverted nominative subject escapes
+    "Ona ide spati.",        // verb + infinitive, no noun involved
+    // V14.1 finding 2: quantitative genitive PLURAL after an intransitive
+    // is grammatical even for animate project nouns — the singular guard
+    // must keep it silent (the eval and tests run the valence sets against
+    // a lexicon-loaded index).
+    "Pribyvaje žabervokov.",
+];
+
+/// Each sentence seeds exactly one valence error that MUST be flagged: an
+/// intransitive-only verb with an object-shaped (akuz/gen-syncretic
+/// animate) noun.
+pub const VALENCE_ERRORS: &[&str] = &[
+    "Hybiš netopyŕa.", // THE motivating blind-spot survivor
+    "On spi vojaka.",
+    "Idemo medvěda.",
 ];
 
 /// A nonsense verb form: must stay `unknown` (tests unknown-handling, never
@@ -1482,6 +1958,33 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         .map(|s| check_text(&index, s).iter().any(|r| r.agreement.is_some()))
         .collect();
     let errors_flagged = error_hits.iter().filter(|x| **x).count();
+    // The valence sets include project-lexicon nouns (plural-partitive
+    // gold), so they run against a lexicon-loaded index (V14.1 finding 2).
+    let mut lex_index = build_index(&entries, None, BTreeMap::new());
+    let lex_rows = parse_lexicon(
+        &std::fs::read_to_string("data/project-lexicon-fixture.tsv")
+            .expect("committed lexicon fixture"),
+    )
+    .expect("lexicon parses");
+    apply_lexicon(&mut lex_index, lex_rows).expect("lexicon validates");
+    let valence_gold_flags: usize = VALENCE_GOLD
+        .iter()
+        .map(|s| {
+            check_text(&lex_index, s)
+                .iter()
+                .filter(|r| r.agreement.is_some())
+                .count()
+        })
+        .sum();
+    let valence_hits: Vec<bool> = VALENCE_ERRORS
+        .iter()
+        .map(|s| {
+            check_text(&lex_index, s)
+                .iter()
+                .any(|r| r.agreement.is_some())
+        })
+        .collect();
+    let valence_flagged = valence_hits.iter().filter(|x| **x).count();
     let probe_unknown = check_text(&index, UNKNOWN_PROBE)
         .iter()
         .any(|r| r.status == "unknown");
@@ -1501,6 +2004,12 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         errors_flagged,
         error_hits.len(),
         if probe_unknown { "ok" } else { "FAILED" }
+    );
+    println!(
+        "  valence (V14): gold sentences {} false flags / seeded errors {}/{} flagged",
+        valence_gold_flags,
+        valence_flagged,
+        valence_hits.len(),
     );
 
     std::fs::create_dir_all(out_dir)?;
@@ -1529,6 +2038,15 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         s,
         "| seeded errors flagged | **{errors_flagged} / {}** |",
         error_hits.len()
+    )?;
+    writeln!(
+        s,
+        "| valence gold false alarms | **{valence_gold_flags}** |"
+    )?;
+    writeln!(
+        s,
+        "| seeded valence errors flagged | **{valence_flagged} / {}** |",
+        valence_hits.len()
     )?;
     writeln!(
         s,
@@ -1665,6 +2183,61 @@ mod tests {
         let reps = check_text(&index, UNKNOWN_PROBE);
         assert!(reps.iter().any(|r| r.status == "unknown"));
         assert!(reps.iter().all(|r| r.agreement.is_none()));
+        // V14.1 findings 2+4: the enrichment states the animate
+        // accusative-genitive syncretism at the record layer — the
+        // gen-shaped forms of masculine dictionary-animate nouns carry the
+        // akuz reading, singular and plural.
+        for (form, akuz) in [("netopyŕa", "akuz.jd."), ("vojakov", "akuz.mn.")] {
+            let reps = check_tokens(&index, &tokenize(form));
+            assert!(
+                reps[0].analyses.iter().any(|a| a == akuz),
+                "'{form}' must carry '{akuz}' after enrichment: {:?}",
+                reps[0].analyses
+            );
+        }
+        // Valence (V14 item 3): the gold set — every grammatical pattern
+        // adjacent to the intransitive-object trap — stays silent, and
+        // every seeded valence error is flagged. Runs against a
+        // lexicon-loaded index: the plural-partitive gold uses a project
+        // noun (V14.1 finding 2).
+        let mut lex_index = build_index(&entries, None, Default::default());
+        apply_lexicon(
+            &mut lex_index,
+            parse_lexicon(
+                &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
+            )
+            .expect("lexicon parses"),
+        )
+        .expect("lexicon validates");
+        for s in VALENCE_GOLD {
+            let reps = check_text(&lex_index, s);
+            assert!(
+                reps.iter().all(|r| r.agreement.is_none()),
+                "valence gold falsely flagged: {s}"
+            );
+        }
+        for s in VALENCE_ERRORS {
+            let reps = check_text(&lex_index, s);
+            assert!(
+                reps.iter().any(|r| r
+                    .agreement
+                    .as_deref()
+                    .is_some_and(|w| w.contains("neprěhodny"))),
+                "seeded valence error NOT flagged: {s}"
+            );
+        }
+        // CONCEDED CLASS, pinned as a decision (V14.2 item 5): an animate
+        // genitive PLURAL after an intransitive is indistinguishable from a
+        // quantitative genitive — 'Pribyvaje vojakov' carries no numeral to
+        // key on either — so 'On spi žabervokov' (a real error) must stay
+        // silent. Widening the trigger to plurals would convert every
+        // partitive into a false flag; if this assertion ever needs to
+        // flip, that trade-off is being re-made and must be re-argued.
+        let conceded = check_text(&lex_index, "On spi žabervokov.");
+        assert!(
+            conceded.iter().all(|r| r.agreement.is_none()),
+            "the plural-object concession was silently un-conceded: {conceded:?}"
+        );
     }
 
     #[test]
@@ -1781,6 +2354,8 @@ mod tests {
             noun_gender: HashMap::new(),
             prep_cases: government,
             lexicon: Vec::new(),
+            verb_valence: HashMap::new(),
+            noun_animate: HashMap::new(),
         };
         assert_eq!(suggest(&index, "domm"), vec!["dom", "doma"]);
         let dir = std::env::temp_dir().join(format!(
@@ -1849,7 +2424,7 @@ mod tests {
             .collect();
         assert_eq!(
             without,
-            ["žabervoka", "žabervoka", "Žabervok", "žabervokom"],
+            ["žabervoka", "žabervoka", "Žabervok", "žabervokom", "Emu"],
             "coinage inflections must be unknown without the lexicon"
         );
 
@@ -1857,7 +2432,7 @@ mod tests {
             &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
         )
         .expect("lexicon parses");
-        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.len(), 5);
         apply_lexicon(&mut index, rows).expect("lexicon validates");
 
         let reps = check_text(&index, &text);
@@ -1895,7 +2470,7 @@ mod tests {
         };
         let s = summarize(&reps, gate);
         assert!(s.passed, "{s:?}");
-        assert_eq!((s.project, s.unknown, s.consistency_warnings), (4, 0, 1));
+        assert_eq!((s.project, s.unknown, s.consistency_warnings), (5, 0, 1));
         let gated = summarize(
             &reps,
             SummaryGate {
@@ -1968,6 +2543,343 @@ mod tests {
         );
     }
 
+    /// V14.3 item 1: official same-surface homographs are DISTINCT records
+    /// (real entry ids), so pinning the non-first sense works and the token
+    /// carries every official reading. The confirmed failure: 'děti' verb
+    /// (CSV row 1191) swallowed 'děti' f.pl. 'children' (row 4832).
+    #[test]
+    fn official_homographs_are_distinct_records() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(&entries, None, Default::default());
+        let pin = parse_lexicon("děti\tnoun\tf\tanim\tchildren").unwrap();
+        assert_eq!(
+            validate_lexicon_row(&index, &pin[0]).expect("the noun sense must be pinnable"),
+            RowDisposition::OfficialPin
+        );
+        let recs = index.by_key.get(&forms::form_key("děti")).unwrap();
+        let lemma_pos: HashSet<&str> = recs
+            .iter()
+            .filter(|r| r.source == "lemma" && r.status == "official")
+            .map(|r| r.pos)
+            .collect();
+        assert!(
+            lemma_pos.contains("verb") && lemma_pos.contains("noun"),
+            "both official senses must exist as lemma records: {lemma_pos:?}"
+        );
+    }
+
+    /// V14.3 item 3: same-surface homograph proposals report honestly —
+    /// ambiguous is true and the probability is the conservative MINIMUM,
+    /// never the first record's number presented as "the" probability.
+    #[test]
+    fn homograph_proposals_report_min_probability_and_ambiguity() {
+        let dir = std::env::temp_dir().join(format!(
+            "slovowiki-homog-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join("novel.tsv");
+        std::fs::write(
+            &tsv,
+            "form\tpos\tp\tc\tc\tc\tc\tgloss\n\
+             turok\tnoun\t0.62\t-\t-\t-\t-\taurochs\n\
+             turok\tnoun\t0.31\t-\t-\t-\t-\tprison\n",
+        )
+        .unwrap();
+        let index = build_index(&[], Some(&tsv), Default::default());
+        let reps = check_tokens(&index, &tokenize("turok"));
+        assert_eq!(reps.len(), 1);
+        assert_eq!(reps[0].status, "generated");
+        assert!(reps[0].ambiguous, "two concepts must read as ambiguous");
+        assert_eq!(
+            reps[0].probability,
+            Some(0.31),
+            "the conservative floor, not the first record's value"
+        );
+        // Official homographs read as ambiguous too (item 1's děti).
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let full = build_index(&entries, None, Default::default());
+        let deti = check_tokens(&full, &tokenize("děti"));
+        assert!(deti[0].ambiguous, "verb + noun readings: {:?}", deti[0]);
+    }
+
+    /// V14.3 item 1 canary: a novel proposal folding equal to an OFFICIAL
+    /// lemma of a DIFFERENT POS would stand beside it and poison the
+    /// pure_* gates, silently disabling agreement checks on the official
+    /// word. Currently none exist; a refresh that introduces one must fail
+    /// here and force a decision.
+    #[test]
+    fn no_novel_proposal_shadows_official_pos() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let mut official_pos: HashMap<String, HashSet<&str>> = HashMap::new();
+        for e in &entries {
+            for byform in e.citation_byforms() {
+                if let Some(clean) = forms::citation(byform.form.as_str()) {
+                    official_pos
+                        .entry(forms::form_key(&clean))
+                        .or_default()
+                        .insert(byform.entry.pos.code());
+                }
+            }
+        }
+        let tsv = std::fs::read_to_string("data/novel-words.tsv").expect("novel words");
+        let mut offenders: Vec<String> = Vec::new();
+        for line in tsv.lines().skip(1) {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() < 8 {
+                continue;
+            }
+            let key = forms::form_key(cols[0]);
+            if let Some(pos_set) = official_pos.get(&key) {
+                if !pos_set.contains(cols[1]) {
+                    offenders.push(format!("{} ({}) vs official {pos_set:?}", cols[0], cols[1]));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "novel proposals now shadow official lemmas of another POS — decide whether the \
+             purity poisoning is acceptable for: {offenders:?}"
+        );
+    }
+
+    /// V14.2 item 3 canary: the enrichment abstains on animate lemmas whose
+    /// gender absorbed to ambiguous — correct conservatism, but SILENT
+    /// coverage loss if data drifts there. Current data has none; a refresh
+    /// introducing one fails HERE and forces an explicit decision.
+    #[test]
+    fn no_animate_lemma_has_absorbed_gender() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let (gender, animate) = noun_trait_maps(&entries);
+        let absorbed: Vec<&String> = animate
+            .iter()
+            .filter(|(k, a)| **a == 'a' && gender.get(*k).copied().unwrap_or(' ') != 'm')
+            .map(|(k, _)| k)
+            .collect();
+        assert!(
+            absorbed.is_empty(),
+            "animate lemmas with non-masculine/absorbed gender now exist — decide whether the \
+             enrichment abstention is still right for: {absorbed:?}"
+        );
+    }
+
+    /// V14.3 item 2: the MANDATED regression tests, against render_json's
+    /// REAL output (the retired V14.2 test asserted on its own hand copy of
+    /// the shape and could not catch drift). Both modes: with --summary the
+    /// envelope carries summary AND lexicon; without it, tokens + lexicon
+    /// only — and the first byte is '{', so leading prose is impossible by
+    /// construction.
+    #[test]
+    fn json_envelope_real_output_parses_in_both_modes() {
+        let reports = vec![TokenReport {
+            token: "x".into(),
+            status: "known-lemma",
+            lemmas: Vec::new(),
+            analyses: Vec::new(),
+            ambiguous: false,
+            probability: None,
+            suggestions: Vec::new(),
+            warning: None,
+            severity: None,
+            prefer: Vec::new(),
+            agreement: None,
+            consistency: None,
+        }];
+        let applied = AppliedLexicon {
+            coinages: 3,
+            pins: 1,
+            adoptions: vec![("emu".into(), "emu bird".into())],
+        };
+        let gate = SummaryGate {
+            max_unknown: 0,
+            max_agreement: 0,
+            max_severe_warnings: None,
+            max_consistency: None,
+        };
+        let summary = summarize(&reports, gate);
+        let with_summary =
+            render_json(&reports, Some(&summary), Some((5, &applied))).expect("render");
+        let v: serde_json::Value = serde_json::from_str(&with_summary).expect("parses");
+        assert_eq!(v["schema_version"], CHECKTEXT_JSON_SCHEMA as u64);
+        assert_eq!(v["lexicon"]["adoptions"][0]["adopted_gloss"], "emu bird");
+        assert_eq!(v["lexicon"]["official_pins"], 1);
+        assert!(v["summary"]["passed"].is_boolean());
+
+        let bare = render_json(&reports, None, Some((5, &applied))).expect("render");
+        assert!(bare.starts_with('{'), "no leading prose possible");
+        let v: serde_json::Value = serde_json::from_str(&bare).expect("parses");
+        assert!(v["summary"].is_null(), "no summary key without --summary");
+        assert_eq!(
+            v["lexicon"]["rows"], 5,
+            "dispositions must be visible in BARE --json too"
+        );
+        assert_eq!(v["tokens"].as_array().unwrap().len(), 1);
+
+        // The human line still singularizes as the guide documents.
+        assert_eq!(
+            applied.summary_line(5),
+            "lexicon: 5 rows — 3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"
+        );
+    }
+
+    /// V14.1 finding 5: the absorb discipline covers untagged/aux senses —
+    /// a homograph with one tagged and one untagged official sense abstains.
+    #[test]
+    fn valence_absorbs_untagged_and_aux_senses() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(&entries, None, Default::default());
+        assert_eq!(
+            index.verb_valence.get(&forms::form_key("iměti")),
+            Some(&' '),
+            "iměti has v.tr. and v.aux. senses — must abstain"
+        );
+        assert_eq!(
+            index.verb_valence.get(&forms::form_key("hybiti")),
+            Some(&'i'),
+            "a pure v.intr. lemma keeps its concrete valence"
+        );
+        // The shared animacy vocabulary (finding 10): one parser, both sides.
+        assert!(parse_animacy("indecl").unwrap().1);
+        assert_eq!(parse_animacy("anim").unwrap(), (Some(true), false));
+        assert!(parse_animacy("dead").is_err());
+    }
+
+    /// V14 item 2: indeclinable lexicon nouns get a lemma record ONLY (a
+    /// wrongly-inflected form of them must stay unknown), and a project may
+    /// ADOPT a generated proposal of the same surface and POS — supplying
+    /// the metadata the proposal lacks, so its paradigm indexes as project.
+    #[test]
+    fn indeclinable_and_generated_adoption() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let mut index = build_index(&entries, None, Default::default());
+        let rows = parse_lexicon(
+            &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
+        )
+        .expect("lexicon parses");
+        apply_lexicon(&mut index, rows).expect("lexicon validates");
+        let emu = check_text(&index, "Emu spi pri tebě.");
+        assert_eq!(
+            emu.iter().find(|r| r.token == "Emu").unwrap().status,
+            "project"
+        );
+        let bad = check_text(&index, "Vidiš emua.");
+        assert!(
+            bad.iter()
+                .any(|r| r.token == "emua" && r.status == "unknown"),
+            "a wrongly-inflected indeclinable must stay unknown: {bad:?}"
+        );
+        // V14.2 item 8: the required gender is REAL — the invariant surface
+        // carries every case reading, so adjective agreement consults it.
+        let mismatch = check_text(&index, "Vidiš zelenu emu.");
+        assert!(
+            mismatch.iter().any(|r| r.agreement.is_some()),
+            "gender mismatch with an indeclinable must flag: {mismatch:?}"
+        );
+        let clean = check_text(&index, "Vidiš zelenogo emu.");
+        assert!(
+            clean.iter().all(|r| r.agreement.is_none()),
+            "agreeing adjective + indeclinable must stay clean: {clean:?}"
+        );
+        // And the all-case readings keep indeclinables out of the valence
+        // trigger: a nominative reading is never object-shaped.
+        let valence = check_text(&index, "On spi emu.");
+        assert!(
+            valence.iter().all(|r| r.agreement.is_none()),
+            "indeclinable after an intransitive must not fire valence: {valence:?}"
+        );
+
+        // Adoption, against a synthetic novel-words file (the committed one
+        // may legitimately gain/lose rows on a data refresh).
+        let dir = std::env::temp_dir().join(format!(
+            "slovowiki-adopt-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join("novel.tsv");
+        std::fs::write(
+            &tsv,
+            "form\tpos\tp\tc\tc\tc\tc\tgloss\n\
+             emuk\tnoun\t0.20\t-\t-\t-\t-\temu bird\n\
+             žabervočiti\tverb\t0.20\t-\t-\t-\t-\tto jabberwock\n",
+        )
+        .unwrap();
+        let mut synthetic = build_index(&[], Some(&tsv), Default::default());
+        let adopt = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
+        let disposition = validate_lexicon_row(&synthetic, &adopt[0]).expect("adoption validates");
+        assert!(
+            matches!(
+                &disposition,
+                RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss == "emu bird"
+            ),
+            "{disposition:?}"
+        );
+        apply_lexicon(&mut synthetic, adopt).unwrap();
+        let reps = check_tokens(&synthetic, &tokenize("emuka"));
+        assert!(
+            reps.iter().any(|r| r.status == "project"),
+            "adopted proposal's paradigm must index as project: {reps:?}"
+        );
+        // Declared POS must match the proposal being adopted.
+        let mismatch = parse_lexicon("žabervočiti\tnoun\tm\tanim\tx").unwrap();
+        let err = validate_lexicon_row(&synthetic, &mismatch[0]).unwrap_err();
+        assert!(err.to_string().contains("adopts generated"), "{err}");
+        // V14.1 finding 8: adoption demands exact surface spelling and a
+        // shared concept token — and it is REPORTED, never silent. (Checked
+        // against a FRESH index: once adopted, the key also holds project
+        // records and any further collision is the generic hard error.)
+        let mut fresh = build_index(&[], Some(&tsv), Default::default());
+        let respelled = parse_lexicon("Emuk\tnoun\tm\tanim\temu bird").unwrap();
+        let err = validate_lexicon_row(&fresh, &respelled[0]).unwrap_err();
+        assert!(err.to_string().contains("spelled"), "{err}");
+        let unrelated = parse_lexicon("emuk\tnoun\tm\tanim\ttreasure chest").unwrap();
+        let err = validate_lexicon_row(&fresh, &unrelated[0]).unwrap_err();
+        assert!(err.to_string().contains("adopts no proposal"), "{err}");
+        let again = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
+        let applied = apply_lexicon(&mut fresh, again).expect("adoption applies");
+        assert_eq!(
+            (applied.coinages, applied.pins, applied.adoptions.len()),
+            (0, 0, 1)
+        );
+        assert_eq!(applied.adoptions[0].0, "emuk");
+        assert!(applied.adoptions[0].1.contains("emu bird"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// V14.2 item 2: adoption considers EVERY same-POS proposal — the
+    /// committed novel-words data has real same-surface homograph proposals
+    /// (tur/aurochs and tur/"prison, jail"), and each concept must be
+    /// adoptable while an unrelated gloss rejects quoting ALL candidates.
+    #[test]
+    fn adoption_handles_same_pos_homograph_proposals() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let index = build_index(
+            &entries,
+            Some(Path::new("data/novel-words.tsv")),
+            Default::default(),
+        );
+        let prison = parse_lexicon("tur\tnoun\tm\tinanim\tprison cell").unwrap();
+        let d = validate_lexicon_row(&index, &prison[0]).expect("prison sense adopts");
+        assert!(
+            matches!(&d, RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss.contains("prison")),
+            "{d:?}"
+        );
+        let aurochs = parse_lexicon("tur\tnoun\tm\tanim\taurochs bull").unwrap();
+        let d = validate_lexicon_row(&index, &aurochs[0]).expect("aurochs sense adopts");
+        assert!(
+            matches!(&d, RowDisposition::GeneratedAdoption { adopted_gloss } if adopted_gloss.contains("aurochs")),
+            "{d:?}"
+        );
+        let unrelated = parse_lexicon("tur\tnoun\tm\tinanim\ttreasure chest").unwrap();
+        let err = validate_lexicon_row(&index, &unrelated[0]).unwrap_err();
+        assert!(
+            err.to_string().contains("aurochs") && err.to_string().contains("prison"),
+            "rejection must quote every candidate gloss: {err}"
+        );
+    }
+
     /// V13 item 1: a broken lexicon is a hard error, never a silent
     /// weakening of the gate — syntax, crate-requirement, collision, and
     /// official-pin contradictions all reject.
@@ -1981,6 +2893,7 @@ mod tests {
             ("žabervok\tnoun\tm\t\tjabberwock", "noun without animacy"),
             ("žabervočiti\tverb\tm\t\tto jabberwock", "gender on a verb"),
             ("žabervok\tnoun\tm\tanim\t", "empty gloss"),
+            ("žabervočiti\tverb\t\tindecl\tx", "indecl on a verb"),
             (
                 "žabervok\tnoun\tm\tanim\tjabberwock\nžabervok\tnoun\tm\tanim\tjabberwock",
                 "duplicate lemma",
@@ -1996,7 +2909,10 @@ mod tests {
         )
         .expect("valid rows");
         for row in &ok {
-            assert!(!validate_lexicon_row(&index, row).expect("validates"));
+            assert_eq!(
+                validate_lexicon_row(&index, row).expect("validates"),
+                RowDisposition::Coinage
+            );
         }
         // Semantic layer, against the real index.
         for semantic in [
@@ -2028,7 +2944,10 @@ mod tests {
         // The official PIN path: voda with the dictionary's own gender is
         // accepted and marked pinned (no project paradigm re-indexed).
         let pin = parse_lexicon("voda\tnoun\tf\tinanim\twater").unwrap();
-        assert!(validate_lexicon_row(&index, &pin[0]).expect("pin validates"));
+        assert_eq!(
+            validate_lexicon_row(&index, &pin[0]).expect("pin validates"),
+            RowDisposition::OfficialPin
+        );
 
         // Rows validate SEQUENTIALLY against the growing index: a later row
         // colliding with an earlier coinage's inflected form is rejected,

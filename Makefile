@@ -6,7 +6,7 @@ OUT ?= target/eval
 
 .PHONY: extract-proto extract-lemmas extract-raw-slavic extract-enrich extract-all \
 	eval proto-eval corpus-eval aspect-eval audit export serve explain coverage check fmt test clean \
-	search-perf probe
+	search-perf probe manifest
 
 # One-time: stream the 23GB dump into the Proto-Slavic cache (enables +proto-derived).
 extract-proto:
@@ -68,6 +68,11 @@ search-perf:
 # a reported metric, never a gate. Writes target/eval/translation-probe.md.
 probe:
 	cargo run --release -- translation-probe --site "$(SITE)" --out "$(OUT)"
+
+# Verify the pinnable-release manifest (V14 / #74); `--write` via cargo to
+# regenerate after a deliberate data change.
+manifest:
+	cargo run --release -- data-manifest
 
 # Spot-check one word/gloss with a full rule trace, e.g. `make explain W=duša`.
 explain:
