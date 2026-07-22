@@ -234,6 +234,9 @@ pub struct LexiconRow {
     /// otherwise.
     pub gender: Option<crate::model::Gender>,
     pub animate: bool,
+    /// Indeclinable loan (V14 item 2): lemma record only, NO paradigm — a
+    /// wrongly-inflected form of it must stay `unknown`.
+    pub indeclinable: bool,
     /// English gloss of the source concept — drives the consistency check.
     pub gloss: String,
     /// Content tokens of `gloss`, normalized exactly as the English API
@@ -286,26 +289,31 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
                 anyhow::bail!("lexicon line {n}: gender must be m|f|n or blank, got '{other}'")
             }
         };
-        let animate = match animacy_raw {
-            "" => None,
-            "anim" => Some(true),
-            "inanim" => Some(false),
+        // `indecl` is a VALUE of the animacy column, not a sixth column —
+        // the 5-column format and the coin-check hand-off stay intact.
+        let (animate, indeclinable) = match animacy_raw {
+            "" => (None, false),
+            "anim" => (Some(true), false),
+            "inanim" => (Some(false), false),
+            "indecl" => (Some(false), true),
             other => {
                 anyhow::bail!(
-                    "lexicon line {n}: animacy must be anim|inanim or blank, got '{other}'"
+                    "lexicon line {n}: animacy must be anim|inanim|indecl or blank, got '{other}'"
                 )
             }
         };
         if pos == Pos::Noun {
             // A project lexicon exists to control the paradigm explicitly
             // (`ISV::noun_with`); a guessed gender would silently weaken it.
+            // Indeclinables still declare gender — adjective agreement needs
+            // it (`zeleny emu`).
             anyhow::ensure!(
                 gender.is_some(),
                 "lexicon line {n}: nouns must declare gender (m|f|n)"
             );
             anyhow::ensure!(
                 animate.is_some(),
-                "lexicon line {n}: nouns must declare animacy (anim|inanim)"
+                "lexicon line {n}: nouns must declare animacy (anim|inanim|indecl)"
             );
         } else {
             anyhow::ensure!(
@@ -332,6 +340,7 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
             pos,
             gender,
             animate: animate.unwrap_or(false),
+            indeclinable,
             gloss: gloss.to_string(),
             gloss_tokens: crate::site::english_gloss_tokens(gloss),
         });
@@ -339,13 +348,28 @@ pub fn parse_lexicon(text: &str) -> Result<Vec<LexiconRow>> {
     Ok(rows)
 }
 
+/// What a validated lexicon row IS, relative to the existing index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowDisposition {
+    /// A clean coinage: no existing record under its key.
+    Coinage,
+    /// Pins an official (or grammar-supplement) lemma — its paradigm is
+    /// already indexed; declared metadata must agree with the dictionary.
+    OfficialPin,
+    /// Adopts a GENERATED lemma of the same surface and POS (V14 item 2):
+    /// the project vouches for the reconstruction and supplies the
+    /// gender/animacy metadata the generated record lacks, so the paradigm
+    /// can be indexed as `project`.
+    GeneratedAdoption,
+}
+
 /// Validate one lexicon row against the built index: the row must pass
 /// coin-check's collision axis (no existing lemma or inflected form under its
-/// key) OR pin an official lemma whose POS/gender agree with the declaration.
-/// The crate's citation-form requirements (verbs cite `-ti`, adjectives
-/// `-y`/`-i`, nouns must be declinable) are enforced too. Returns `true` when
-/// the row pins an official word (its paradigm is already indexed).
-pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
+/// key), pin an official lemma whose POS/gender agree with the declaration,
+/// or adopt a same-surface generated lemma of the same POS. The crate's
+/// citation-form requirements (verbs cite `-ti`, adjectives `-y`/`-i`,
+/// declinable nouns must decline) are enforced too.
+pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDisposition> {
     match row.pos {
         Pos::Verb => {
             anyhow::ensure!(
@@ -366,6 +390,7 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
                 row.lemma
             );
         }
+        Pos::Noun if row.indeclinable => {} // nothing to decline, nothing to probe
         Pos::Noun => {
             let declinable = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 forms::noun_paradigm_forms_with_animacy(&row.lemma, row.gender, row.animate)
@@ -380,7 +405,7 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
         _ => anyhow::bail!("lexicon lemma '{}': unsupported POS", row.lemma),
     }
     let Some(recs) = index.by_key.get(&row.lemma_key) else {
-        return Ok(false); // clean coinage: no collision
+        return Ok(RowDisposition::Coinage); // no collision
     };
     let pins: Vec<&FormRecord> = recs
         .iter()
@@ -391,6 +416,26 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
         })
         .collect();
     if pins.is_empty() {
+        // Adoption path: EVERY colliding record is a generated LEMMA of this
+        // same surface (generated lemmas carry no inflections, so anything
+        // else under the key is a real collision), and the declared POS
+        // matches one of them.
+        let all_generated_lemmas = recs.iter().all(|r| {
+            r.status == "generated"
+                && r.source == "lemma"
+                && forms::form_key(&r.lemma) == row.lemma_key
+        });
+        if all_generated_lemmas {
+            anyhow::ensure!(
+                recs.iter().any(|r| r.pos == row.pos.code()),
+                "lexicon lemma '{}' adopts generated '{}' but declares pos '{}' while the proposal is '{}'",
+                row.lemma,
+                recs[0].lemma,
+                row.pos.code(),
+                recs[0].pos
+            );
+            return Ok(RowDisposition::GeneratedAdoption);
+        }
         let c = &recs[0];
         anyhow::bail!(
             "lexicon lemma '{}' collides with existing {} {} of '{}' ({}) — run coin-check and choose another surface",
@@ -420,7 +465,7 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<bool> {
             );
         }
     }
-    Ok(true)
+    Ok(RowDisposition::OfficialPin)
 }
 
 fn gender_char(g: Option<crate::model::Gender>) -> char {
@@ -438,8 +483,8 @@ fn gender_char(g: Option<crate::model::Gender>) -> char {
 /// drowning the `--max-unknown` gate. Any invalid row is a hard error.
 pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
     for row in &rows {
-        let pinned = validate_lexicon_row(index, row)?;
-        if pinned {
+        let disposition = validate_lexicon_row(index, row)?;
+        if disposition == RowDisposition::OfficialPin {
             continue; // the official paradigm is already indexed
         }
         let mut sink = RecordSink::default();
@@ -454,17 +499,26 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
             None,
             &row.gloss,
         );
-        forms::project_paradigm_records(
-            &mut sink,
-            &row.lemma,
-            row.pos,
-            row.gender,
-            row.animate,
-            "project",
-            &row.gloss,
-        );
+        // Indeclinables get the lemma record ONLY: a wrongly-inflected form
+        // of them must stay `unknown` — that is the point of the flag.
+        if !row.indeclinable {
+            forms::project_paradigm_records(
+                &mut sink,
+                &row.lemma,
+                row.pos,
+                row.gender,
+                row.animate,
+                "project",
+                &row.gloss,
+            );
+        }
         for r in sink.into_records() {
-            if r.source == "lemma" && r.key == row.lemma_key {
+            if r.source == "lemma"
+                && r.key == row.lemma_key
+                && disposition != RowDisposition::GeneratedAdoption
+            {
+                // Adopted lemmas are already in lemma_keys via the generated
+                // record; pushing again would duplicate suggestions.
                 index.lemma_keys.push((r.key.clone(), r.lemma.clone()));
             }
             index.by_key.entry(r.key.clone()).or_default().push(r);
@@ -1849,7 +1903,7 @@ mod tests {
             .collect();
         assert_eq!(
             without,
-            ["žabervoka", "žabervoka", "Žabervok", "žabervokom"],
+            ["žabervoka", "žabervoka", "Žabervok", "žabervokom", "Emu"],
             "coinage inflections must be unknown without the lexicon"
         );
 
@@ -1857,7 +1911,7 @@ mod tests {
             &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
         )
         .expect("lexicon parses");
-        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.len(), 5);
         apply_lexicon(&mut index, rows).expect("lexicon validates");
 
         let reps = check_text(&index, &text);
@@ -1895,7 +1949,7 @@ mod tests {
         };
         let s = summarize(&reps, gate);
         assert!(s.passed, "{s:?}");
-        assert_eq!((s.project, s.unknown, s.consistency_warnings), (4, 0, 1));
+        assert_eq!((s.project, s.unknown, s.consistency_warnings), (5, 0, 1));
         let gated = summarize(
             &reps,
             SummaryGate {
@@ -1968,6 +2022,66 @@ mod tests {
         );
     }
 
+    /// V14 item 2: indeclinable lexicon nouns get a lemma record ONLY (a
+    /// wrongly-inflected form of them must stay unknown), and a project may
+    /// ADOPT a generated proposal of the same surface and POS — supplying
+    /// the metadata the proposal lacks, so its paradigm indexes as project.
+    #[test]
+    fn indeclinable_and_generated_adoption() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let mut index = build_index(&entries, None, Default::default());
+        let rows = parse_lexicon(
+            &std::fs::read_to_string("data/project-lexicon-fixture.tsv").expect("lexicon"),
+        )
+        .expect("lexicon parses");
+        apply_lexicon(&mut index, rows).expect("lexicon validates");
+        let emu = check_text(&index, "Emu spi pri tebě.");
+        assert_eq!(
+            emu.iter().find(|r| r.token == "Emu").unwrap().status,
+            "project"
+        );
+        let bad = check_text(&index, "Vidiš emua.");
+        assert!(
+            bad.iter()
+                .any(|r| r.token == "emua" && r.status == "unknown"),
+            "a wrongly-inflected indeclinable must stay unknown: {bad:?}"
+        );
+
+        // Adoption, against a synthetic novel-words file (the committed one
+        // may legitimately gain/lose rows on a data refresh).
+        let dir = std::env::temp_dir().join(format!(
+            "slovowiki-adopt-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join("novel.tsv");
+        std::fs::write(
+            &tsv,
+            "form\tpos\tp\tc\tc\tc\tc\tgloss\n\
+             emuk\tnoun\t0.20\t-\t-\t-\t-\temu bird\n\
+             žabervočiti\tverb\t0.20\t-\t-\t-\t-\tto jabberwock\n",
+        )
+        .unwrap();
+        let mut synthetic = build_index(&[], Some(&tsv), Default::default());
+        let adopt = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
+        assert_eq!(
+            validate_lexicon_row(&synthetic, &adopt[0]).expect("adoption validates"),
+            RowDisposition::GeneratedAdoption
+        );
+        apply_lexicon(&mut synthetic, adopt).unwrap();
+        let reps = check_tokens(&synthetic, &tokenize("emuka"));
+        assert!(
+            reps.iter().any(|r| r.status == "project"),
+            "adopted proposal's paradigm must index as project: {reps:?}"
+        );
+        // Declared POS must match the proposal being adopted.
+        let mismatch = parse_lexicon("žabervočiti\tnoun\tm\tanim\tx").unwrap();
+        let err = validate_lexicon_row(&synthetic, &mismatch[0]).unwrap_err();
+        assert!(err.to_string().contains("adopts generated"), "{err}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// V13 item 1: a broken lexicon is a hard error, never a silent
     /// weakening of the gate — syntax, crate-requirement, collision, and
     /// official-pin contradictions all reject.
@@ -1981,6 +2095,7 @@ mod tests {
             ("žabervok\tnoun\tm\t\tjabberwock", "noun without animacy"),
             ("žabervočiti\tverb\tm\t\tto jabberwock", "gender on a verb"),
             ("žabervok\tnoun\tm\tanim\t", "empty gloss"),
+            ("žabervočiti\tverb\t\tindecl\tx", "indecl on a verb"),
             (
                 "žabervok\tnoun\tm\tanim\tjabberwock\nžabervok\tnoun\tm\tanim\tjabberwock",
                 "duplicate lemma",
@@ -1996,7 +2111,10 @@ mod tests {
         )
         .expect("valid rows");
         for row in &ok {
-            assert!(!validate_lexicon_row(&index, row).expect("validates"));
+            assert_eq!(
+                validate_lexicon_row(&index, row).expect("validates"),
+                RowDisposition::Coinage
+            );
         }
         // Semantic layer, against the real index.
         for semantic in [
@@ -2028,7 +2146,10 @@ mod tests {
         // The official PIN path: voda with the dictionary's own gender is
         // accepted and marked pinned (no project paradigm re-indexed).
         let pin = parse_lexicon("voda\tnoun\tf\tinanim\twater").unwrap();
-        assert!(validate_lexicon_row(&index, &pin[0]).expect("pin validates"));
+        assert_eq!(
+            validate_lexicon_row(&index, &pin[0]).expect("pin validates"),
+            RowDisposition::OfficialPin
+        );
 
         // Rows validate SEQUENTIALLY against the growing index: a later row
         // colliding with an earlier coinage's inflected form is rejected,

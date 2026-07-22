@@ -106,6 +106,8 @@ pub struct Overrides {
     pub pos: Option<crate::model::Pos>,
     pub gender: Option<crate::model::Gender>,
     pub animate: Option<bool>,
+    /// `--animacy indecl` (V14 item 2): lemma-only, no paradigm.
+    pub indeclinable: bool,
     pub gloss: Option<String>,
     pub lexicon_row: bool,
 }
@@ -132,11 +134,12 @@ impl Overrides {
             Some("n") => Some(crate::model::Gender::Neuter),
             Some(other) => anyhow::bail!("--gender must be m|f|n, got '{other}'"),
         };
-        let animate = match animacy {
-            None => None,
-            Some("anim") => Some(true),
-            Some("inanim") => Some(false),
-            Some(other) => anyhow::bail!("--animacy must be anim|inanim, got '{other}'"),
+        let (animate, indeclinable) = match animacy {
+            None => (None, false),
+            Some("anim") => (Some(true), false),
+            Some("inanim") => (Some(false), false),
+            Some("indecl") => (Some(false), true),
+            Some(other) => anyhow::bail!("--animacy must be anim|inanim|indecl, got '{other}'"),
         };
         anyhow::ensure!(
             !lexicon_row || gloss.as_deref().is_some_and(|g| !g.trim().is_empty()),
@@ -146,6 +149,7 @@ impl Overrides {
             pos,
             gender,
             animate,
+            indeclinable,
             gloss,
             lexicon_row,
         })
@@ -167,6 +171,46 @@ fn model_gender_label(g: crate::model::Gender) -> &'static str {
         crate::model::Gender::Neuter => "n",
         crate::model::Gender::Unknown => "?",
     }
+}
+
+/// Build the project-lexicon TSV row for a validated word: declared
+/// metadata passed through, the crate's guess filling undeclared noun
+/// gender/animacy, `indecl` carried in the animacy column, and blanks for
+/// non-nouns. Emission is POS-agnostic — verb and adjective rows are as
+/// mechanical as noun rows (regression-pinned: the claim that only noun
+/// rows emit was a pre-V13 memory).
+fn build_lexicon_row(
+    word: &str,
+    pos: crate::model::Pos,
+    overrides: &Overrides,
+    guessed_gender: Option<&'static str>,
+    guessed_animate: Option<bool>,
+) -> String {
+    let (g, a) = if pos == crate::model::Pos::Noun {
+        (
+            overrides
+                .gender
+                .map(model_gender_label)
+                .or(guessed_gender)
+                .unwrap_or(""),
+            if overrides.indeclinable {
+                "indecl"
+            } else {
+                match overrides.animate.or(guessed_animate) {
+                    Some(true) => "anim",
+                    Some(false) => "inanim",
+                    None => "",
+                }
+            },
+        )
+    } else {
+        ("", "")
+    };
+    format!(
+        "{word}\t{}\t{g}\t{a}\t{}",
+        pos.code(),
+        overrides.gloss.as_deref().unwrap_or("").trim()
+    )
 }
 
 /// Validate one constructed lexicon-row line through the SAME parse +
@@ -261,7 +305,10 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     let overridden = pos == crate::model::Pos::Noun
         && (overrides.gender.is_some() || overrides.animate.is_some());
     let mut sink = crate::forms::RecordSink::default();
-    if overridden {
+    if overrides.indeclinable {
+        // Indeclinable: no paradigm to render — the lexicon row will carry
+        // a lemma record only.
+    } else if overridden {
         // Fall back to the crate's guess for whichever axis was NOT declared,
         // so the paradigm always reflects one concrete (gender, animacy).
         let gender = overrides.gender.or(match guessed_gender {
@@ -313,7 +360,7 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
             }
         }
         if let (Some(declared), Some(guessed)) = (overrides.animate, guessed_animate) {
-            if declared != guessed {
+            if !overrides.indeclinable && declared != guessed {
                 let label = |a: bool| if a { "anim" } else { "inanim" };
                 divergences.push(format!(
                     "crate guesses {}; you declared {}",
@@ -330,27 +377,7 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     // AFTER the full four-axis report (like check-text's summary gate): the
     // report is precisely the diagnostic that explains a rejection.
     let lexicon_row: Option<Result<String>> = if overrides.lexicon_row {
-        let (g, a) = if pos == crate::model::Pos::Noun {
-            (
-                overrides
-                    .gender
-                    .map(model_gender_label)
-                    .or(guessed_gender)
-                    .unwrap_or(""),
-                match overrides.animate.or(guessed_animate) {
-                    Some(true) => "anim",
-                    Some(false) => "inanim",
-                    None => "",
-                },
-            )
-        } else {
-            ("", "")
-        };
-        let row = format!(
-            "{word}\t{}\t{g}\t{a}\t{}",
-            pos.code(),
-            overrides.gloss.as_deref().unwrap_or("").trim()
-        );
+        let row = build_lexicon_row(word, pos, overrides, guessed_gender, guessed_animate);
         Some(validated_lexicon_row(&index, row, word))
     } else {
         None
@@ -377,7 +404,7 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
                 "guessed_animacy": guessed_animate.map(|a| if a { "anim" } else { "inanim" }),
                 "declared_pos": overrides.pos.map(|p| p.code()),
                 "declared_gender": overrides.gender.map(model_gender_label),
-                "declared_animacy": overrides.animate.map(|a| if a { "anim" } else { "inanim" }),
+                "declared_animacy": if overrides.indeclinable { Some("indecl") } else { overrides.animate.map(|a| if a { "anim" } else { "inanim" }) },
                 "divergences": divergences,
                 "paradigm": paradigm
                     .iter()
@@ -449,7 +476,12 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
         format!(
             ", declared {}{}",
             pos.code(),
-            if pos == crate::model::Pos::Noun {
+            if pos == crate::model::Pos::Noun && overrides.indeclinable {
+                match overrides.gender.map(model_gender_label) {
+                    Some(g) => format!(" {g}.indecl"),
+                    None => " indecl".to_string(),
+                }
+            } else if pos == crate::model::Pos::Noun {
                 describe_noun(overrides.gender.map(model_gender_label), overrides.animate)
             } else {
                 String::new()
@@ -467,11 +499,18 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     } else {
         format!("guess: {}", guessed_pos.code())
     };
-    println!(
-        "  declinability: as {}{declared} ({guessed}) — {} paradigm cells, e.g.:",
-        pos.code(),
-        paradigm.len()
-    );
+    if overrides.indeclinable {
+        println!(
+            "  declinability: as {}{declared} — indeclinable, lemma-only (no paradigm)",
+            pos.code()
+        );
+    } else {
+        println!(
+            "  declinability: as {}{declared} ({guessed}) — {} paradigm cells, e.g.:",
+            pos.code(),
+            paradigm.len()
+        );
+    }
     for (analyses, form) in paradigm.iter().take(6) {
         println!("                   {form:<20} {analyses}");
     }
@@ -595,6 +634,53 @@ mod tests {
         )
         .expect("clean coinage validates");
         assert_eq!(ok, "žabervok\tnoun\tm\tanim\tjabberwock");
+    }
+
+    /// V14 item 2 regression: --lexicon-row emission is POS-agnostic (the
+    /// "only noun rows emit" report was a pre-V13 memory), and indecl rides
+    /// the animacy column.
+    #[test]
+    fn lexicon_row_emission_is_pos_agnostic() {
+        let with_gloss = |gloss: &str| Overrides {
+            gloss: Some(gloss.into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_lexicon_row(
+                "mråviti",
+                crate::model::Pos::Verb,
+                &with_gloss("to antify"),
+                None,
+                None
+            ),
+            "mråviti\tverb\t\t\tto antify"
+        );
+        assert_eq!(
+            build_lexicon_row(
+                "žabervočny",
+                crate::model::Pos::Adjective,
+                &with_gloss("jabberwockian"),
+                None,
+                None
+            ),
+            "žabervočny\tadj\t\t\tjabberwockian"
+        );
+        let indecl = Overrides {
+            gender: Some(crate::model::Gender::Masculine),
+            indeclinable: true,
+            gloss: Some("emu".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_lexicon_row(
+                "emu",
+                crate::model::Pos::Noun,
+                &indecl,
+                Some("m"),
+                Some(false)
+            ),
+            "emu\tnoun\tm\tindecl\temu"
+        );
     }
 
     /// The crate's guess is exposed for the divergence report: 'žabervok'

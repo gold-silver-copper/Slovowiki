@@ -1511,7 +1511,11 @@ paradigm (the `ISV::noun_with` call a real consumer makes; animate
 masculines take genitive-shaped accusatives) while still printing the guess
 and flagging every divergence ("ending suggests gender m; you declared f").
 With `--lexicon-row --gloss <english concept>` it emits the validated
-project-lexicon TSV row (see below; also a `lexicon_row` field in `--json`),
+project-lexicon TSV row for ANY supported POS — verbs and adjectives as
+mechanically as nouns (`coin-check mråviti --gloss "to antify"
+--lexicon-row` → `mråviti	verb			to antify`), with `--animacy indecl`
+carried through for indeclinable loans (see below; also a `lexicon_row`
+field in `--json`),
 so the coinage workflow chains mechanically:
 `coin-check → append row → check-text --lexicon`. The row is validated by
 the same rules `check-text --lexicon` applies — an invalid row fails here,
@@ -1527,10 +1531,13 @@ one row per word, five tab-separated columns
     lemma	pos	gender	animacy	gloss
 
 with `pos` ∈ `noun|adj|verb`, `gender` ∈ `m|f|n` and `animacy` ∈
-`anim|inanim` (both REQUIRED for nouns — the lexicon exists to control the
-paradigm explicitly — and forbidden otherwise), and a non-empty English
-`gloss` naming the source concept. Blank lines and `#` comments are
-skipped. `check-text --lexicon <file>` then:
+`anim|inanim|indecl` (both REQUIRED for nouns — the lexicon exists to
+control the paradigm explicitly — and forbidden otherwise), and a non-empty
+English `gloss` naming the source concept. Blank lines and `#` comments are
+skipped. `indecl` marks an indeclinable loan (`emu`, `zombi`): the word gets
+a lemma record ONLY, so a wrongly-inflected form of it stays `unknown` —
+gender is still required because adjective agreement needs it. `check-text
+--lexicon <file>` then:
 
 - builds each row's full paradigm in memory (same machinery as the official
   paradigms) and classifies matching tokens with status `project` — so a
@@ -1540,9 +1547,12 @@ skipped. `check-text --lexicon <file>` then:
   declared genders are explicit project decisions), so a case error in a
   coinage's usage is caught too;
 - validates the lexicon on load, as HARD errors: rows must parse, verbs must
-  cite `-ti`, adjectives `-y`/`-i`, nouns must be declinable, and every
-  lemma must either collide with nothing (coin-check's collision axis) or
-  pin an official lemma whose POS/gender agree with the declaration;
+  cite `-ti`, adjectives `-y`/`-i`, declinable nouns must decline, and every
+  lemma must either collide with nothing (coin-check's collision axis), pin
+  an official lemma whose POS/gender agree with the declaration, or ADOPT a
+  same-surface generated proposal of the same POS (the project vouches for
+  the reconstruction and supplies the gender/animacy it lacks — its
+  paradigm then indexes as `project`);
 - emits `consistency` warnings when a verification-grade official token's
   gloss overlaps a row's gloss (deterministic token overlap, same
   normalization as the English API) but the token is NOT that row's lemma —

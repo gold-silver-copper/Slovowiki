@@ -460,7 +460,8 @@ cargo run --release -- check-text tekst.txt --summary --max-unknown 0
 # sanctioned coinage in full and classifies its tokens `project`, so game
 # text full of runtime-inflected coinages still gates on --max-unknown 0;
 # official synonyms of a row's gloss raise `consistency` warnings
-# (register drift), gate them with --max-consistency N:
+# (register drift), gate them with --max-consistency N; `indecl` in the
+# animacy column marks indeclinable loans (lemma-only, V14):
 cargo run --release -- check-text tekst.txt --summary --max-unknown 0 \
   --lexicon project-lexicon.tsv
 
