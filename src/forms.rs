@@ -1524,6 +1524,10 @@ row blindly.
     teleportovati) with extra analyses `deriv:intl-ovati←<noun>` and
     `pres:<stem>uje` marking the derivation and the regular present stem;
     the verb inherits its source noun's bucket probability.
+- Same-surface homograph readings (official `děti` verb/noun, generated
+  `tur` aurochs/prison) are DISTINCT records: `check-text` reports such
+  tokens `ambiguous: true`, and when homograph proposals carry different
+  probabilities the reported value is the conservative MINIMUM (V14.3).
 - **Any non-null generated probability is still a suggestion, never
   verification.** Generated lemmas (all kinds) have NO inflection records on
   purpose: an inflected form of a

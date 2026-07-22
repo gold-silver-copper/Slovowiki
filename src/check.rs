@@ -789,7 +789,9 @@ pub struct TokenReport {
     pub token: String,
     /// known-lemma | known-form | project | generated | unknown
     pub status: &'static str,
-    /// Distinct lemmas this surface can belong to.
+    /// Distinct lemma spellings this surface can belong to. `ambiguous`
+    /// is broader (V14.3): true when the surface has multiple lexical
+    /// READINGS, including same-spelling homographs.
     pub lemmas: Vec<String>,
     /// Analyses of the matching records (feature strings).
     pub analyses: Vec<String>,
@@ -937,6 +939,7 @@ fn check_tokens_impl(
                 let mut lemmas: Vec<String> = Vec::new();
                 let mut analyses: Vec<String> = Vec::new();
                 let mut is_lemma = false;
+                let mut lemma_readings = 0usize;
                 let mut official = false;
                 let mut project = false;
                 let mut probability: Option<f64> = None;
@@ -951,12 +954,24 @@ fn check_tokens_impl(
                     }
                     if r.source == "lemma" {
                         is_lemma = true;
+                        // Homograph honesty (V14.3 item 3): distinct
+                        // LEXICAL READINGS, not distinct spellings —
+                        // same-surface homographs (official děti verb/noun,
+                        // proposal tur aurochs/prison) are separate records
+                        // now and must read as ambiguous.
+                        lemma_readings += 1;
                     }
                     match r.status {
                         "generated" => {
-                            if probability.is_none() {
-                                probability = r.probability;
-                            }
+                            // Disagreeing homograph proposals report the
+                            // MINIMUM probability — under-claiming is the
+                            // honest direction for a field documented as
+                            // never-verification; a single concept passes
+                            // through unchanged.
+                            probability = match (probability, r.probability) {
+                                (Some(a), Some(b)) => Some(a.min(b)),
+                                (a, b) => a.or(b),
+                            };
                         }
                         "project" => project = true,
                         _ => official = true,
@@ -978,7 +993,7 @@ fn check_tokens_impl(
                     consistency: consistency_warning(index, rs, &display),
                     token: display,
                     status,
-                    ambiguous: lemmas.len() > 1,
+                    ambiguous: lemmas.len() > 1 || lemma_readings > 1,
                     lemmas,
                     analyses,
                     probability: if official || project {
@@ -2545,6 +2560,43 @@ mod tests {
             lemma_pos.contains("verb") && lemma_pos.contains("noun"),
             "both official senses must exist as lemma records: {lemma_pos:?}"
         );
+    }
+
+    /// V14.3 item 3: same-surface homograph proposals report honestly —
+    /// ambiguous is true and the probability is the conservative MINIMUM,
+    /// never the first record's number presented as "the" probability.
+    #[test]
+    fn homograph_proposals_report_min_probability_and_ambiguity() {
+        let dir = std::env::temp_dir().join(format!(
+            "slovowiki-homog-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join("novel.tsv");
+        std::fs::write(
+            &tsv,
+            "form\tpos\tp\tc\tc\tc\tc\tgloss\n\
+             turok\tnoun\t0.62\t-\t-\t-\t-\taurochs\n\
+             turok\tnoun\t0.31\t-\t-\t-\t-\tprison\n",
+        )
+        .unwrap();
+        let index = build_index(&[], Some(&tsv), Default::default());
+        let reps = check_tokens(&index, &tokenize("turok"));
+        assert_eq!(reps.len(), 1);
+        assert_eq!(reps[0].status, "generated");
+        assert!(reps[0].ambiguous, "two concepts must read as ambiguous");
+        assert_eq!(
+            reps[0].probability,
+            Some(0.31),
+            "the conservative floor, not the first record's value"
+        );
+        // Official homographs read as ambiguous too (item 1's děti).
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let full = build_index(&entries, None, Default::default());
+        let deti = check_tokens(&full, &tokenize("děti"));
+        assert!(deti[0].ambiguous, "verb + noun readings: {:?}", deti[0]);
     }
 
     /// V14.3 item 1 canary: a novel proposal folding equal to an OFFICIAL
