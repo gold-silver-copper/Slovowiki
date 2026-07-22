@@ -571,7 +571,10 @@ nearest-lemma suggestions; multi-word official lemmas resolve via trigram →
 bigram lookup), runs **conservative grammar-agreement checks** (adjacent
 adjective–noun case/number/gender — gender in the singular only, preposition
 government parsed from the dictionary's own `(+N)` annotations, pronoun–verb
-person/number; a warning fires only when NO combination of analyses is
+person/number, and verb **valence** — an intransitive-only verb per the
+dictionary's own `v.intr.` tag followed by an object-shaped singular
+animate noun form, with `ne` negation and plural/partitive genitives
+abstaining; a warning fires only when NO combination of analyses is
 compatible, never across punctuation) and applies
 **computed false-friend notes** (`src/falsefriends.rs`: a language's word that
 folds onto an official lemma's surface but whose English Wiktionary glosses
