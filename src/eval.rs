@@ -132,7 +132,7 @@ fn harness_preamble(
 ) -> Result<(Vec<OfficialEntry>, Option<crate::dump::ProtoIndex>)> {
     let entries: Vec<OfficialEntry> = official::load(official_path)?
         .into_iter()
-        .filter(|e| e.is_benchmarkable())
+        .filter(super::official::OfficialEntry::is_benchmarkable)
         .collect();
     Ok((entries, load_proto_index()))
 }
@@ -554,8 +554,8 @@ fn evaluate_config(
         let top = cands.first();
         let predicted = top.map(|c| c.form.clone()).unwrap_or_default();
         let confidence = top.map(|c| c.confidence);
-        let score = top.map(|c| c.score).unwrap_or(0.0);
-        let top_branch_cov = top.map(|c| c.branch_coverage as usize).unwrap_or(0);
+        let score = top.map_or(0.0, |c| c.score);
+        let top_branch_cov = top.map_or(0, |c| c.branch_coverage as usize);
 
         let exact = ortho::exact_match(&predicted, &entry.isv);
         let normalized = ortho::normalized_match(&predicted, &entry.isv);
@@ -895,7 +895,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
         }
     }
 
-    println!("Audit over {} benchmarkable meanings ({} misses):", n, miss);
+    println!("Audit over {n} benchmarkable meanings ({miss} misses):");
     println!(
         "  miss classes: wrong-cluster {:.1}% | right-cluster-wrong-form {:.1}% | root-absent {:.1}%",
         pct(wrong_cluster, miss),
@@ -918,10 +918,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
     );
 
     // ---- Stage-attribution histogram (V7 §2.3) ----
-    println!(
-        "\n  Stage-attribution histogram ({} misses, per-stage blame):",
-        miss
-    );
+    println!("\n  Stage-attribution histogram ({miss} misses, per-stage blame):");
     let mut stages: Vec<(&&'static str, &usize)> = stage_hist.iter().collect();
     stages.sort_by(|a, b| b.1.cmp(a.1));
     for (stage, cnt) in &stages {
@@ -933,7 +930,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
             .collect();
         details.sort_by(|a, b| b.1.cmp(a.1));
         for ((_, d), c) in details.iter().take(4) {
-            println!("        · {:<24} {:>5}", d, c);
+            println!("        · {d:<24} {c:>5}");
         }
     }
 
@@ -952,8 +949,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
     writeln!(sa, "# Stage-attribution histogram (V7 §2.3)\n")?;
     writeln!(
         sa,
-        "For each of the **{}** normalized misses (of {} benchmarkable meanings), the last pipeline stage whose output still folded to the official form — i.e. the stage that destroyed, or never produced, the correct answer. Computed by replaying the winning candidate's `RuleStep` trace.\n",
-        miss, n
+        "For each of the **{miss}** normalized misses (of {n} benchmarkable meanings), the last pipeline stage whose output still folded to the official form — i.e. the stage that destroyed, or never produced, the correct answer. Computed by replaying the winning candidate's `RuleStep` trace.\n"
     )?;
     writeln!(sa, "| Stage | misses | share |")?;
     writeln!(sa, "|---|---:|---:|")?;
@@ -966,7 +962,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
     let mut all_details: Vec<(&(&'static str, String), &usize)> = detail_hist.iter().collect();
     all_details.sort_by(|a, b| b.1.cmp(a.1));
     for ((stage, detail), cnt) in all_details.iter().take(30) {
-        writeln!(sa, "| {} | {} | {} |", stage, detail, cnt)?;
+        writeln!(sa, "| {stage} | {detail} | {cnt} |")?;
     }
     std::fs::write(out_dir.join("stage-attribution.md"), sa)?;
     println!("Wrote {}", out_dir.join("stage-attribution.md").display());
@@ -1056,8 +1052,7 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
     writeln!(s, "# Oracle ladder (V7 §2.4) — DIAGNOSTIC ONLY\n")?;
     writeln!(
         s,
-        "Each row makes ONE pipeline stage perfect (by reading the official answer) while everything downstream stays the real production engine, over **{}** benchmarkable meanings. This path can never feed production; it exists only to rank stages by recoverable headroom. Spend effort top-down by Δ exact.\n",
-        denom
+        "Each row makes ONE pipeline stage perfect (by reading the official answer) while everything downstream stays the real production engine, over **{denom}** benchmarkable meanings. This path can never feed production; it exists only to rank stages by recoverable headroom. Spend effort top-down by Δ exact.\n"
     )?;
     writeln!(
         s,
@@ -1073,8 +1068,7 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
     for (name, ex, dex, nm, dnm) in &rows {
         writeln!(
             s,
-            "| {} | {:.2}% | {:+.2}pp | {:.2}% | {:+.2}pp |",
-            name, ex, dex, nm, dnm
+            "| {name} | {ex:.2}% | {dex:+.2}pp | {nm:.2}% | {dnm:+.2}pp |"
         )?;
     }
     writeln!(
@@ -1666,18 +1660,15 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     )?;
     writeln!(
         s,
-        "| — of which reachable by the conservative rule (root under an uncited language) | {} |",
-        rec_reachable
+        "| — of which reachable by the conservative rule (root under an uncited language) | {rec_reachable} |"
     )?;
     writeln!(
         s,
-        "| — unreachable: root only under an already-cited language (adding it would displace the dictionary's own citation) | {} |",
-        rec_cited
+        "| — unreachable: root only under an already-cited language (adding it would displace the dictionary's own citation) | {rec_cited} |"
     )?;
     writeln!(
         s,
-        "| — unreachable: root only as a bg/mk verb citation (dropped by the no-infinitive rule) | {} |",
-        rec_bgmk
+        "| — unreachable: root only as a bg/mk verb citation (dropped by the no-infinitive rule) | {rec_bgmk} |"
     )?;
     writeln!(
         s,
@@ -2007,8 +1998,7 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     )?;
     writeln!(
         s,
-        "| — of which no reflexive marker detected in the cognates (structural miss: ` sę` is never appended) | {} | — | — |",
-        a_nodetect
+        "| — of which no reflexive marker detected in the cognates (structural miss: ` sę` is never appended) | {a_nodetect} | — | — |"
     )?;
     writeln!(
         s,
@@ -2031,7 +2021,7 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         "\nThe two-token heuristic (disclosed): position 1 is reconstructed as an adjective and agreed with the head's gender, position 2 as the entry's own POS — right for the dominant modifier+head class, wrong for adv+adv or verb phrases; 'not generatable' means fewer than 2 cognates cite a two-token form.\n\n## Two-token nearest misses (sample)\n"
     )?;
     for m in &b_miss {
-        writeln!(s, "- {}", m)?;
+        writeln!(s, "- {m}")?;
     }
     std::fs::write(out_dir.join("multiword-aspect.md"), s)?;
     println!("Wrote {}", out_dir.join("multiword-aspect.md").display());
@@ -2406,8 +2396,7 @@ pub fn run_rep_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     for (name, ex, dex, nm, dnm) in &rows {
         writeln!(
             s,
-            "| {} | {:.2}% | {:+.2}pp | {:.2}% | {:+.2}pp |",
-            name, ex, dex, nm, dnm
+            "| {name} | {ex:.2}% | {dex:+.2}pp | {nm:.2}% | {dnm:+.2}pp |"
         )?;
     }
     writeln!(s, "\n- **production** — the fixed REP_PRIORITY (sl, hr, sr, pl, …) surface choice.\n- **medoid** — the group member minimizing total folded edit distance to the others (most central form).\n- **modal-skeleton** — the most common ascii-skeleton in the group, then REP_PRIORITY among its members.\n- **shortest** — the shortest attested form (nominatives tend shorter than oblique cases).\n- **oracle-representative** — the member folded-closest to the official lemma (ceiling; reads the answer).")?;
@@ -2424,7 +2413,7 @@ pub fn run_rep_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
 pub fn run_proto_engine(official_path: &Path, out_dir: &Path) -> Result<()> {
     let entries: Vec<OfficialEntry> = official::load(official_path)?
         .into_iter()
-        .filter(|e| e.is_benchmarkable())
+        .filter(super::official::OfficialEntry::is_benchmarkable)
         .collect();
     let Some(proto) = load_proto_index() else {
         anyhow::bail!(
@@ -2664,7 +2653,7 @@ pub fn run(official_path: &Path, out_dir: &Path) -> Result<()> {
     }
     let entries: Vec<OfficialEntry> = entries_all
         .into_iter()
-        .filter(|e| e.is_benchmarkable())
+        .filter(super::official::OfficialEntry::is_benchmarkable)
         .collect();
     println!(
         "Loaded {} benchmarkable official entries from {}",
@@ -3009,8 +2998,7 @@ fn write_report_md(
     writeln!(s, "\n## Next recommended linguistic rules\n")?;
     writeln!(
         s,
-        "The Proto-Slavic-derived-form path (§4.4) is implemented — consensus picks the root and the Proto-Slavic rule engine supplies the flavored form via a leakage-free descendant+gloss link. Yer resolution now uses a genuine **tense-yer rule** (yer before *j → i/y) plus **reflex-guided vocalization** (a lexically-ambiguous weak yer is retained when the reflexes vote to keep it: `*pьsati`→`pisati` vs `*bьrati`→`brati`), and a length-free **reflex-shape-agreement** ranking rule replaced the earlier length heuristic. Ranked next steps, from the remaining-error analysis:\n\n1. **Expand Proto-Slavic link coverage.** Only meanings with a matched `sla-pro` reconstruction get the flavored derivation; raising cache coverage and loosening the link gate (without admitting bad links) directly grows the proto-derived slice.\n2. **Reduce the reconstruction's non-yer errors** (endings, palatalizations) so the proto form can be trusted even when it disagrees with the reflexes — currently such disagreements defer to the reflexes, capping the proto gain.\n3. **Divergent-root modeling (semantic families, §4.2 step 3).** The ~{far} far-misses are mostly cases where Interslavic picked a different root than the plurality skeleton; scoring candidate *roots* (not surface forms) over the six subgroups, clustered by the proto descendant graph, would recover many.\n4. **Secondary-imperfective verb stems** (`-yva-/-iva-/-ava-`) and the agentive `-telj`/abstract `-teljstvo` suffixes, seen repeatedly in the verb/noun error tail.\n5. **POS-specific gender/animacy inference** to pick the right nominal ending where the modern citation forms disagree.",
-        far = far
+        "The Proto-Slavic-derived-form path (§4.4) is implemented — consensus picks the root and the Proto-Slavic rule engine supplies the flavored form via a leakage-free descendant+gloss link. Yer resolution now uses a genuine **tense-yer rule** (yer before *j → i/y) plus **reflex-guided vocalization** (a lexically-ambiguous weak yer is retained when the reflexes vote to keep it: `*pьsati`→`pisati` vs `*bьrati`→`brati`), and a length-free **reflex-shape-agreement** ranking rule replaced the earlier length heuristic. Ranked next steps, from the remaining-error analysis:\n\n1. **Expand Proto-Slavic link coverage.** Only meanings with a matched `sla-pro` reconstruction get the flavored derivation; raising cache coverage and loosening the link gate (without admitting bad links) directly grows the proto-derived slice.\n2. **Reduce the reconstruction's non-yer errors** (endings, palatalizations) so the proto form can be trusted even when it disagrees with the reflexes — currently such disagreements defer to the reflexes, capping the proto gain.\n3. **Divergent-root modeling (semantic families, §4.2 step 3).** The ~{far} far-misses are mostly cases where Interslavic picked a different root than the plurality skeleton; scoring candidate *roots* (not surface forms) over the six subgroups, clustered by the proto descendant graph, would recover many.\n4. **Secondary-imperfective verb stems** (`-yva-/-iva-/-ava-`) and the agentive `-telj`/abstract `-teljstvo` suffixes, seen repeatedly in the verb/noun error tail.\n5. **POS-specific gender/animacy inference** to pick the right nominal ending where the modern citation forms disagree."
     )?;
 
     std::fs::write(out_dir.join("candidate-generation-report.md"), s)?;
@@ -3194,7 +3182,7 @@ fn bootstrap_ci(hits: &[bool]) -> (f32, f32) {
             100.0 * hit as f32 / n as f32
         })
         .collect();
-    rates.sort_by(|a, b| a.total_cmp(b));
+    rates.sort_by(f32::total_cmp);
     (rates[25], rates[974])
 }
 
@@ -3519,7 +3507,7 @@ fn write_methodology(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
             r.exact as u8,
             r.normalized as u8,
             r.score,
-            r.confidence.map(conf_label).unwrap_or("-"),
+            r.confidence.map_or("-", conf_label),
             r.branch_cov,
             r.n_langs,
             r.norm_edit,
@@ -3539,6 +3527,20 @@ fn csv_escape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

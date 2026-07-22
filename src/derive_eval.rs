@@ -88,18 +88,10 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         let got = fam.iter().find(|x| x.pattern == p.pattern);
         let got_naive = naive.iter().find(|x| x.pattern == p.pattern);
         let gold = derived.isv.trim();
-        let ex = got
-            .map(|x| ortho::exact_match(&x.form, gold))
-            .unwrap_or(false);
-        let nm = got
-            .map(|x| ortho::normalized_match(&x.form, gold))
-            .unwrap_or(false);
-        let nex = got_naive
-            .map(|x| ortho::exact_match(&x.form, gold))
-            .unwrap_or(false);
-        let nnm = got_naive
-            .map(|x| ortho::normalized_match(&x.form, gold))
-            .unwrap_or(false);
+        let ex = got.is_some_and(|x| ortho::exact_match(&x.form, gold));
+        let nm = got.is_some_and(|x| ortho::normalized_match(&x.form, gold));
+        let nex = got_naive.is_some_and(|x| ortho::exact_match(&x.form, gold));
+        let nnm = got_naive.is_some_and(|x| ortho::normalized_match(&x.form, gold));
 
         let st = by_pat.entry(p.pattern).or_default();
         for s in [
@@ -124,8 +116,8 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 p.pattern,
                 base.isv.trim(),
                 gold,
-                got.map(|x| x.form.as_str()).unwrap_or(""),
-                got_naive.map(|x| x.form.as_str()).unwrap_or(""),
+                got.map_or("", |x| x.form.as_str()),
+                got_naive.map_or("", |x| x.form.as_str()),
             ));
         }
     }

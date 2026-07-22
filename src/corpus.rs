@@ -44,10 +44,7 @@ pub struct GeneratedWord {
 
 impl GeneratedWord {
     pub fn form(&self) -> &str {
-        self.candidates
-            .first()
-            .map(|c| c.form.as_str())
-            .unwrap_or("")
+        self.candidates.first().map_or("", |c| c.form.as_str())
     }
 }
 
@@ -164,7 +161,7 @@ pub fn build_sets(corpus: &LemmaCorpus) -> BuiltSets {
             if root.is_empty()
                 || root.starts_with('-')
                 || root.ends_with('-')
-                || !root.chars().any(|c| c.is_alphabetic())
+                || !root.chars().any(char::is_alphabetic)
             {
                 continue;
             }
@@ -416,8 +413,7 @@ fn most_common_pos(members: &[LemmaEntry]) -> Pos {
     counts
         .into_iter()
         .max_by_key(|(_, n)| *n)
-        .map(|(p, _)| Pos::parse(p))
-        .unwrap_or(Pos::Other)
+        .map_or(Pos::Other, |(p, _)| Pos::parse(p))
 }
 
 /// The gloss shared by the most members (the cognate-set's meaning), preferring a
@@ -635,6 +631,20 @@ fn dedupe(candidates: &mut Vec<Candidate>) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
     use crate::dump::{LemmaCorpus, LemmaEntry};
 

@@ -287,7 +287,7 @@ fn overlaps(
 /// from divergence tokens at ingestion.
 fn clean_quote(gloss: &str) -> Option<String> {
     let g = gloss.trim();
-    if g.is_empty() || g.chars().any(|c| c.is_uppercase()) {
+    if g.is_empty() || g.chars().any(char::is_uppercase) {
         return None;
     }
     let g = g.split(';').next().unwrap_or(g).trim();
@@ -382,7 +382,7 @@ pub fn compute(
             }
             let glosses: Vec<String> = glosses
                 .into_iter()
-                .filter(|g| !g.trim().is_empty() && !g.chars().any(|c| c.is_uppercase()))
+                .filter(|g| !g.trim().is_empty() && !g.chars().any(char::is_uppercase))
                 .collect();
             let tokens: BTreeSet<String> = glosses.iter().flat_map(|g| gloss_tokens(g)).collect();
             if tokens.is_empty() {
@@ -819,7 +819,7 @@ pub fn surface_readings(
         for g in glosses {
             let g = g.trim();
             if !g.is_empty()
-                && !g.chars().any(|c| c.is_uppercase())
+                && !g.chars().any(char::is_uppercase)
                 && !entry.0.iter().any(|have| have == g)
             {
                 entry.0.push(g.to_string());
@@ -894,6 +894,20 @@ pub fn compute_from_default_caches(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     fn notes() -> BTreeMap<String, Note> {

@@ -284,12 +284,10 @@ pub(crate) fn holdout_pattern_stats(
         st.n += 1;
         st.exact += got
             .as_ref()
-            .map(|x| ortho::exact_match(&x.form, gold))
-            .unwrap_or(false) as usize;
+            .is_some_and(|x| ortho::exact_match(&x.form, gold)) as usize;
         st.norm += got
             .as_ref()
-            .map(|x| ortho::normalized_match(&x.form, gold))
-            .unwrap_or(false) as usize;
+            .is_some_and(|x| ortho::normalized_match(&x.form, gold)) as usize;
     }
     by_pat
 }
@@ -360,6 +358,20 @@ pub fn pattern_probabilities(entries: &[OfficialEntry]) -> DerivationProbabiliti
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     fn fam(base: &str, pos: Pos) -> Vec<(String, &'static str)> {

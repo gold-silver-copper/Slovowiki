@@ -394,7 +394,7 @@ fn main() -> Result<()> {
             .map(|c| c.lemmas)
             .unwrap_or_default();
             let wanted = enrich::build_wanted(&corpus, &official, &raw);
-            let total: usize = wanted.values().map(|s| s.len()).sum();
+            let total: usize = wanted.values().map(std::collections::HashSet::len).sum();
             println!(
                 "Enriching {} wanted cognate words across {:?} from {}",
                 total,

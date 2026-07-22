@@ -432,7 +432,7 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
                 "effective_pos": pos.code(),
                 "guessed_gender": guessed_gender,
                 "guessed_animacy": guessed_animate.map(|a| if a { "anim" } else { "inanim" }),
-                "declared_pos": overrides.pos.map(|p| p.code()),
+                "declared_pos": overrides.pos.map(super::model::Pos::code),
                 "declared_gender": overrides.gender.map(model_gender_label),
                 "declared_animacy": if overrides.indeclinable { Some("indecl") } else { overrides.animate.map(|a| if a { "anim" } else { "inanim" }) },
                 "divergences": divergences,
@@ -589,6 +589,20 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     fn phono() -> (Vec<official::OfficialEntry>, Phonotactics) {

@@ -119,10 +119,10 @@ pub fn fit_wilson_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
     }
     let mut iso = [0.0f64; 10];
     let mut pi = 0usize;
-    let mut left = pools.first().map(|p| p.0).unwrap_or(0.0);
+    let mut left = pools.first().map_or(0.0, |p| p.0);
     for (b, (n, _)) in bins.iter().enumerate() {
         if *n == 0 {
-            iso[b] = pools.get(pi).map(|p| p.1).unwrap_or(0.0);
+            iso[b] = pools.get(pi).map_or(0.0, |p| p.1);
             continue;
         }
         iso[b] = pools[pi].1;
@@ -188,10 +188,10 @@ pub fn fit_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
     }
     let mut iso = [0.0f64; 10];
     let mut pi = 0usize;
-    let mut left = pools.first().map(|p| p.0).unwrap_or(0.0);
+    let mut left = pools.first().map_or(0.0, |p| p.0);
     for (b, (n, _)) in bins.iter().enumerate() {
         if *n == 0 {
-            iso[b] = pools.get(pi).map(|p| p.1).unwrap_or(0.0);
+            iso[b] = pools.get(pi).map_or(0.0, |p| p.1);
             continue;
         }
         iso[b] = pools[pi].1;
@@ -293,6 +293,20 @@ impl Calibration {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

@@ -454,8 +454,7 @@ fn old_codes_for(lang: &str) -> &'static [&'static str] {
     OLD_STAGE_OF
         .iter()
         .find(|(l, _)| *l == lang)
-        .map(|(_, codes)| *codes)
-        .unwrap_or(&[])
+        .map_or(&[], |(_, codes)| *codes)
 }
 
 /// Join key for chain resolution: etymology templates cite old-stage words
@@ -580,7 +579,7 @@ fn old_stage_info(value: &Value) -> OldStageInfo {
                 if !form.is_empty()
                     && !form.starts_with('-')
                     && !form.ends_with('-')
-                    && form.chars().any(|c| c.is_alphabetic())
+                    && form.chars().any(char::is_alphabetic)
                 {
                     info.proto = format!("*{form}");
                 }
@@ -981,7 +980,7 @@ fn borrowed_etymon(value: &Value) -> Option<String> {
             "en" => 2,
             _ => 1,
         };
-        if best.as_ref().map(|(r, _)| rank > *r).unwrap_or(true) {
+        if best.as_ref().is_none_or(|(r, _)| rank > *r) {
             best = Some((rank, format!("{src} {word}")));
         }
     }
@@ -1052,7 +1051,7 @@ fn proto_ancestor(value: &Value) -> Option<String> {
         if form.is_empty()
             || form.starts_with('-')
             || form.ends_with('-')
-            || !form.chars().any(|c| c.is_alphabetic())
+            || !form.chars().any(char::is_alphabetic)
         {
             continue;
         }
@@ -1071,12 +1070,11 @@ fn lemma_gloss(value: &Value) -> Option<String> {
         let is_form = sense
             .get("tags")
             .and_then(Value::as_array)
-            .map(|tags| {
+            .is_some_and(|tags| {
                 tags.iter()
                     .filter_map(Value::as_str)
                     .any(|t| t == "form-of" || t == "inflection-of")
-            })
-            .unwrap_or(false);
+            });
         if is_form {
             continue;
         }
@@ -1624,7 +1622,7 @@ impl ProtoIndex {
     pub fn etym_ancestor(&self, lang: &str, latin: &str) -> Option<&str> {
         self.etym
             .get(&format!("{lang}\u{1}{latin}"))
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
     }
 
     /// The folded deep (Proto-Balto-Slavic / PIE) ancestor tokens a modern
@@ -1632,7 +1630,7 @@ impl ProtoIndex {
     pub fn deep_ancestors(&self, lang: &str, latin: &str) -> Option<&[String]> {
         self.deep_etym
             .get(&format!("{lang}\u{1}{latin}"))
-            .map(|v| v.as_slice())
+            .map(std::vec::Vec::as_slice)
     }
 
     /// The entry index for a reconstruction word (`voda`, no `*`).
@@ -1696,6 +1694,20 @@ pub use crate::gloss::content_tokens as gloss_tokens;
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     /// Pins the cache-schema-stamp contract: a pre-stamp cache (no `schema`

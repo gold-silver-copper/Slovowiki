@@ -35,7 +35,7 @@ pub fn content_tokens(gloss: &str) -> Vec<String> {
         .to_lowercase()
         .split(|c: char| !c.is_alphabetic())
         .filter(|t| t.len() >= 3 && !STOP.contains(t))
-        .map(|t| t.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 

@@ -466,7 +466,7 @@ fn entry_from_value(v: &Value, lang: &str, word: &str) -> EnrichEntry {
                 let joined: Vec<String> = g
                     .iter()
                     .filter_map(Value::as_str)
-                    .map(|x| x.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 let text = truncate(&joined.join("; "), 220);
                 if !text.trim().is_empty() && !senses.contains(&text) {
@@ -657,6 +657,20 @@ fn truncate(s: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

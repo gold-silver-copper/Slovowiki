@@ -794,10 +794,7 @@ pub fn tokenize(text: &str) -> Vec<String> {
     while let Some(c) = chars.next() {
         if c.is_alphabetic() {
             cur.push(c);
-        } else if c == '-'
-            && !cur.is_empty()
-            && chars.peek().map(|n| n.is_alphabetic()).unwrap_or(false)
-        {
+        } else if c == '-' && !cur.is_empty() && chars.peek().is_some_and(|n| n.is_alphabetic()) {
             cur.push('-');
         } else if !cur.is_empty() {
             out.push(std::mem::take(&mut cur));
@@ -821,10 +818,7 @@ pub fn tokenize_with_breaks(text: &str) -> (Vec<String>, Vec<bool>) {
     while let Some(c) = chars.next() {
         if c.is_alphabetic() {
             cur.push(c);
-        } else if c == '-'
-            && !cur.is_empty()
-            && chars.peek().map(|n| n.is_alphabetic()).unwrap_or(false)
-        {
+        } else if c == '-' && !cur.is_empty() && chars.peek().is_some_and(|n| n.is_alphabetic()) {
             cur.push('-');
         } else {
             if !cur.is_empty() {
@@ -996,7 +990,7 @@ fn check_tokens_impl(
             Some(rs) => token_grammar(index, rs, &matched_key),
             None => token_grammar(index, &[], &matched_key),
         });
-        report_breaks.push(breaks.map(|b| b[i]).unwrap_or(false));
+        report_breaks.push(breaks.is_some_and(|b| b[i]));
         reports.push(report);
         i += consumed;
     }
@@ -1401,7 +1395,7 @@ pub fn write_web_suggestions(out_dir: &Path, index: &Index) -> Result<usize> {
     }
     let mut bytes = 0;
     for shard in 0..SUGGEST_SHARDS {
-        let rows = shards.get(&shard).map(Vec::as_slice).unwrap_or(&[]);
+        let rows: &[&(String, String)] = shards.get(&shard).map_or(&[], Vec::as_slice);
         let body = format!(
             "{{\"shard\":{shard},\"rows\":[{}]}}\n",
             rows.iter()
@@ -1663,8 +1657,7 @@ pub fn run(
                     "  ~ {:<20} generated (p={}) — machine reconstruction, not official",
                     r.token,
                     r.probability
-                        .map(|p| format!("{p:.2}"))
-                        .unwrap_or_else(|| "?".into())
+                        .map_or_else(|| "?".into(), |p| format!("{p:.2}"))
                 );
             }
             "project" => {
@@ -2018,6 +2011,20 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     fn sample_index() -> Index {

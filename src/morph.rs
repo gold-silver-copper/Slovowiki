@@ -478,12 +478,7 @@ fn adjective_lemma(word: &str) -> (String, &'static str, &'static str) {
     }
     // Strip a final adjectival vowel (from various languages: -i, -ý, -í, -o, -e,
     // -a) and re-attach the correct hard/soft ending.
-    let stem: String = if word
-        .chars()
-        .last()
-        .map(|c| "iíýoeaà".contains(c))
-        .unwrap_or(false)
-    {
+    let stem: String = if word.chars().last().is_some_and(|c| "iíýoeaà".contains(c)) {
         let mut s = word.to_string();
         s.pop();
         s
@@ -598,7 +593,7 @@ fn normalize_prefix(word: &str) -> Option<(String, &'static str, &'static str)> 
     // there (rositi, rosa) — stripping it would wrongly yield råziti (B17).
     for pre in ["raz", "ras", "roz", "ros", "rȯz", "råz"] {
         if let Some(rest) = word.strip_prefix(pre) {
-            if rest.chars().count() >= 3 && rest.chars().next().map(is_consonant).unwrap_or(false) {
+            if rest.chars().count() >= 3 && rest.chars().next().is_some_and(is_consonant) {
                 if pre == "råz" {
                     return None;
                 }
@@ -609,7 +604,7 @@ fn normalize_prefix(word: &str) -> Option<(String, &'static str, &'static str)> 
     // *perd- : pred-/pred → prěd- (jat). Same consonant-initial-stem guard, so
     // predator/predikat (Latin roots) are not mis-analyzed as prěd-.
     if let Some(rest) = word.strip_prefix("pred") {
-        if rest.chars().count() >= 3 && rest.chars().next().map(is_consonant).unwrap_or(false) {
+        if rest.chars().count() >= 3 && rest.chars().next().is_some_and(is_consonant) {
             return Some((
                 format!("prěd{rest}"),
                 "prefix-perd",
@@ -637,6 +632,20 @@ pub(crate) fn stem_is_soft(stem: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     #[test]
     fn prefix_normalized_only_before_a_consonant_stem() {
         // Real prefixed verbs normalize; roots that merely start ros-/pred- don't (B17).

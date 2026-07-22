@@ -51,8 +51,7 @@ pub fn flavorize_word(lang: &str, pos: &str, word: &str) -> String {
     let first_upper = stripped
         .chars()
         .find(|c| c.is_alphabetic())
-        .map(|c| c.is_uppercase())
-        .unwrap_or(false);
+        .is_some_and(char::is_uppercase);
     let lower = stripped.to_lowercase();
     let lower = adapt_ending(lang, pos, &lower);
     let mapped = match lang {
@@ -298,7 +297,7 @@ fn cyr_word(lang: &str, s: &str) -> String {
             'ь' => {
                 if next == Some('о')
                     || (matches!(prev, Some('л') | Some('н'))
-                        && next.map(|n| !CYR_VOWELS.contains(n)).unwrap_or(true))
+                        && next.is_none_or(|n| !CYR_VOWELS.contains(n)))
                 {
                     "j"
                 } else {
@@ -479,10 +478,7 @@ fn latin_scan(s: &str, rules: &[LRule]) -> String {
             let ok = match when {
                 When::Always => true,
                 When::AfterCons => i > 0 && is_latin_cons(chars[i - 1]),
-                When::WordFinal => chars
-                    .get(i + plen)
-                    .map(|c| !c.is_alphabetic())
-                    .unwrap_or(true),
+                When::WordFinal => chars.get(i + plen).is_none_or(|c| !c.is_alphabetic()),
                 When::BeforeVowel => chars.get(i + plen).copied().is_some_and(is_latin_vowel),
             };
             if ok {
@@ -664,13 +660,7 @@ const CSB_FOLD: &[(char, char)] = &[
 
 fn fold_chars(s: &str, table: &[(char, char)]) -> String {
     s.chars()
-        .map(|c| {
-            table
-                .iter()
-                .find(|(f, _)| *f == c)
-                .map(|(_, t)| *t)
-                .unwrap_or(c)
-        })
+        .map(|c| table.iter().find(|(f, _)| *f == c).map_or(c, |(_, t)| *t))
         .collect()
 }
 
@@ -834,6 +824,20 @@ fn push_capitalized(out: &mut String, repl: &str) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     fn fw(lang: &str, pos: &str, w: &str) -> String {

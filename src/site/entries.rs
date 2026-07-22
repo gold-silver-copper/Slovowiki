@@ -240,9 +240,7 @@ pub(super) fn corpus_entry_page(input: CorpusEntryInput<'_>) -> String {
     let pos_code = g.set.pos.code();
     // The official lemma is the authoritative headword when any candidate
     // reproduces it; the generated form stays visible as the reconstruction.
-    let headword = official
-        .map(|(_, isv, _)| isv.to_string())
-        .unwrap_or_else(|| top.form.clone());
+    let headword = official.map_or_else(|| top.form.clone(), |(_, isv, _)| isv.to_string());
     let recon_line = if headword != top.form {
         format!(
             "<p class='def'><b>Rekonstrukcija generatora:</b> <span class='mention'>{}</span></p>",
@@ -297,8 +295,7 @@ pub(super) fn corpus_entry_page(input: CorpusEntryInput<'_>) -> String {
     );
     let _ = write!(
         info_rows,
-        "<tr><th>Opomba</th><td>{}</td></tr>",
-        official_note
+        "<tr><th>Opomba</th><td>{official_note}</td></tr>"
     );
     // Generated page: razumlivost over the cognate-set membership; on a
     // MATCHED page the caller unioned in the official row's sameInLanguages
@@ -608,9 +605,7 @@ pub(super) fn word_chip(
     raw_xref: &crate::enrich::Xref,
     self_id: usize,
 ) -> String {
-    let generated = xref
-        .map(|x| x.lookup(lang, word))
-        .unwrap_or(crate::enrich::XrefMatch::Missing);
+    let generated = xref.map_or(crate::enrich::XrefMatch::Missing, |x| x.lookup(lang, word));
     // An ambiguous generated key must not fall through to a raw page: that
     // would merely replace one insertion-order-dependent sense choice with
     // another. Use the external source as the honest disambiguation surface.
@@ -921,10 +916,10 @@ pub(super) fn cognate_block(
                 ),
                 None => String::new(),
             };
-            let gloss = hit
-                .and_then(|e| e.senses.first())
-                .map(|x| truncate(&source_display(&m.lang, x), 44))
-                .unwrap_or_else(|| truncate(&source_display(&m.lang, &m.gloss), 32));
+            let gloss = hit.and_then(|e| e.senses.first()).map_or_else(
+                || truncate(&source_display(&m.lang, &m.gloss), 32),
+                |x| truncate(&source_display(&m.lang, x), 44),
+            );
             let visible_word = crate::flavorize::flavorize_word(&m.lang, &m.pos, &m.word);
             let norm = crate::normalize::to_phonemic_latin(&m.lang, &m.word);
             let norm_note = if norm != visible_word {

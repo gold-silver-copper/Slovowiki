@@ -177,8 +177,7 @@ pub fn export(official_path: &Path, out_dir: &Path) -> Result<()> {
                         .iter()
                         .any(|off| crate::orthography::normalized_match(&c.form, off))
                 })
-                .map(|i| i + 1)
-                .unwrap_or(1);
+                .map_or(1, |i| i + 1);
             add_official_byform_keys(
                 &mut keys,
                 official_byforms.iter().map(String::as_str),
@@ -452,9 +451,8 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         } else {
             MatchStatus::NoOfficialEntry
         };
-        let display = official_surface_match
-            .map(|(_, surface)| surface.form)
-            .unwrap_or_else(|| form.clone());
+        let display =
+            official_surface_match.map_or_else(|| form.clone(), |(_, surface)| surface.form);
         prepared.push(Prepared {
             // Assigned only after homograph demotion and suppression finalize
             // this page's rendered identity.
@@ -800,10 +798,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let mut meta = entry_meta(SiteEntryInput {
             id: p.id,
             title: &p.display,
-            gloss: p
-                .matched
-                .map(|m| official_entries[m.entry].english.as_str())
-                .unwrap_or(&p.g.set.gloss),
+            gloss: p.matched.map_or(&p.g.set.gloss, |m| {
+                official_entries[m.entry].english.as_str()
+            }),
             pos: p
                 .matched
                 .map(|m| &official_entries[m.entry])
@@ -1129,7 +1126,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
         let wiki_bottom = entry_wiki_blocks(
             meta,
-            backlinks.get(&p.id).map(Vec::as_slice).unwrap_or(&[]),
+            backlinks.get(&p.id).map_or(&[], Vec::as_slice),
             &edges,
             &curation,
             &build_meta,
@@ -1170,7 +1167,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
                 &mut keys,
                 byforms.iter().map(String::as_str),
                 &p.display,
-                p.matched.map(|m| m.rank).unwrap_or(1),
+                p.matched.map_or(1, |m| m.rank),
             );
             for tok in crate::dump::gloss_tokens(&e.english) {
                 if tok.chars().count() >= 3 && !keys.iter().any(|(k, _)| k == &tok) {
@@ -1273,7 +1270,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let wiki_top = entry_tabs(meta) + &homograph_notice(meta, &homographs);
         let wiki_bottom = entry_wiki_blocks(
             meta,
-            backlinks.get(&oid).map(Vec::as_slice).unwrap_or(&[]),
+            backlinks.get(&oid).map_or(&[], Vec::as_slice),
             &edges,
             &curation,
             &build_meta,
@@ -1996,11 +1993,9 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let ipf_page = ipf_page.map_or_else(|| "null".to_string(), |id| id.to_string());
         let pf_page = pf_page.map_or_else(|| "null".to_string(), |id| id.to_string());
         let ipf_present = crate::aspect::ovati_present_stem(&prediction.imperfective)
-            .map(|s| json_str(&s))
-            .unwrap_or_else(|| "null".to_string());
+            .map_or_else(|| "null".to_string(), |s| json_str(&s));
         let pf_present = crate::aspect::ovati_present_stem(&prediction.perfective)
-            .map(|s| json_str(&s))
-            .unwrap_or_else(|| "null".to_string());
+            .map_or_else(|| "null".to_string(), |s| json_str(&s));
         let _ = write!(
             pair_json,
             "{{\"imperfective\":{{\"official_id\":{},\"entry_id\":{},\"lemma\":{},\"generated\":{},\"generated_present_stem\":{}}},\"perfective\":{{\"official_id\":{},\"entry_id\":{},\"lemma\":{},\"generated\":{},\"generated_present_stem\":{}}},\"rule\":{}}}",

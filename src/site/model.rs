@@ -152,8 +152,7 @@ impl BuildMeta {
         let generated = match env_override("SOURCE_DATE_EPOCH")? {
             Some(stamp) => format_source_date_epoch(&stamp)?,
             None => git_output(&["show", "-s", "--format=%ct", "HEAD"])
-                .map(|stamp| format!("{stamp} UNIX"))
-                .unwrap_or_else(|| "0 UNIX".to_string()),
+                .map_or_else(|| "0 UNIX".to_string(), |stamp| format!("{stamp} UNIX")),
         };
         Ok(Self {
             git,

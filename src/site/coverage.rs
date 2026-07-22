@@ -238,8 +238,7 @@ pub(super) fn build_corpus_render_index(
             });
         let display = matched
             .as_ref()
-            .map(|(_, surface)| surface.form.clone())
-            .unwrap_or_else(|| form.clone());
+            .map_or_else(|| form.clone(), |(_, surface)| surface.form.clone());
         prepared.push(CovPrepared {
             id,
             g,
@@ -624,7 +623,7 @@ pub(super) fn raw_intl_candidates(
                 .or_default();
             for gloss in l.glosses.iter().map(|g| g.trim()) {
                 if !gloss.is_empty()
-                    && !gloss.chars().any(|c| c.is_uppercase())
+                    && !gloss.chars().any(char::is_uppercase)
                     && !FORM_OF_MARKERS.iter().any(|m| gloss.contains(m))
                     && !entry.iter().any(|(_, have)| have == gloss)
                 {
@@ -740,7 +739,7 @@ pub(super) fn raw_intl_candidates(
         if key.is_empty() || !taken.insert(key) {
             continue;
         }
-        let langs: Vec<String> = langs.iter().map(|l| l.to_string()).collect();
+        let langs: Vec<String> = langs.iter().map(std::string::ToString::to_string).collect();
         let Some(branch_pattern) = super::navigation::branch_pattern(&langs) else {
             continue;
         };
@@ -1030,8 +1029,7 @@ pub fn run_coverage(out: &Path) -> Result<()> {
     };
     let dump_path = cov_stats
         .as_ref()
-        .map(|s| s.source.clone())
-        .unwrap_or_else(|| crate::DEFAULT_DUMP.to_string());
+        .map_or_else(|| crate::DEFAULT_DUMP.to_string(), |s| s.source.clone());
     let mut provenance = vec![
         format!(
             "- English Wiktextract raw dump (single-token content-word gate): `{}`{}",
@@ -1059,10 +1057,9 @@ pub fn run_coverage(out: &Path) -> Result<()> {
     // --- Reconciliation checks ---
     let kept = total; // the cache is exactly the kept set
     let render_reconciles = rendered + deduped == kept;
-    let extract_reconciles = cov_stats
-        .as_ref()
-        .map(|s| s.kept as usize == kept && s.kept + s.dropped_total() == s.slavic_pages_seen)
-        .unwrap_or(false);
+    let extract_reconciles = cov_stats.as_ref().is_some_and(|s| {
+        s.kept as usize == kept && s.kept + s.dropped_total() == s.slavic_pages_seen
+    });
 
     std::fs::create_dir_all(out)?;
 

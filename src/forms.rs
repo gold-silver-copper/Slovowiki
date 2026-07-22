@@ -41,8 +41,7 @@ pub fn install_cli_quiet_inflection_hook() {
     std::panic::set_hook(Box::new(move |info| {
         let from_inflector = info
             .location()
-            .map(|location| location.file().contains("interslavic"))
-            .unwrap_or(false);
+            .is_some_and(|location| location.file().contains("interslavic"));
         if from_inflector {
             INFLECTION_PANICS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         } else {
@@ -562,7 +561,7 @@ pub fn paradigm_records(
                     );
                     sink.add(
                         &adv_form,
-                        &format!("{}prisl.", deg),
+                        &format!("{deg}prisl."),
                         lemma,
                         entry_id,
                         "adv",
@@ -1125,8 +1124,7 @@ fn record_json(r: &FormRecord) -> String {
         .join(",");
     let prob = r
         .probability
-        .map(|p| format!("{:.3}", p))
-        .unwrap_or_else(|| "null".into());
+        .map_or_else(|| "null".into(), |p| format!("{p:.3}"));
     format!(
         "[{},{},{},{},[{}],{},{},{},{}]",
         json_str(&r.form),
@@ -1251,8 +1249,7 @@ pub fn write_api(
         }
         let prob = r
             .probability
-            .map(|p| format!("{:.3}", p))
-            .unwrap_or_else(|| "null".into());
+            .map_or_else(|| "null".into(), |p| format!("{p:.3}"));
         let (aspect, partner) = lemma_aspect_fields(r, aspect_meta);
         let tag_ev = raw_intl_evidence(r);
         let ev = tag_ev
@@ -1271,13 +1268,11 @@ pub fn write_api(
             aspect,
             partner,
             ev.frequency
-                .map(|f| format!("{f}"))
-                .unwrap_or_else(|| "null".into()),
+                .map_or_else(|| "null".into(), |f| format!("{f}")),
             ev.langs,
             ev.branch_pattern
                 .as_deref()
-                .map(json_str)
-                .unwrap_or_else(|| "null".into()),
+                .map_or_else(|| "null".into(), json_str),
             ev.borrowed,
         );
     }
@@ -1706,6 +1701,20 @@ inanimate-declined on purpose.
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

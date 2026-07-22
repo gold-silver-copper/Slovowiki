@@ -78,9 +78,7 @@ pub fn normalize_cell(lang_code: &str, cell: &str) -> Vec<NormForm> {
 
 /// Convert one attested form to phonemic Latin.
 pub fn to_phonemic_latin(lang_code: &str, form: &str) -> String {
-    let script = lang_info(lang_code)
-        .map(|l| l.script)
-        .unwrap_or(Script::Latin);
+    let script = lang_info(lang_code).map_or(Script::Latin, |l| l.script);
     let lower = form.trim().to_lowercase();
     // Dispatch on the word's ACTUAL script, not only the registry default:
     // en.wiktionary files some languages in either alphabet (the sh macro-code
@@ -467,6 +465,20 @@ pub fn primary(forms: &[NormForm]) -> Option<&NormForm> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::to_phonemic_latin as tr;
 
     #[test]

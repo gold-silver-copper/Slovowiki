@@ -113,7 +113,7 @@ pub fn link_oracle<'a>(
             continue;
         }
         let d = ortho::normalized_edit_distance(&ortho::fold_key(&derived), &target);
-        if best.as_ref().map(|(_, bd)| d < *bd).unwrap_or(true) {
+        if best.as_ref().is_none_or(|(_, bd)| d < *bd) {
             best = Some((e, d));
         }
     }
@@ -264,11 +264,7 @@ fn link_core<'a>(
         };
 
         let confidence = 0.42 * desc_membership + 0.36 * form_similarity + 0.22 * gloss_overlap;
-        if best
-            .as_ref()
-            .map(|b| confidence > b.confidence)
-            .unwrap_or(true)
-        {
+        if best.as_ref().is_none_or(|b| confidence > b.confidence) {
             best = Some(ProtoLink {
                 entry: e,
                 confidence,
@@ -383,8 +379,7 @@ fn strip_one(latin: &str) -> Option<(&'static str, String)> {
             let vowel_initial = rest
                 .chars()
                 .next()
-                .map(|c| "aeiouyěęǫųåȯ".contains(c))
-                .unwrap_or(true);
+                .is_none_or(|c| "aeiouyěęǫųåȯ".contains(c));
             // Consonant-initial stems are the safe common case. Vowel-initial
             // stems (raz+um→umeti) are allowed only for the longer, unambiguous
             // prefixes and a longer stem — the short prefixes (na/po/za/do/u)
@@ -420,6 +415,20 @@ fn pos_compatible(a: Pos, b: Pos) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

@@ -165,8 +165,7 @@ impl Thesaurus {
     pub fn get(&self, isv: &str) -> &[String] {
         self.by_key
             .get(&key(isv))
-            .map(|&i| self.entries[i].synonyms.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], |&i| self.entries[i].synonyms.as_slice())
     }
 
     /// True when `a` and `b` are synonyms (either direction).
@@ -186,6 +185,20 @@ impl Thesaurus {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]

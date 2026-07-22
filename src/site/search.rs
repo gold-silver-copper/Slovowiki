@@ -428,7 +428,7 @@ pub(super) fn write_search_index(out_dir: &Path, rows: &[SearchRow]) -> Result<(
         "totalRows": rows.len(),
         "browse": "browse.json",
         "spotlight": "spotlight.json",
-        "splits": splits.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+        "splits": splits.iter().map(std::string::ToString::to_string).collect::<Vec<_>>(),
         "shards": manifest_shards,
     });
     let mut mbytes = serde_json::to_vec(&manifest)?;

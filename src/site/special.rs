@@ -335,7 +335,7 @@ pub(super) fn rules_json(rule_index: &RuleIndex) -> String {
         ids.dedup();
         let list = ids
             .iter()
-            .map(|i| i.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(",");
         let _ = write!(s, "  {}: [{}]", json_str(&rule_key(engine, id)), list);
@@ -444,7 +444,7 @@ pub(super) fn proto_page(
         // "ine/pročeje" group and display their raw code (the registry
         // name fallback would mislabel them "slovjansky").
         fn dname(code: &str) -> &str {
-            crate::lang::lang_info(code).map(|i| i.name).unwrap_or(code)
+            crate::lang::lang_info(code).map_or(code, |i| i.name)
         }
         let mut by_branch: BTreeMap<u8, Vec<(String, String)>> = BTreeMap::new();
         let mut historical_descendants: Vec<(String, String)> = Vec::new();
@@ -793,9 +793,8 @@ pub(super) fn proposals_page(
          <p class='lede'>Slova, ktore stroj pravilno izvodi iz slovjanskogo dokaza, ale ktoryh <b>něma</b> v oficialnom slovniku — kandidaty za novu leksiku.</p>\
          <p>{cal_note}</p>\
          <p>{summary} Kuratorske noty prihodęt iz <code>data/curation-notes.json</code>.</p>\
-         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th>p</th><th title='{razum_title}'>razumlivosť</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
+         <table class='wikitable'><thead><tr><th>slovo</th><th>vrsta</th><th>p</th><th title='{RAZUM_TITLE}'>razumlivosť</th><th>prědok</th><th>językov / větvi</th><th>značenje</th></tr></thead><tbody>{rows}</tbody></table>\
          <p class='muted'>Pokazano najviše 600 predlogov; polny spisok v TSV. Mašinove rekonstrukcije, ne normativna leksika.</p></article>",
-        razum_title = RAZUM_TITLE,
     );
     page("Predloženja novyh slov — medžuslovjansky", &body, 0)
 }
@@ -961,7 +960,7 @@ pub(super) fn sitemap_xml(metas: &[SiteEntryMeta]) -> String {
         "graph.html",
         "contribute.html",
     ] {
-        let _ = writeln!(s, "  <url><loc>{}{}</loc></url>", SITE_URL, loc);
+        let _ = writeln!(s, "  <url><loc>{SITE_URL}{loc}</loc></url>");
     }
     for m in metas {
         let _ = writeln!(s, "  <url><loc>{}entry/{}.html</loc></url>", SITE_URL, m.id);

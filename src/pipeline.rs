@@ -112,7 +112,7 @@ pub fn generate_oracle(
                     // form stays a scored alternative.
                     let cons_top = candidates.first();
                     let cons_form = cons_top.map(|c| c.form.clone()).unwrap_or_default();
-                    let cons_branch_cov = cons_top.map(|c| c.branch_coverage).unwrap_or(0);
+                    let cons_branch_cov = cons_top.map_or(0, |c| c.branch_coverage);
                     let agree = flavor_equivalent(&pc.form, &cons_form);
                     // Reflex-shape agreement, confidence-gated (§F: a trustworthy
                     // engine earns a looser gate). When the reconstruction agrees

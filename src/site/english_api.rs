@@ -946,10 +946,7 @@ pub(super) fn build_english_index(
         for key_match in keys {
             let rank = status_rank(record.status)
                 + key_match.match_rank
-                + record
-                    .probability
-                    .map(|p| (p * 10.0).round() as i32)
-                    .unwrap_or(0);
+                + record.probability.map_or(0, |p| (p * 10.0).round() as i32);
             let candidate = EnglishCandidate {
                 lemma: record.lemma.clone(),
                 entry_id: record.entry_id,
@@ -1139,6 +1136,20 @@ pub(super) fn write_en_api(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     /// V13 item 3: the committed translation probe stays intact — 219
     /// queries whose per-category comment counts add up. Deliberately NOT a
     /// coverage gate (the numbers are a reported metric; see

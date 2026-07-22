@@ -96,7 +96,7 @@ fn adj_reflex_long(r: &str) -> bool {
     let mut it = r.chars().rev();
     match it.next() {
         Some(c) if is_full_vowel(c) => true,
-        Some('j') => it.next().map(is_full_vowel).unwrap_or(false),
+        Some('j') => it.next().is_some_and(is_full_vowel),
         _ => false,
     }
 }
@@ -734,7 +734,7 @@ fn is_full_vowel(ch: char) -> bool {
 }
 
 fn ends_cons(s: &str) -> bool {
-    s.chars().last().map(is_cons).unwrap_or(false)
+    s.chars().last().is_some_and(is_cons)
 }
 
 /// True when the stem ends in a soft (palatal/palatalized) consonant, which takes
@@ -751,6 +751,20 @@ fn ends_soft(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
     use crate::orthography::normalized_match;
 

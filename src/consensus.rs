@@ -355,10 +355,12 @@ pub fn generate_oracle(
     // The key is either the official one (oracle-cluster — reads the answer) or a
     // leakage-free rule-computed key (select-eval).
     let forced_key: Option<String> = oracle.and_then(|o| {
-        o.force_cluster_key.map(|k| k.to_string()).or_else(|| {
-            o.cluster
-                .then(|| ortho::consonant_key(&ortho::fold_key(o.official)))
-        })
+        o.force_cluster_key
+            .map(std::string::ToString::to_string)
+            .or_else(|| {
+                o.cluster
+                    .then(|| ortho::consonant_key(&ortho::fold_key(o.official)))
+            })
     });
     if let Some(key) = forced_key {
         if let Some(p) = groups.iter().position(|g| g.key == key) {
@@ -888,7 +890,7 @@ fn voicing_repair(
 
     for (devoiced, voiced) in [("bes", "bez"), ("is", "iz")] {
         if let Some(rest) = w.strip_prefix(devoiced) {
-            let cons_stem = rest.chars().next().map(is_cons).unwrap_or(false);
+            let cons_stem = rest.chars().next().is_some_and(is_cons);
             if cons_stem && rest.chars().count() >= 3 {
                 let confirmed = per_lang
                     .values()
@@ -1108,8 +1110,7 @@ fn loan_stem_repair(
         }
         // (f) A feminine loan cited without its -a (banknot, aksiom): restore
         // it when the gender says feminine and a cognate shows the -a form.
-        if input.gender == Some(Gender::Feminine) && w.chars().last().map(is_cons).unwrap_or(false)
-        {
+        if input.gender == Some(Gender::Feminine) && w.chars().last().is_some_and(is_cons) {
             let with_a = format!("{w}a");
             let skel = ortho::ascii_skeleton(&with_a);
             if per_lang
@@ -1294,8 +1295,7 @@ fn drop_adj_fleeting(form: &str, per_lang: &BTreeMap<&str, &SourceForm>) -> Opti
     let has_adjacency = ["ru", "pl", "cs", "sk", "uk", "be"].iter().any(|d| {
         per_lang
             .get(*d)
-            .map(|f| ortho::ascii_skeleton(&f.norm.latin).contains(&pair))
-            .unwrap_or(false)
+            .is_some_and(|f| ortho::ascii_skeleton(&f.norm.latin).contains(&pair))
     });
     if !has_adjacency {
         return None;
@@ -1448,7 +1448,7 @@ fn tidy_ending(word: &str, pos: Pos, gender: Option<Gender>) -> String {
 }
 
 fn ends_with_vowel(w: &str) -> bool {
-    w.chars().last().map(ortho::is_vowel).unwrap_or(false)
+    w.chars().last().is_some_and(ortho::is_vowel)
 }
 
 fn round3(x: f32) -> f32 {
@@ -1658,6 +1658,20 @@ pub fn source_forms_from_cells(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::indexing_slicing,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::match_same_arms,
+        clippy::map_unwrap_or,
+        clippy::redundant_closure_for_method_calls,
+        clippy::uninlined_format_args,
+        clippy::needless_pass_by_value
+    )]
     use super::*;
 
     #[test]
