@@ -504,23 +504,47 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDispos
         })
         .collect();
     if pins.is_empty() {
-        // Adoption path: EVERY colliding record is a generated LEMMA of this
-        // same surface (generated lemmas carry no inflections, so anything
-        // else under the key is a real collision), and the declared POS
-        // matches one of them.
+        // Adoption path (V14.1 finding 8 — explicit and guarded): EVERY
+        // colliding record is a generated LEMMA under this key (generated
+        // lemmas carry no inflections, so anything else is a real
+        // collision), and the adopted proposal must match the row on POS,
+        // EXACT surface spelling (folded-equal is not enough — a flavored
+        // respelling of a proposal is a divergence, not an adoption), and
+        // CONCEPT: the row's gloss must share a content token with the
+        // proposal's, so a data refresh emitting an unrelated same-surface
+        // proposal turns into a loud error instead of a silent adoption.
         let all_generated_lemmas = recs.iter().all(|r| {
             r.status == "generated"
                 && r.source == "lemma"
                 && forms::form_key(&r.lemma) == row.lemma_key
         });
         if all_generated_lemmas {
+            let proposal = recs.iter().find(|r| r.pos == row.pos.code());
+            let Some(proposal) = proposal else {
+                anyhow::bail!(
+                    "lexicon lemma '{}' adopts generated '{}' but declares pos '{}' while the proposal is '{}'",
+                    row.lemma,
+                    recs[0].lemma,
+                    row.pos.code(),
+                    recs[0].pos
+                );
+            };
             anyhow::ensure!(
-                recs.iter().any(|r| r.pos == row.pos.code()),
-                "lexicon lemma '{}' adopts generated '{}' but declares pos '{}' while the proposal is '{}'",
+                proposal.lemma == row.lemma,
+                "lexicon lemma '{}' would adopt the generated proposal spelled '{}' — match its spelling exactly or coin another surface",
                 row.lemma,
-                recs[0].lemma,
-                row.pos.code(),
-                recs[0].pos
+                proposal.lemma
+            );
+            let proposal_tokens = crate::site::english_gloss_tokens(&proposal.gloss);
+            anyhow::ensure!(
+                proposal_tokens
+                    .intersection(&row.gloss_tokens)
+                    .next()
+                    .is_some(),
+                "lexicon lemma '{}' adopts a proposal glossed '{}', which shares no concept token with the row gloss '{}' — an unrelated same-surface proposal must not be adopted silently",
+                row.lemma,
+                proposal.gloss,
+                row.gloss
             );
             return Ok(RowDisposition::GeneratedAdoption);
         }
@@ -565,13 +589,47 @@ fn gender_char(g: Option<crate::model::Gender>) -> char {
     }
 }
 
+impl RowDisposition {
+    pub fn label(self) -> &'static str {
+        match self {
+            RowDisposition::Coinage => "coinage",
+            RowDisposition::OfficialPin => "official pin",
+            RowDisposition::GeneratedAdoption => "generated adoption",
+        }
+    }
+}
+
+/// What `apply_lexicon` did, for the load summary (V14.1 finding 8: a
+/// disposition must be VISIBLE — it can flip across data refreshes).
+#[derive(Debug, Default)]
+pub struct AppliedLexicon {
+    pub coinages: usize,
+    pub pins: usize,
+    /// (row lemma, adopted proposal's gloss).
+    pub adoptions: Vec<(String, String)>,
+}
+
 /// Validate every row and index the coinages' full paradigms (status
 /// `project`), exactly as the official paradigms are indexed — so inflected
 /// sanctioned coinages (`žabervoka`, `žabervokom`) classify instead of
 /// drowning the `--max-unknown` gate. Any invalid row is a hard error.
-pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
+pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<AppliedLexicon> {
+    let mut applied = AppliedLexicon::default();
     for row in &rows {
         let disposition = validate_lexicon_row(index, row)?;
+        match disposition {
+            RowDisposition::Coinage => applied.coinages += 1,
+            RowDisposition::OfficialPin => applied.pins += 1,
+            RowDisposition::GeneratedAdoption => {
+                let gloss = index
+                    .by_key
+                    .get(&row.lemma_key)
+                    .and_then(|recs| recs.iter().find(|r| r.pos == row.pos.code()))
+                    .map(|r| r.gloss.clone())
+                    .unwrap_or_default();
+                applied.adoptions.push((row.lemma.clone(), gloss));
+            }
+        }
         if disposition == RowDisposition::OfficialPin {
             continue; // the official paradigm is already indexed
         }
@@ -628,7 +686,7 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<()> {
     }
     index.lemma_keys.sort();
     index.lexicon = rows;
-    Ok(())
+    Ok(applied)
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -1411,7 +1469,28 @@ pub fn run(
     let mut index = build_index(&entries, Some(Path::new("data/novel-words.tsv")), notes);
     if let Some(path) = lexicon {
         let rows = parse_lexicon(&std::fs::read_to_string(path)?)?;
-        apply_lexicon(&mut index, rows)?;
+        let n = rows.len();
+        let applied = apply_lexicon(&mut index, rows)?;
+        // The disposition summary is part of the gate's honesty (V14.1
+        // finding 8): adoptions especially can appear or vanish across
+        // data refreshes and must never happen silently.
+        let adoptions = applied
+            .adoptions
+            .iter()
+            .map(|(lemma, gloss)| format!("{lemma} ← '{gloss}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "lexicon: {n} rows — {} coinages, {} official pins, {} adoptions{}",
+            applied.coinages,
+            applied.pins,
+            applied.adoptions.len(),
+            if adoptions.is_empty() {
+                String::new()
+            } else {
+                format!(" ({adoptions})")
+            }
+        );
     }
     let index = index;
     let text = std::fs::read_to_string(text_path)?;
@@ -2369,6 +2448,25 @@ mod tests {
         let mismatch = parse_lexicon("žabervočiti\tnoun\tm\tanim\tx").unwrap();
         let err = validate_lexicon_row(&synthetic, &mismatch[0]).unwrap_err();
         assert!(err.to_string().contains("adopts generated"), "{err}");
+        // V14.1 finding 8: adoption demands exact surface spelling and a
+        // shared concept token — and it is REPORTED, never silent. (Checked
+        // against a FRESH index: once adopted, the key also holds project
+        // records and any further collision is the generic hard error.)
+        let mut fresh = build_index(&[], Some(&tsv), Default::default());
+        let respelled = parse_lexicon("Emuk\tnoun\tm\tanim\temu bird").unwrap();
+        let err = validate_lexicon_row(&fresh, &respelled[0]).unwrap_err();
+        assert!(err.to_string().contains("spelled"), "{err}");
+        let unrelated = parse_lexicon("emuk\tnoun\tm\tanim\ttreasure chest").unwrap();
+        let err = validate_lexicon_row(&fresh, &unrelated[0]).unwrap_err();
+        assert!(err.to_string().contains("no concept token"), "{err}");
+        let again = parse_lexicon("emuk\tnoun\tm\tanim\temu bird").unwrap();
+        let applied = apply_lexicon(&mut fresh, again).expect("adoption applies");
+        assert_eq!(
+            (applied.coinages, applied.pins, applied.adoptions.len()),
+            (0, 0, 1)
+        );
+        assert_eq!(applied.adoptions[0].0, "emuk");
+        assert!(applied.adoptions[0].1.contains("emu bird"));
         let _ = std::fs::remove_dir_all(dir);
     }
 

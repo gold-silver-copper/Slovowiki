@@ -1550,9 +1550,14 @@ gender is still required because adjective agreement needs it. `check-text
   cite `-ti`, adjectives `-y`/`-i`, declinable nouns must decline, and every
   lemma must either collide with nothing (coin-check's collision axis), pin
   an official lemma whose POS/gender agree with the declaration, or ADOPT a
-  same-surface generated proposal of the same POS (the project vouches for
-  the reconstruction and supplies the gender/animacy it lacks — its
-  paradigm then indexes as `project`);
+  generated proposal — same POS, EXACT surface spelling, and at least one
+  shared gloss content token, so an unrelated same-surface proposal arriving
+  with a data refresh is a loud error, never a silent adoption. The project
+  vouches for the reconstruction and supplies the gender/animacy it lacks;
+  its paradigm then indexes as `project`, and every load prints the
+  disposition summary ("lexicon: 5 rows — 3 coinages, 1 official pin,
+  1 adoption (emu ← 'emu bird')"). coin-check's `--lexicon-row` output and
+  `--json` (`lexicon_row_disposition`) name the disposition too;
 - emits `consistency` warnings when a verification-grade official token's
   gloss overlaps a row's gloss (deterministic token overlap, same
   normalization as the English API) but the token is NOT that row's lemma —

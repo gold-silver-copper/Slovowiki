@@ -211,10 +211,15 @@ fn build_lexicon_row(
 }
 
 /// Validate one constructed lexicon-row line through the SAME parse +
-/// semantic rules `check-text --lexicon` applies, returning the row on
-/// success. A `#`-initial word makes the line parse as a lexicon COMMENT
-/// (empty result) — that must be a rejection, never an index panic.
-fn validated_lexicon_row(index: &crate::check::Index, row: String, word: &str) -> Result<String> {
+/// semantic rules `check-text --lexicon` applies, returning the row AND its
+/// disposition — an adoption must be visible in the output, never silent
+/// (V14.1 finding 8). A `#`-initial word makes the line parse as a lexicon
+/// COMMENT (empty result) — that must be a rejection, never an index panic.
+fn validated_lexicon_row(
+    index: &crate::check::Index,
+    row: String,
+    word: &str,
+) -> Result<(String, crate::check::RowDisposition)> {
     crate::check::parse_lexicon(&row)
         .and_then(|rows| {
             let parsed = rows.into_iter().next().ok_or_else(|| {
@@ -222,7 +227,7 @@ fn validated_lexicon_row(index: &crate::check::Index, row: String, word: &str) -
             })?;
             crate::check::validate_lexicon_row(index, &parsed)
         })
-        .map(|_pinned| row)
+        .map(|disposition| (row, disposition))
         .map_err(|e| anyhow::anyhow!("--lexicon-row rejected for '{word}': {e:#}"))
 }
 
@@ -373,12 +378,13 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     // invalid row must fail here, not later in CI. The failure surfaces
     // AFTER the full four-axis report (like check-text's summary gate): the
     // report is precisely the diagnostic that explains a rejection.
-    let lexicon_row: Option<Result<String>> = if overrides.lexicon_row {
-        let row = build_lexicon_row(word, pos, overrides, guessed_gender, guessed_animate);
-        Some(validated_lexicon_row(&index, row, word))
-    } else {
-        None
-    };
+    let lexicon_row: Option<Result<(String, crate::check::RowDisposition)>> =
+        if overrides.lexicon_row {
+            let row = build_lexicon_row(word, pos, overrides, guessed_gender, guessed_animate);
+            Some(validated_lexicon_row(&index, row, word))
+        } else {
+            None
+        };
 
     let pass_phono = violations.is_empty();
     let pass_collision = collisions.is_empty();
@@ -410,7 +416,10 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
             },
         });
         match &lexicon_row {
-            Some(Ok(row)) => out["lexicon_row"] = serde_json::json!(row),
+            Some(Ok((row, disposition))) => {
+                out["lexicon_row"] = serde_json::json!(row);
+                out["lexicon_row_disposition"] = serde_json::json!(disposition.label());
+            }
             // Agents get the rejection in-band too; the nonzero exit below
             // still fires after the full report is printed.
             Some(Err(e)) => out["lexicon_row_error"] = serde_json::json!(e.to_string()),
@@ -515,9 +524,12 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
         println!("  ⚠ divergence : {d}");
     }
     match &lexicon_row {
-        Some(Ok(row)) => {
+        Some(Ok((row, disposition))) => {
             println!("  lexicon row  : {}", row.replace('\t', "\\t"));
-            println!("                 (append the raw TSV line to your project lexicon; --json carries it in 'lexicon_row')");
+            println!(
+                "                 (disposition: {}; append the raw TSV line to your project lexicon; --json carries it in 'lexicon_row')",
+                disposition.label()
+            );
         }
         Some(Err(e)) => println!("  lexicon row  : REJECTED — {e}"),
         None => {}
@@ -624,13 +636,14 @@ mod tests {
             "must reject, not panic: {err}"
         );
         // The happy path through the same helper still returns the row.
-        let ok = validated_lexicon_row(
+        let (row, disposition) = validated_lexicon_row(
             &index,
             "žabervok\tnoun\tm\tanim\tjabberwock".to_string(),
             "žabervok",
         )
         .expect("clean coinage validates");
-        assert_eq!(ok, "žabervok\tnoun\tm\tanim\tjabberwock");
+        assert_eq!(row, "žabervok\tnoun\tm\tanim\tjabberwock");
+        assert_eq!(disposition, crate::check::RowDisposition::Coinage);
     }
 
     /// V14 item 2 regression: --lexicon-row emission is POS-agnostic (the

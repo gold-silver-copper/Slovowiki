@@ -291,12 +291,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file_a = dir.join("a.tsv").to_string_lossy().to_string();
         std::fs::write(&file_a, "x\t1\n").unwrap();
-        let m1 = render_manifest(&[file_a.clone()]).expect("render");
-        assert_eq!(m1, render_manifest(&[file_a.clone()]).unwrap());
+        let m1 = render_manifest(std::slice::from_ref(&file_a)).expect("render");
+        assert_eq!(m1, render_manifest(std::slice::from_ref(&file_a)).unwrap());
         std::fs::write(&file_a, "x\t2\n").unwrap();
         assert_ne!(
             m1,
-            render_manifest(&[file_a.clone()]).unwrap(),
+            render_manifest(std::slice::from_ref(&file_a)).unwrap(),
             "content change must invalidate"
         );
         let file_b = dir.join("b.tsv").to_string_lossy().to_string();
