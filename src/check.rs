@@ -221,11 +221,7 @@ pub fn build_index(
     // item 3): the site export applies the same call before write_api, so
     // check-text, coin-check, and api/forms carry identical readings — the
     // one-pipeline doctrine, restored.
-    let masc_animate: HashSet<String> = noun_animate
-        .iter()
-        .filter(|(k, a)| **a == 'a' && noun_gender.get(*k) == Some(&'m'))
-        .map(|(k, _)| k.clone())
-        .collect();
+    let masc_animate = masc_animate_from_maps(&noun_gender, &noun_animate);
     let mut records = records;
     forms::enrich_animate_accusatives(&mut records, &masc_animate);
     for r in records {
@@ -626,6 +622,17 @@ pub(crate) fn noun_trait_maps(
 /// coverage loss.
 pub fn masc_animate_lemma_keys(entries: &[OfficialEntry]) -> HashSet<String> {
     let (gender, animate) = noun_trait_maps(entries);
+    masc_animate_from_maps(&gender, &animate)
+}
+
+/// THE eligibility predicate (V14.3 item 6), existing once: both index
+/// builders derive their enrichment set through this function, so a future
+/// widening (e.g. after the absorbed-gender canary trips) cannot reach
+/// `api/forms` while missing check-text or vice versa.
+pub(crate) fn masc_animate_from_maps(
+    gender: &HashMap<String, char>,
+    animate: &HashMap<String, char>,
+) -> HashSet<String> {
     animate
         .iter()
         .filter(|(k, a)| **a == 'a' && gender.get(*k) == Some(&'m'))
