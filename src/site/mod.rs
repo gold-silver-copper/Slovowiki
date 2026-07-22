@@ -316,7 +316,9 @@ impl DeterministicEntryIds {
 pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -> Result<()> {
     let corpus = crate::dump::LemmaCorpus::load(lemmas_path)?;
     let cfg = ConsensusConfig::production();
-    let sets = crate::corpus::build_sets(&corpus);
+    let built = crate::corpus::build_sets(&corpus);
+    println!("{}", built.bridge_report);
+    let sets = built.sets;
     println!(
         "built {} cognate sets from {} Slavic lemmas",
         sets.len(),

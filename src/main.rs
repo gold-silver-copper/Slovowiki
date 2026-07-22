@@ -11,9 +11,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use interslavic_wiktionary_lab::{
-    check, coincheck, derive, dump, enrich, eval, forms, inflect_eval, official, release, site,
-    DEFAULT_DUMP, DEFAULT_ENRICH_CACHE, DEFAULT_LEMMA_CACHE, DEFAULT_OFFICIAL, DEFAULT_PROTO_CACHE,
-    DEFAULT_RAW_LEMMA_CACHE, DEFAULT_WIKI_DIR,
+    check, coincheck, derive_eval, dump, enrich, eval, forms, inflect_eval, official, release,
+    site, DEFAULT_DUMP, DEFAULT_ENRICH_CACHE, DEFAULT_LEMMA_CACHE, DEFAULT_OFFICIAL,
+    DEFAULT_PROTO_CACHE, DEFAULT_RAW_LEMMA_CACHE, DEFAULT_WIKI_DIR,
 };
 use std::path::PathBuf;
 
@@ -446,7 +446,7 @@ fn main() -> Result<()> {
         Command::Explain { query, official } => eval::explain(&official, &query),
         Command::ProtoEval { official, out } => eval::run_proto_engine(&official, &out),
         Command::CorpusEval { official, fit } => eval::run_corpus_eval(&official, fit),
-        Command::DeriveEval { official, out } => derive::run_eval(&official, &out),
+        Command::DeriveEval { official, out } => derive_eval::run_eval(&official, &out),
         Command::MultiwordEval { official, out } => eval::run_multiword_eval(&official, &out),
         Command::AspectEval { official, out } => eval::run_aspect_eval(&official, &out),
         Command::EvidenceEval { official, out } => eval::run_evidence_eval(&official, &out),

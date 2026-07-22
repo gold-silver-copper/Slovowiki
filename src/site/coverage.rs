@@ -203,7 +203,9 @@ pub(super) fn build_corpus_render_index(
     usize, // official-only pages
 ) {
     let cfg = ConsensusConfig::production();
-    let sets = crate::corpus::build_sets(corpus);
+    let built = crate::corpus::build_sets(corpus);
+    println!("{}", built.bridge_report);
+    let sets = built.sets;
 
     let (official_by_exact, official_by_fold) = official_surface_maps(official_entries);
 

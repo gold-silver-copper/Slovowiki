@@ -124,6 +124,29 @@ fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
     .unwrap_or_else(|e| panic!("{}: {e:#}", path.display()))
 }
 
+/// The shared eval-harness preamble (V15 item 6): benchmarkable official
+/// entries plus the optional proto index, deduping the copy-pasted opening
+/// of every harness.
+fn harness_preamble(
+    official_path: &Path,
+) -> Result<(Vec<OfficialEntry>, Option<crate::dump::ProtoIndex>)> {
+    let entries: Vec<OfficialEntry> = official::load(official_path)?
+        .into_iter()
+        .filter(|e| e.is_benchmarkable())
+        .collect();
+    Ok((entries, load_proto_index()))
+}
+
+/// Zero-guarded percentage, deduping the identical closure the harnesses
+/// each carried (V15 item 6).
+fn pct(a: usize, b: usize) -> f32 {
+    if b == 0 {
+        0.0
+    } else {
+        100.0 * a as f32 / b as f32
+    }
+}
+
 /// Rules that were tried and *rejected*: each is the production config plus one
 /// experimental rule, so its (negative) delta is measured in isolation.
 fn rejected_experiments() -> Vec<Rung> {
@@ -317,7 +340,9 @@ pub fn run_corpus_eval(official_path: &Path, fit: bool) -> Result<()> {
         // no ground truth and are excluded — a stated limitation: the fit
         // describes official-meaning-reachable sets.
         let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
-        let sets = corpus::build_sets(&corpus);
+        let built = corpus::build_sets(&corpus);
+        println!("{}", built.bridge_report);
+        let sets = built.sets;
         let mut by_token: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, e) in entries.iter().enumerate() {
@@ -791,11 +816,7 @@ fn diff_is_ending(a: &str, b: &str) -> bool {
 /// cognate cohesion of each meaning. Uses `isv` only for this offline analysis —
 /// never on the benchmark path.
 pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
-    let entries: Vec<OfficialEntry> = official::load(official_path)?
-        .into_iter()
-        .filter(|e| e.is_benchmarkable())
-        .collect();
-    let proto = load_proto_index();
+    let (entries, proto) = harness_preamble(official_path)?;
     let cfg = ConsensusConfig::production();
 
     let (mut n, mut miss) = (0usize, 0usize);
@@ -874,13 +895,6 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
         }
     }
 
-    let pct = |a: usize, b: usize| {
-        if b == 0 {
-            0.0
-        } else {
-            100.0 * a as f32 / b as f32
-        }
-    };
     println!("Audit over {} benchmarkable meanings ({} misses):", n, miss);
     println!(
         "  miss classes: wrong-cluster {:.1}% | right-cluster-wrong-form {:.1}% | root-absent {:.1}%",
@@ -965,11 +979,7 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
 /// only to rank stages by recoverable headroom (stage → headroom in pp of exact
 /// top-1 over production).
 pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
-    let entries: Vec<OfficialEntry> = official::load(official_path)?
-        .into_iter()
-        .filter(|e| e.is_benchmarkable())
-        .collect();
-    let proto = load_proto_index();
+    let (entries, proto) = harness_preamble(official_path)?;
     let cfg = ConsensusConfig::production();
 
     // (name, cluster, representative, proto_link) — each flips exactly one oracle,
@@ -1088,11 +1098,7 @@ pub fn run_oracle(official_path: &Path, out_dir: &Path) -> Result<()> {
 /// fix. Also reports each rule's cluster-selection precision on the meanings
 /// whose official root is present in the evidence (the recoverable slice).
 pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
-    let entries: Vec<OfficialEntry> = official::load(official_path)?
-        .into_iter()
-        .filter(|e| e.is_benchmarkable())
-        .collect();
-    let proto = load_proto_index();
+    let (entries, proto) = harness_preamble(official_path)?;
     let cfg = ConsensusConfig::production();
 
     struct Clus {
@@ -1212,13 +1218,6 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             }
         }
         denom_ref = denom;
-        let pct = |a: usize, b: usize| {
-            if b == 0 {
-                0.0
-            } else {
-                100.0 * a as f32 / b as f32
-            }
-        };
         results.push((
             name.to_string(),
             pct(ex, denom),
@@ -1341,13 +1340,6 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     }
 
     let miss = n - norm;
-    let pct = |a: usize, b: usize| {
-        if b == 0 {
-            0.0
-        } else {
-            100.0 * a as f32 / b as f32
-        }
-    };
     let syn_incl = norm + syn;
     println!("Synonym-aware accuracy over {n} benchmarkable meanings:");
     println!("  exact top-1                 {:.2}%", pct(exact, n));
@@ -1435,11 +1427,7 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
 /// scoring — same discipline as the headline benchmark.
 pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     use std::collections::{HashMap, HashSet};
-    let entries: Vec<OfficialEntry> = official::load(official_path)?
-        .into_iter()
-        .filter(|e| e.is_benchmarkable())
-        .collect();
-    let proto = load_proto_index();
+    let (entries, proto) = harness_preamble(official_path)?;
     let cfg = ConsensusConfig::production();
     let corpus = crate::dump::LemmaCorpus::load(Path::new(crate::DEFAULT_LEMMA_CACHE))?;
 
@@ -1615,13 +1603,6 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         }
     }
 
-    let pct = |a: usize, b: usize| {
-        if b == 0 {
-            0.0
-        } else {
-            100.0 * a as f32 / b as f32
-        }
-    };
     println!(
         "Evidence growth (Track E) over {} meanings; cache: {} lemmas",
         base.n, corpus.entry_count
@@ -1758,13 +1739,6 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     let entries = official::load(official_path)?;
     let proto = load_proto_index();
     let cfg = ConsensusConfig::production();
-    let pct = |a: usize, b: usize| {
-        if b == 0 {
-            0.0
-        } else {
-            100.0 * a as f32 / b as f32
-        }
-    };
 
     // ---- Quantification of the multi-word inventory ----
     let multi: Vec<&OfficialEntry> = entries
@@ -2343,11 +2317,7 @@ fn agree_adjective(masc: &str, gender: Option<crate::model::Gender>) -> String {
 /// (medoid / modal-skeleton / shortest) and score the real pipeline, vs the fixed
 /// REP_PRIORITY (production) and the answer-reading oracle-representative.
 pub fn run_rep_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
-    let entries: Vec<OfficialEntry> = official::load(official_path)?
-        .into_iter()
-        .filter(|e| e.is_benchmarkable())
-        .collect();
-    let proto = load_proto_index();
+    let (entries, proto) = harness_preamble(official_path)?;
     let cfg = ConsensusConfig::production();
 
     let run_pass = |rule: &str| -> (usize, usize, usize) {
@@ -3250,13 +3220,6 @@ fn split_rates(results: &[EntryResult]) -> SplitRates {
             dn += r.normalized as usize;
         }
     }
-    let pct = |a: usize, b: usize| {
-        if b == 0 {
-            0.0
-        } else {
-            100.0 * a as f32 / b as f32
-        }
-    };
     SplitRates {
         dev_exact: pct(de, dd),
         dev_norm: pct(dn, dd),

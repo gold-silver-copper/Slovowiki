@@ -7,6 +7,7 @@ pub mod coincheck;
 pub mod consensus;
 pub mod corpus;
 pub mod derive;
+pub mod derive_eval;
 pub mod dump;
 pub mod enrich;
 pub mod eval;
