@@ -1,6 +1,6 @@
 # check-text benchmark (checktext-eval)
 
-**Denominators:** the committed all-correct fixture `data/checktext-fixture.txt` (79 tokens), 5 gold sentences (agreement false-alarm set) and 4 seeded-error sentences. **Leakage story:** the fixture and sentence sets are hand-written against the official vocabulary; the checker never sees expected labels.
+**Denominators:** the committed all-correct fixture `data/checktext-fixture.txt` (79 tokens), 7 gold sentences (agreement false-alarm set) and 4 seeded-error sentences. **Leakage story:** the fixture and sentence sets are hand-written against the official vocabulary; the checker never sees expected labels.
 
 | Measurement | value |
 |---|---:|

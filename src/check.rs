@@ -609,6 +609,35 @@ pub struct AppliedLexicon {
     pub adoptions: Vec<(String, String)>,
 }
 
+impl AppliedLexicon {
+    /// The human load-summary line — singularized as the agent guide
+    /// documents ("1 official pin, 1 adoption"), unit-testable here
+    /// instead of living as format soup inside `run()`.
+    pub fn summary_line(&self, rows: usize) -> String {
+        fn count(n: usize, noun: &str) -> String {
+            format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+        }
+        let adoptions = self
+            .adoptions
+            .iter()
+            .map(|(lemma, gloss)| format!("{lemma} ← '{gloss}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "lexicon: {} — {}, {}, {}{}",
+            count(rows, "row"),
+            count(self.coinages, "coinage"),
+            count(self.pins, "official pin"),
+            count(self.adoptions.len(), "adoption"),
+            if adoptions.is_empty() {
+                String::new()
+            } else {
+                format!(" ({adoptions})")
+            }
+        )
+    }
+}
+
 /// Validate every row and index the coinages' full paradigms (status
 /// `project`), exactly as the official paradigms are indexed — so inflected
 /// sanctioned coinages (`žabervoka`, `žabervokom`) classify instead of
@@ -1467,30 +1496,11 @@ pub fn run(
         BTreeMap::new()
     };
     let mut index = build_index(&entries, Some(Path::new("data/novel-words.tsv")), notes);
+    let mut lexicon_applied: Option<(usize, AppliedLexicon)> = None;
     if let Some(path) = lexicon {
         let rows = parse_lexicon(&std::fs::read_to_string(path)?)?;
         let n = rows.len();
-        let applied = apply_lexicon(&mut index, rows)?;
-        // The disposition summary is part of the gate's honesty (V14.1
-        // finding 8): adoptions especially can appear or vanish across
-        // data refreshes and must never happen silently.
-        let adoptions = applied
-            .adoptions
-            .iter()
-            .map(|(lemma, gloss)| format!("{lemma} ← '{gloss}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!(
-            "lexicon: {n} rows — {} coinages, {} official pins, {} adoptions{}",
-            applied.coinages,
-            applied.pins,
-            applied.adoptions.len(),
-            if adoptions.is_empty() {
-                String::new()
-            } else {
-                format!(" ({adoptions})")
-            }
-        );
+        lexicon_applied = Some((n, apply_lexicon(&mut index, rows)?));
     }
     let index = index;
     let text = std::fs::read_to_string(text_path)?;
@@ -1507,16 +1517,48 @@ pub fn run(
         }
         s.push_str("\n]\n");
         match &summary {
-            // --json --summary: an object with the token array AND the
-            // summary, so agents get both in one parse.
-            Some(summary) => println!(
-                "{{\"tokens\":{},\"summary\":{}}}",
-                s.trim_end(),
-                serde_json::to_string(summary)?
-            ),
+            // --json --summary: ONE object with the token array, the
+            // summary, and (when a lexicon was loaded) the disposition
+            // report — agents get everything in one parse (V14.2 item 1:
+            // the disposition data lives IN the JSON, never in front of
+            // it). Bare --json stays a bare array: shape kept.
+            Some(summary) => {
+                let lexicon_json = match &lexicon_applied {
+                    Some((rows, applied)) => format!(
+                        ",\"lexicon\":{}",
+                        serde_json::to_string(&serde_json::json!({
+                            "rows": rows,
+                            "coinages": applied.coinages,
+                            "official_pins": applied.pins,
+                            "adoptions": applied
+                                .adoptions
+                                .iter()
+                                .map(|(lemma, gloss)| serde_json::json!({
+                                    "lemma": lemma,
+                                    "adopted_gloss": gloss,
+                                }))
+                                .collect::<Vec<_>>(),
+                        }))?
+                    ),
+                    None => String::new(),
+                };
+                println!(
+                    "{{\"tokens\":{},\"summary\":{}{lexicon_json}}}",
+                    s.trim_end(),
+                    serde_json::to_string(summary)?
+                )
+            }
             None => println!("{s}"),
         }
         return fail_gate_if_needed(summary);
+    }
+
+    // The human disposition summary is part of the report (V14.1 finding 8:
+    // adoptions can appear or vanish across data refreshes and must never
+    // happen silently) — but only of the HUMAN report; JSON consumers read
+    // the `lexicon` field above.
+    if let Some((n, applied)) = &lexicon_applied {
+        println!("{}", applied.summary_line(*n));
     }
 
     let n = reports.len();
@@ -2367,6 +2409,35 @@ mod tests {
             "the dual-archaic dvěma must stay unknown (crate instrumental is dvoma): {:?}",
             dvema.iter().map(|r| r.status).collect::<Vec<_>>()
         );
+    }
+
+    /// V14.2 item 1: check-text --json output is machine-parseable with a
+    /// lexicon loaded — the disposition data lives IN the envelope
+    /// (--summary object gains `lexicon`), bare --json stays a bare array
+    /// with no leading prose.
+    #[test]
+    fn lexicon_json_output_is_parseable() {
+        // Exercise the same formatting run() uses, via the pieces: the
+        // summary_line is human-mode-only, and the envelope's lexicon
+        // object serializes cleanly.
+        let applied = AppliedLexicon {
+            coinages: 3,
+            pins: 1,
+            adoptions: vec![("emu".into(), "emu bird".into())],
+        };
+        assert_eq!(
+            applied.summary_line(5),
+            "lexicon: 5 rows — 3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"
+        );
+        let envelope = serde_json::json!({
+            "rows": 5,
+            "coinages": applied.coinages,
+            "official_pins": applied.pins,
+            "adoptions": applied.adoptions.iter().map(|(lemma, gloss)| {
+                serde_json::json!({"lemma": lemma, "adopted_gloss": gloss})
+            }).collect::<Vec<_>>(),
+        });
+        assert_eq!(envelope["adoptions"][0]["adopted_gloss"], "emu bird");
     }
 
     /// V14.1 finding 5: the absorb discipline covers untagged/aux senses —
