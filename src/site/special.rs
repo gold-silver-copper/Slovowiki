@@ -169,7 +169,7 @@ pub(super) fn build_rule_index<'a>(
 /// the ancestor string and the cache word, so the two sides cannot drift.
 pub(super) fn fold_proto_accents(w: &str) -> String {
     w.chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .map(crate::proto::debase_vowel)
         .collect()
 }
@@ -750,7 +750,7 @@ pub(super) fn proposals_page(
         // Curation-note keys follow the site-wide convention: standard
         // orthography, lowercase (see data/curation-notes.example.json).
         let note = curation
-            .get(&crate::orthography::to_standard(&r.form.to_lowercase()))
+            .get(&crate::orthography::fold_key(&r.form))
             .or_else(|| curation.get(&r.form))
             .or_else(|| curation.get(&r.id.to_string()))
             .map(|n| format!(" <span class='muted' title='{}'>[nota]</span>", esc(n)))

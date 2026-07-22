@@ -263,8 +263,7 @@ pub(super) struct SiteEntryInput<'a> {
 }
 
 pub(super) fn slug(value: &str) -> String {
-    let folded =
-        crate::orthography::ascii_skeleton(&crate::orthography::to_standard(&value.to_lowercase()));
+    let folded = crate::orthography::ascii_skeleton(value);
     let mut out = String::new();
     let mut dash = false;
     for ch in folded.chars() {
@@ -328,7 +327,7 @@ pub(super) fn family_key(set: &crate::corpus::CognateSet) -> Option<String> {
 pub(super) fn proto_stem(word: &str) -> Option<String> {
     let word: String = word
         .chars()
-        .filter(|ch| !('\u{0300}'..='\u{036F}').contains(ch))
+        .filter(|ch| !crate::orthography::is_combining_mark(*ch))
         .collect();
     const SUFFIXES: &[&str] = &[
         "ovati", "irati", "nǫti", "ostь", "išče", "ьje", "ica", "ina", "ьcь", "ъka", "ъkъ", "ьnъ",

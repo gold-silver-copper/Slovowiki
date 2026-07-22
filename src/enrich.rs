@@ -171,7 +171,7 @@ fn norm_word(word: &str) -> String {
     word.trim()
         .to_lowercase()
         .chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .collect()
 }
 

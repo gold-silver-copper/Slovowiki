@@ -607,7 +607,7 @@ fn dedupe(candidates: &mut Vec<Candidate>) {
     let mut seen: Vec<String> = Vec::new();
     let mut out: Vec<Candidate> = Vec::new();
     for c in candidates.drain(..) {
-        let key = ortho::to_standard(&c.form.to_lowercase());
+        let key = ortho::fold_key(&c.form);
         if seen.contains(&key) {
             continue;
         }

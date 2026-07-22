@@ -571,7 +571,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
             by_form
-                .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
+                .entry(crate::orthography::fold_key(p.g.form()))
                 .or_default()
                 .push(i);
         }
@@ -1263,7 +1263,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         let oid = record.id;
         let e = &record.entry;
         let isv = record.display.as_str();
-        let fold = crate::orthography::to_standard(&isv.to_lowercase());
+        let fold = crate::orthography::fold_key(isv);
         let syn = synonyms_block(isv, &thesaurus, &isv_to_id);
         let deriv = derivation_block(isv, e.pos, &isv_to_id, true, oid, &mut deriv_rows);
         let meta = meta_by_id.get(&oid).expect("official-only entry meta");
@@ -1545,7 +1545,7 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         }
         // A homograph-demoted entry has `matched` cleared but its form IS an
         // official lemma — never propose a word the dictionary already has.
-        if official_by_fold.contains_key(&crate::orthography::to_standard(&form.to_lowercase())) {
+        if official_by_fold.contains_key(&crate::orthography::fold_key(form)) {
             continue;
         }
         let Some(cal) = calibration.as_ref() else {

@@ -413,7 +413,7 @@ pub(super) fn homograph_groups(
         std::collections::BTreeMap::new();
     for m in metas {
         groups
-            .entry(crate::orthography::to_standard(&m.title.to_lowercase()))
+            .entry(crate::orthography::fold_key(&m.title))
             .or_default()
             .push(m.clone());
     }
@@ -925,7 +925,7 @@ pub(super) fn write_needs_review_subpages(out_dir: &Path, rows: &[SiteEntryMeta]
 }
 
 pub(super) fn suffix_bucket(title: &str, pos: &str) -> String {
-    let folded = crate::orthography::to_standard(&title.to_lowercase());
+    let folded = crate::orthography::fold_key(title);
     if pos == "verb" {
         if folded.ends_with("ti") {
             "glagoly na -ti".to_string()
@@ -1396,7 +1396,7 @@ pub(super) fn write_wiki_indexes(input: WikiIndexInput<'_>) -> Result<()> {
                 .join(format!("{}.html", m.id)),
             page(&format!("Čto veze k {}", m.title), &body, 1),
         )?;
-        let note_key = crate::orthography::to_standard(&m.title.to_lowercase());
+        let note_key = crate::orthography::fold_key(&m.title);
         let note = curation
             .get(&note_key)
             .or_else(|| curation.get(&m.id.to_string()));
@@ -1764,7 +1764,7 @@ pub(super) fn homograph_notice(
     m: &SiteEntryMeta,
     groups: &std::collections::BTreeMap<String, Vec<SiteEntryMeta>>,
 ) -> String {
-    let key = crate::orthography::to_standard(&m.title.to_lowercase());
+    let key = crate::orthography::fold_key(&m.title);
     let Some(rows) = groups.get(&key) else {
         return String::new();
     };
@@ -1786,7 +1786,7 @@ pub(super) fn entry_wiki_blocks(
     build: &BuildMeta,
 ) -> String {
     let mut out = String::new();
-    let note_key = crate::orthography::to_standard(&m.title.to_lowercase());
+    let note_key = crate::orthography::fold_key(&m.title);
     if let Some(note) = curation
         .get(&note_key)
         .or_else(|| curation.get(&m.id.to_string()))

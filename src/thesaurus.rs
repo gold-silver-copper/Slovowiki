@@ -51,7 +51,7 @@ fn pos_class(p: Pos) -> &'static str {
 
 /// The lookup key for a lemma: its standard-alphabet folded spelling.
 fn key(isv: &str) -> String {
-    ortho::to_standard(&isv.trim().to_lowercase())
+    ortho::fold_key(isv.trim())
 }
 
 /// A modern translation form reduced for cross-lemma matching: lowercased,

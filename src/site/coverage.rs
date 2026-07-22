@@ -299,7 +299,7 @@ pub(super) fn build_corpus_render_index(
             std::collections::HashMap::new();
         for (i, p) in prepared.iter().enumerate() {
             by_form
-                .entry(crate::orthography::to_standard(&p.g.form().to_lowercase()))
+                .entry(crate::orthography::fold_key(p.g.form()))
                 .or_default()
                 .push(i);
         }
@@ -402,7 +402,7 @@ pub(super) fn raw_lemma_fate(
     // Same call as the render loop's display headword, by construction —
     // dedup and display must never diverge (issue #62).
     let display = crate::flavorize::flavorize_word(&lemma.lang, &lemma.pos, word);
-    let disp_fold = crate::orthography::to_standard(&display.to_lowercase());
+    let disp_fold = crate::orthography::fold_key(&display);
     if disp_fold.is_empty() {
         return RawFate::Skipped;
     }
@@ -853,7 +853,7 @@ pub(super) fn near_official_match(
     official_entries: &[OfficialEntry],
 ) -> Option<String> {
     const MAX_DISTANCE: usize = 2;
-    let folded = crate::orthography::to_standard(&form.trim().to_lowercase());
+    let folded = crate::orthography::fold_key(form.trim());
     let toks = crate::dump::gloss_tokens(gloss);
     if folded.is_empty() || toks.is_empty() {
         return None;
@@ -871,7 +871,7 @@ pub(super) fn near_official_match(
             continue;
         }
         for byform in e.citation_byforms() {
-            let bf = crate::orthography::to_standard(&byform.form.trim().to_lowercase());
+            let bf = crate::orthography::fold_key(byform.form.trim());
             if bf.is_empty() {
                 continue;
             }

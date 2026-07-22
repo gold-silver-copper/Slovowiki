@@ -117,7 +117,7 @@ pub fn fnv1a32(s: &str) -> u32 {
 
 /// The folded lookup key: standard orthography, lowercase.
 pub fn form_key(form: &str) -> String {
-    ortho::to_standard(&form.trim().to_lowercase())
+    ortho::fold_key(form.trim())
 }
 
 pub fn shard_of(key: &str) -> u32 {

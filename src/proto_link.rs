@@ -86,7 +86,7 @@ pub fn link_oracle<'a>(
     input: &MeaningInput,
     official: &str,
 ) -> Option<ProtoLink<'a>> {
-    let target = ortho::to_standard(&official.trim().to_lowercase());
+    let target = ortho::fold_key(official.trim());
     let mut candidates: Vec<usize> = index.gloss_candidates(&input.gloss);
     for f in &input.forms {
         if !f.modern || !f.primary || f.norm.skeleton.is_empty() {
@@ -112,8 +112,7 @@ pub fn link_oracle<'a>(
         if derived.is_empty() {
             continue;
         }
-        let d =
-            ortho::normalized_edit_distance(&ortho::to_standard(&derived.to_lowercase()), &target);
+        let d = ortho::normalized_edit_distance(&ortho::fold_key(&derived), &target);
         if best.as_ref().map(|(_, bd)| d < *bd).unwrap_or(true) {
             best = Some((e, d));
         }

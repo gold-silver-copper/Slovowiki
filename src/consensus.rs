@@ -357,7 +357,7 @@ pub fn generate_oracle(
     let forced_key: Option<String> = oracle.and_then(|o| {
         o.force_cluster_key.map(|k| k.to_string()).or_else(|| {
             o.cluster
-                .then(|| ortho::consonant_key(&ortho::to_standard(&o.official.to_lowercase())))
+                .then(|| ortho::consonant_key(&ortho::fold_key(o.official)))
         })
     });
     if let Some(key) = forced_key {
@@ -475,11 +475,8 @@ pub fn generate_oracle(
             if form.is_empty() {
                 continue;
             }
-            let std = ortho::to_standard(&form.to_lowercase());
-            if candidates
-                .iter()
-                .any(|c| ortho::to_standard(&c.form.to_lowercase()) == std)
-            {
+            let std = ortho::fold_key(&form);
+            if candidates.iter().any(|c| ortho::fold_key(&c.form) == std) {
                 continue;
             }
             let score = (min_primary - 0.02 - 0.01 * candidates.len() as f32).clamp(0.03, 0.5);
@@ -527,12 +524,10 @@ fn pick_rep_by_rule<'a>(
         "medoid" => group
             .iter()
             .min_by_key(|f| {
-                let a = ortho::to_standard(&f.norm.latin.to_lowercase());
+                let a = ortho::fold_key(&f.norm.latin);
                 group
                     .iter()
-                    .map(|o| {
-                        ortho::levenshtein(&a, &ortho::to_standard(&o.norm.latin.to_lowercase()))
-                    })
+                    .map(|o| ortho::levenshtein(&a, &ortho::fold_key(&o.norm.latin)))
                     .sum::<usize>()
             })
             .copied(),
@@ -596,12 +591,10 @@ fn reconstruct(
     let rep = if let Some(o) = oracle.filter(|o| o.representative) {
         // Oracle (reads the answer): the member folded-closest to the official
         // lemma — the upper bound of a perfect representative choice.
-        let target = ortho::to_standard(&o.official.to_lowercase());
+        let target = ortho::fold_key(o.official);
         group
             .iter()
-            .min_by_key(|f| {
-                ortho::levenshtein(&ortho::to_standard(&f.norm.latin.to_lowercase()), &target)
-            })
+            .min_by_key(|f| ortho::levenshtein(&ortho::fold_key(&f.norm.latin), &target))
             .copied()
     } else if let Some(rule) = oracle.and_then(|o| o.rep_rule) {
         pick_rep_by_rule(rule, group, priority).or_else(by_priority)

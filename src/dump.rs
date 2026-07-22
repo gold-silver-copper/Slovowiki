@@ -464,7 +464,7 @@ fn old_codes_for(lang: &str) -> &'static [&'static str] {
 fn chain_key(word: &str) -> String {
     word.trim()
         .chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .flat_map(char::to_lowercase)
         .collect()
 }

@@ -398,7 +398,7 @@ fn suppletive_plurals_come_from_the_inflector() {
 fn canonical_paradigms_pin_the_inflector_rev() {
     // A crate rev bump that changes these canonical cells (STEEN-G tables)
     // must fail CI, not silently reshape 30k inflection tables.
-    let fold = |x: String| crate::orthography::to_standard(&x.to_lowercase());
+    let fold = |x: String| crate::orthography::fold_key(&x);
     assert_eq!(
         fold(interslavic::noun("žena", IsvCase::Gen, IsvNumber::Singular)),
         "ženy"

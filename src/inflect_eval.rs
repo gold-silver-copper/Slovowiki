@@ -17,7 +17,7 @@ use std::path::Path;
 pub fn run_inflect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     use crate::model::{Gender, Pos};
     let entries = crate::official::load(official_path)?;
-    let fold = |x: &str| crate::orthography::to_standard(&x.trim().to_lowercase());
+    let fold = |x: &str| crate::orthography::fold_key(x.trim());
 
     let (mut n_words, mut n_cells, mut n_blank) = (0usize, 0usize, 0usize);
     // The dictionary has ~950 duplicated headwords (homograph rows); each

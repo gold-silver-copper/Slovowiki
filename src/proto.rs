@@ -117,7 +117,7 @@ fn clean(input: &str, trace: &mut Vec<RuleStep>) -> String {
         // Drop combining accent marks (Proto-Slavic prosody notation) and the
         // parentheses Wiktionary wraps optional letters in (*(j)azъ → jazъ): keep
         // the letter, drop the brackets. Also drop syllable dots / hyphens.
-        if ('\u{0300}'..='\u{036F}').contains(&ch)
+        if crate::orthography::is_combining_mark(ch)
             || matches!(ch, '`' | '´' | '(' | ')' | '·' | '.' | '‑')
         {
             continue;

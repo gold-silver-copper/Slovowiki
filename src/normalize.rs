@@ -126,7 +126,7 @@ pub fn translit_greek(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.trim().to_lowercase().chars() {
         // Combining marks (tonos/psili/dasia written combining) drop.
-        if ('\u{0300}'..='\u{036F}').contains(&c) {
+        if crate::orthography::is_combining_mark(c) {
             continue;
         }
         let repl: &str = match c {
@@ -218,7 +218,7 @@ pub fn fold_deep_token(s: &str) -> String {
         .trim_start_matches('*')
         .trim_end_matches(['.', ',', ';', ':', '!', '?', '"', '\''])
         .chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .flat_map(char::to_lowercase)
         .collect()
 }
@@ -454,7 +454,7 @@ pub fn desc_skeleton(lang: &str, word: &str) -> String {
     // Drop combining accent marks left by stress notation (вода́ → voda).
     let stripped: String = latin
         .chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .collect();
     crate::orthography::ascii_skeleton(&stripped)
 }

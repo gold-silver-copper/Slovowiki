@@ -272,7 +272,7 @@ pub(super) const CLIENT_FOLD_PAIRS: &[(char, &str)] = &[
 pub(super) fn client_fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.to_lowercase().chars() {
-        if ('\u{0300}'..='\u{036F}').contains(&c) {
+        if crate::orthography::is_combining_mark(c) {
             continue;
         }
         match CLIENT_FOLD_PAIRS.iter().find(|(f, _)| *f == c) {

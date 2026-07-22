@@ -632,7 +632,7 @@ fn winning_root_key(top: &Candidate) -> String {
     if top.source == CandidateSource::ProtoSlavicRule {
         if let Some(st) = top.trace.iter().find(|s| s.id == "proto-link") {
             let w = st.before.trim().trim_start_matches('*');
-            return ortho::consonant_key(&ortho::to_standard(&w.to_lowercase()));
+            return ortho::consonant_key(&ortho::fold_key(w));
         }
     }
     ortho::consonant_key(&top.form)
@@ -646,7 +646,7 @@ fn attribute_miss(
     modern_keys: &[String],
     official: &str,
 ) -> (&'static str, String) {
-    let target = ortho::to_standard(&official.trim().to_lowercase());
+    let target = ortho::fold_key(official.trim());
     let official_key = ortho::consonant_key(&target);
 
     let Some(top) = cands.first() else {
@@ -696,9 +696,9 @@ fn attribute_miss(
             if st.id == "proto-link" {
                 continue;
             }
-            let after = ortho::to_standard(&st.after.trim().to_lowercase());
+            let after = ortho::fold_key(st.after.trim());
             let before = if i == 0 {
-                ortho::to_standard(&st.before.trim().to_lowercase())
+                ortho::fold_key(st.before.trim())
             } else {
                 prev.clone()
             };
@@ -724,10 +724,10 @@ fn attribute_within_consensus(trace: &[RuleStep], target: &str) -> (&'static str
     let mut ids: Vec<&str> = Vec::with_capacity(trace.len() + 1);
     let mut forms: Vec<String> = Vec::with_capacity(trace.len() + 1);
     ids.push("<input>");
-    forms.push(ortho::to_standard(&trace[0].before.trim().to_lowercase()));
+    forms.push(ortho::fold_key(trace[0].before.trim()));
     for st in trace {
         ids.push(st.id.as_str());
-        forms.push(ortho::to_standard(&st.after.trim().to_lowercase()));
+        forms.push(ortho::fold_key(st.after.trim()));
     }
     // Last index that folded to the target.
     let last_ok = forms.iter().rposition(|f| f == target);
@@ -1153,7 +1153,7 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 .max_by_key(|c| (c.langs, c.branches))
                 .map(|c| c.key.clone()),
             "oracle-cluster" => {
-                let ok = ortho::consonant_key(&ortho::to_standard(&official.to_lowercase()));
+                let ok = ortho::consonant_key(&ortho::fold_key(official));
                 cs.iter().find(|c| c.key == ok).map(|c| c.key.clone())
             }
             _ => None, // "production"
@@ -1179,7 +1179,7 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             }
             denom += 1;
             let cs = clusters(&input);
-            let official_key = ortho::consonant_key(&ortho::to_standard(&entry.isv.to_lowercase()));
+            let official_key = ortho::consonant_key(&ortho::fold_key(&entry.isv));
             let official_present = cs.iter().any(|c| c.key == official_key);
             let forced = pick(name, &cs, &entry.isv);
             let (cands, _) = if let Some(k) = &forced {
@@ -1295,7 +1295,7 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         if isv.is_empty() {
             continue;
         }
-        let key = ortho::to_standard(&isv.to_lowercase());
+        let key = ortho::fold_key(isv);
         by_form
             .entry(key)
             .or_default()
@@ -1328,7 +1328,7 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         }
         // A miss: classify the prediction against the thesaurus.
-        let pk = ortho::to_standard(&pred.trim().to_lowercase());
+        let pk = ortho::fold_key(pred.trim());
         if !pred.is_empty() && thes.are_synonyms(&entry.isv, &pred) {
             syn += 1; // a valid synonym of this exact concept
         } else if !pred.is_empty() && by_form.contains_key(&pk) {
@@ -1529,7 +1529,7 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 }
             }
             p.n += 1;
-            let official_key = ortho::consonant_key(&ortho::to_standard(&e.isv.to_lowercase()));
+            let official_key = ortho::consonant_key(&ortho::fold_key(&e.isv));
             let root_present = input
                 .forms
                 .iter()
@@ -1564,7 +1564,7 @@ pub fn run_evidence_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         }
         let input = build_input(e);
-        let official_key = ortho::consonant_key(&ortho::to_standard(&e.isv.to_lowercase()));
+        let official_key = ortho::consonant_key(&ortho::fold_key(&e.isv));
         let root_present = input
             .forms
             .iter()
@@ -1928,12 +1928,12 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         p_gloss += ipfs.len().min(pfs.len());
         let mut used: Vec<bool> = vec![false; pfs.len()];
         for i in ipfs {
-            let ki = ortho::consonant_key(&ortho::to_standard(&i.isv.to_lowercase()));
+            let ki = ortho::consonant_key(&ortho::fold_key(&i.isv));
             let Some(qi) = pfs.iter().enumerate().position(|(x, q)| {
                 if used[x] {
                     return false;
                 }
-                let kq = ortho::consonant_key(&ortho::to_standard(&q.isv.to_lowercase()));
+                let kq = ortho::consonant_key(&ortho::fold_key(&q.isv));
                 ki.ends_with(&kq) || kq.ends_with(&ki) || ortho::shares_consonant_root(&ki, &kq)
             }) else {
                 continue;
@@ -2471,7 +2471,7 @@ pub fn run_proto_engine(official_path: &Path, out_dir: &Path) -> Result<()> {
             continue;
         };
         linked += 1;
-        let recon_key = ortho::consonant_key(&ortho::to_standard(&l.entry.word.to_lowercase()));
+        let recon_key = ortho::consonant_key(&ortho::fold_key(&l.entry.word));
         let reflexes: Vec<String> = input
             .forms
             .iter()
@@ -2588,7 +2588,7 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
             let qk = ortho::ascii_skeleton(&ql);
             entries
                 .iter()
-                .find(|e| ortho::to_standard(&e.isv.to_lowercase()) == qs)
+                .find(|e| ortho::fold_key(&e.isv) == qs)
                 .or_else(|| {
                     entries
                         .iter()
@@ -3048,8 +3048,8 @@ fn classify_error(r: &EntryResult) -> &'static str {
     if r.norm_edit >= 0.34 {
         return "different root / derivation";
     }
-    let so = ortho::to_standard(&off.to_lowercase());
-    let sp = ortho::to_standard(&pred.to_lowercase());
+    let so = ortho::fold_key(off);
+    let sp = ortho::fold_key(pred);
     // Same skeleton but different flavored letters => a flavor-recovery miss.
     if ortho::ascii_skeleton(off) == ortho::ascii_skeleton(pred) {
         return "flavored letter (ě/ę/ų/å/ć/đ) not recovered";

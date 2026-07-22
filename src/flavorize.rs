@@ -91,7 +91,7 @@ pub fn translit_text(lang: &str, text: &str) -> String {
 /// Drop combining stress/length marks (Wiktionary headwords carry them).
 fn strip_marks(s: &str) -> String {
     s.chars()
-        .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
+        .filter(|c| !crate::orthography::is_combining_mark(*c))
         .collect()
 }
 
@@ -726,7 +726,7 @@ fn ru_text(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for (i, &ch) in chars.iter().enumerate() {
         // Drop stress/combining marks common in Wiktionary Russian headwords.
-        if ('\u{0300}'..='\u{036F}').contains(&ch) {
+        if crate::orthography::is_combining_mark(ch) {
             continue;
         }
         let prev = previous_base(&chars, i);
@@ -807,7 +807,7 @@ fn previous_base(chars: &[char], i: usize) -> Option<char> {
         .iter()
         .rev()
         .copied()
-        .find(|c| !(('\u{0300}'..='\u{036F}').contains(c)))
+        .find(|c| !(crate::orthography::is_combining_mark(*c)))
         .map(|c| c.to_lowercase().next().unwrap_or(c))
 }
 

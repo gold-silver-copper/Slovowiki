@@ -78,9 +78,9 @@ pub fn detect_pairs(entries: &[OfficialEntry]) -> Vec<AspectPair> {
         };
         let mut used = vec![false; perfectives.len()];
         for &ii in &ipf[gloss] {
-            let ik = consonant_key(&entries[ii].isv);
+            let ik = ortho::consonant_key(&entries[ii].isv);
             let Some(slot) = perfectives.iter().enumerate().position(|(n, &pi)| {
-                !used[n] && roots_related(&ik, &consonant_key(&entries[pi].isv))
+                !used[n] && roots_related(&ik, &ortho::consonant_key(&entries[pi].isv))
             }) else {
                 continue;
             };
@@ -94,10 +94,6 @@ pub fn detect_pairs(entries: &[OfficialEntry]) -> Vec<AspectPair> {
     out
 }
 
-fn consonant_key(word: &str) -> String {
-    ortho::consonant_key(&ortho::to_standard(&word.to_lowercase()))
-}
-
 fn roots_related(a: &str, b: &str) -> bool {
     // Preserve the pre-registered issue-75 denominator exactly: the legacy
     // slice treated an empty consonant skeleton as suffix-related via
@@ -109,7 +105,10 @@ fn roots_related(a: &str, b: &str) -> bool {
 /// broad cognate heuristic (suffix containment or matching first consonants).
 /// This is not a claim of proven etymological identity.
 pub fn pairing_correct(imperfective: &str, perfective: &str) -> bool {
-    roots_related(&consonant_key(imperfective), &consonant_key(perfective))
+    roots_related(
+        &ortho::consonant_key(imperfective),
+        &ortho::consonant_key(perfective),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]

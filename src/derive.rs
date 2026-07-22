@@ -147,14 +147,11 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
         if w.is_empty() || w.contains(' ') || w.contains('#') {
             continue;
         }
-        index
-            .entry(ortho::to_standard(&w.to_lowercase()))
-            .or_default()
-            .push(i);
+        index.entry(ortho::fold_key(w)).or_default().push(i);
     }
     let lookup = |cands: &[String], pos: Pos| -> Option<usize> {
         for c in cands {
-            let key = ortho::to_standard(&c.to_lowercase());
+            let key = ortho::fold_key(c);
             if let Some(v) = index.get(&key) {
                 if let Some(&i) = v.iter().find(|&&i| entries[i].pos == pos) {
                     return Some(i);
@@ -288,8 +285,8 @@ fn mine_pairs(entries: &[OfficialEntry]) -> Vec<Pair> {
         std::collections::HashSet::new();
     pairs.retain(|p| {
         seen.insert((
-            ortho::to_standard(&entries[p.base].isv.trim().to_lowercase()),
-            ortho::to_standard(&entries[p.derived].isv.trim().to_lowercase()),
+            ortho::fold_key(entries[p.base].isv.trim()),
+            ortho::fold_key(entries[p.derived].isv.trim()),
             p.pattern,
         ))
     });
