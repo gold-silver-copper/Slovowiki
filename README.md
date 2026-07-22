@@ -451,7 +451,7 @@ cargo run -- explain "computer"
 # known-lemma / known-form / generated / unknown, computed false-friend
 # warnings, nearest-lemma suggestions; --json for agents):
 cargo run --release -- check-text tekst.txt
-cargo run --release -- check-text tekst.txt --json
+cargo run --release -- check-text tekst.txt --json   # versioned envelope, schema 1
 # CI gate: summary + nonzero exit when unknown tokens / agreement errors
 # exceed the (default 0) thresholds:
 cargo run --release -- check-text tekst.txt --summary --max-unknown 0
@@ -465,9 +465,11 @@ cargo run --release -- check-text tekst.txt --summary --max-unknown 0
 cargo run --release -- check-text tekst.txt --summary --max-unknown 0 \
   --lexicon project-lexicon.tsv
 # Every lexicon load reports row dispositions (coinage / official pin /
-# generated adoption): a human summary line, or a `lexicon` field in the
-# --json --summary object; coin-check --json names its row's disposition
-# as `lexicon_row_disposition` (V14.2).
+# generated adoption): a human summary line, or the `lexicon` field of the
+# --json envelope. check-text --json emits ONE versioned object
+# {schema_version, tokens, summary?, lexicon?} (schema 1, V14.3 — the old
+# bare token array is retired); coin-check --json names its row's
+# disposition as `lexicon_row_disposition`.
 
 # English → Interslavic lookup against a prior export's static API — the
 # reference client for the documented normalization/routing/retry ladder:
@@ -567,7 +569,7 @@ checker. The CLI equivalent:
 
 ```bash
 cargo run --release -- check-text tekst.txt          # human summary
-cargo run --release -- check-text tekst.txt --json   # for agents
+cargo run --release -- check-text tekst.txt --json   # for agents (envelope, schema 1)
 ```
 
 classifies every token (known-lemma / known-form / generated / unknown with

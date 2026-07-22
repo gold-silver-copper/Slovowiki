@@ -404,6 +404,10 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
 
     if json {
         let mut out = serde_json::json!({
+            // Additive (V14.3 item 2): coin-check's JSON was already an
+            // object; it now names its shape generation like every other
+            // machine surface in the repo.
+            "schema_version": 1,
             "word": word,
             "folded_key": folded,
             "phonotactics": { "pass": pass_phono, "violations": violations },

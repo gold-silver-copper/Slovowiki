@@ -1613,12 +1613,15 @@ is clean), while a wrongly-inflected form (`emua`) has no record and stays
   vouches for the reconstruction and supplies the gender/animacy it lacks;
   its paradigm then indexes as `project`, and the dispositions are always
   visible: the human report prints the load summary ("lexicon: 5 rows —
-  3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"), while
-  `--json --summary` carries the same data machine-readably in a `lexicon`
-  field ({{rows, coinages, official_pins, adoptions: [{{lemma,
-  adopted_gloss}}]}}) — bare `--json` stays a bare token array. coin-check's
-  `--lexicon-row` output and `--json` (`lexicon_row_disposition`) name the
-  disposition too;
+  3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"), while EVERY
+  `--json` invocation carries the same data machine-readably in the
+  envelope's `lexicon` field ({{rows, coinages, official_pins, adoptions:
+  [{{lemma, adopted_gloss}}]}}). **check-text JSON schema 1 (V14.3
+  migration)**: `--json` always emits one versioned object
+  {{schema_version, tokens, summary?, lexicon?}} — the pre-V14.3 bare token
+  array is retired; parse `schema_version` before the rest. coin-check's
+  `--json` carries `schema_version` too, and its `--lexicon-row` output
+  (`lexicon_row_disposition`) names the disposition;
 - emits `consistency` warnings when a verification-grade official token's
   gloss overlaps a row's gloss (deterministic token overlap, same
   normalization as the English API) but the token is NOT that row's lemma —

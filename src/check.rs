@@ -1543,6 +1543,66 @@ pub fn summarize(reports: &[TokenReport], gate: SummaryGate) -> Summary {
     }
 }
 
+/// check-text's JSON schema (V14.3 item 2): ONE versioned envelope for
+/// every `--json` invocation — `{schema_version, tokens, summary?,
+/// lexicon?}`. The pre-V14.3 bare token array is retired; this constant is
+/// the migration point future shape changes bump.
+pub const CHECKTEXT_JSON_SCHEMA: u32 = 1;
+
+#[derive(serde::Serialize)]
+struct AdoptionReport<'a> {
+    lemma: &'a str,
+    adopted_gloss: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct LexiconReport<'a> {
+    rows: usize,
+    coinages: usize,
+    official_pins: usize,
+    adoptions: Vec<AdoptionReport<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct CheckTextEnvelope<'a> {
+    schema_version: u32,
+    tokens: &'a [TokenReport],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<&'a Summary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lexicon: Option<LexiconReport<'a>>,
+}
+
+/// Render the REAL `--json` output — one serde pass, no string splicing;
+/// the envelope struct is the single owner of every field name, and the
+/// regression tests parse this function's actual output (the V14.2 test
+/// only exercised a hand-copied shape and could not catch drift).
+fn render_json(
+    reports: &[TokenReport],
+    summary: Option<&Summary>,
+    lexicon: Option<(usize, &AppliedLexicon)>,
+) -> Result<String> {
+    let lexicon = lexicon.map(|(rows, applied)| LexiconReport {
+        rows,
+        coinages: applied.coinages,
+        official_pins: applied.pins,
+        adoptions: applied
+            .adoptions
+            .iter()
+            .map(|(lemma, adopted_gloss)| AdoptionReport {
+                lemma,
+                adopted_gloss,
+            })
+            .collect(),
+    });
+    Ok(serde_json::to_string(&CheckTextEnvelope {
+        schema_version: CHECKTEXT_JSON_SCHEMA,
+        tokens: reports,
+        summary,
+        lexicon,
+    })?)
+}
+
 /// The `check-text` CLI entry point. With `gate` set (`--summary`), a summary
 /// is emitted and the process exits nonzero when the text fails the gate.
 /// `warnings: false` skips the false-friend computation entirely (it loads
@@ -1574,48 +1634,21 @@ pub fn run(
     let summary = gate.map(|g| summarize(&reports, g));
 
     if json {
-        let mut s = String::from("[\n");
-        for (i, r) in reports.iter().enumerate() {
-            if i > 0 {
-                s.push_str(",\n");
-            }
-            let _ = write!(s, "{}", serde_json::to_string(r)?);
-        }
-        s.push_str("\n]\n");
-        match &summary {
-            // --json --summary: ONE object with the token array, the
-            // summary, and (when a lexicon was loaded) the disposition
-            // report — agents get everything in one parse (V14.2 item 1:
-            // the disposition data lives IN the JSON, never in front of
-            // it). Bare --json stays a bare array: shape kept.
-            Some(summary) => {
-                let lexicon_json = match &lexicon_applied {
-                    Some((rows, applied)) => format!(
-                        ",\"lexicon\":{}",
-                        serde_json::to_string(&serde_json::json!({
-                            "rows": rows,
-                            "coinages": applied.coinages,
-                            "official_pins": applied.pins,
-                            "adoptions": applied
-                                .adoptions
-                                .iter()
-                                .map(|(lemma, gloss)| serde_json::json!({
-                                    "lemma": lemma,
-                                    "adopted_gloss": gloss,
-                                }))
-                                .collect::<Vec<_>>(),
-                        }))?
-                    ),
-                    None => String::new(),
-                };
-                println!(
-                    "{{\"tokens\":{},\"summary\":{}{lexicon_json}}}",
-                    s.trim_end(),
-                    serde_json::to_string(summary)?
-                )
-            }
-            None => println!("{s}"),
-        }
+        // One versioned envelope in EVERY json mode (V14.3 item 2): the
+        // lexicon dispositions ride along whether or not --summary gates —
+        // 'must never happen silently' now holds on the bare invocation
+        // too, and schema_version is the migration point the old bare
+        // array never had.
+        println!(
+            "{}",
+            render_json(
+                &reports,
+                summary.as_ref(),
+                lexicon_applied
+                    .as_ref()
+                    .map(|(rows, applied)| (*rows, applied)),
+            )?
+        );
         return fail_gate_if_needed(summary);
     }
 
@@ -2574,33 +2607,63 @@ mod tests {
         );
     }
 
-    /// V14.2 item 1: check-text --json output is machine-parseable with a
-    /// lexicon loaded — the disposition data lives IN the envelope
-    /// (--summary object gains `lexicon`), bare --json stays a bare array
-    /// with no leading prose.
+    /// V14.3 item 2: the MANDATED regression tests, against render_json's
+    /// REAL output (the retired V14.2 test asserted on its own hand copy of
+    /// the shape and could not catch drift). Both modes: with --summary the
+    /// envelope carries summary AND lexicon; without it, tokens + lexicon
+    /// only — and the first byte is '{', so leading prose is impossible by
+    /// construction.
     #[test]
-    fn lexicon_json_output_is_parseable() {
-        // Exercise the same formatting run() uses, via the pieces: the
-        // summary_line is human-mode-only, and the envelope's lexicon
-        // object serializes cleanly.
+    fn json_envelope_real_output_parses_in_both_modes() {
+        let reports = vec![TokenReport {
+            token: "x".into(),
+            status: "known-lemma",
+            lemmas: Vec::new(),
+            analyses: Vec::new(),
+            ambiguous: false,
+            probability: None,
+            suggestions: Vec::new(),
+            warning: None,
+            severity: None,
+            prefer: Vec::new(),
+            agreement: None,
+            consistency: None,
+        }];
         let applied = AppliedLexicon {
             coinages: 3,
             pins: 1,
             adoptions: vec![("emu".into(), "emu bird".into())],
         };
+        let gate = SummaryGate {
+            max_unknown: 0,
+            max_agreement: 0,
+            max_severe_warnings: None,
+            max_consistency: None,
+        };
+        let summary = summarize(&reports, gate);
+        let with_summary =
+            render_json(&reports, Some(&summary), Some((5, &applied))).expect("render");
+        let v: serde_json::Value = serde_json::from_str(&with_summary).expect("parses");
+        assert_eq!(v["schema_version"], CHECKTEXT_JSON_SCHEMA as u64);
+        assert_eq!(v["lexicon"]["adoptions"][0]["adopted_gloss"], "emu bird");
+        assert_eq!(v["lexicon"]["official_pins"], 1);
+        assert!(v["summary"]["passed"].is_boolean());
+
+        let bare = render_json(&reports, None, Some((5, &applied))).expect("render");
+        assert!(bare.starts_with('{'), "no leading prose possible");
+        let v: serde_json::Value = serde_json::from_str(&bare).expect("parses");
+        assert!(v["summary"].is_null(), "no summary key without --summary");
+        assert_eq!(
+            v["lexicon"]["rows"], 5,
+            "dispositions must be visible in BARE --json too"
+        );
+        assert_eq!(v["tokens"].as_array().unwrap().len(), 1);
+
+        // The human line still singularizes as the guide documents.
         assert_eq!(
             applied.summary_line(5),
             "lexicon: 5 rows — 3 coinages, 1 official pin, 1 adoption (emu ← 'emu bird')"
         );
-        let envelope = serde_json::json!({
-            "rows": 5,
-            "coinages": applied.coinages,
-            "official_pins": applied.pins,
-            "adoptions": applied.adoptions.iter().map(|(lemma, gloss)| {
-                serde_json::json!({"lemma": lemma, "adopted_gloss": gloss})
-            }).collect::<Vec<_>>(),
-        });
-        assert_eq!(envelope["adoptions"][0]["adopted_gloss"], "emu bird");
     }
 
     /// V14.1 finding 5: the absorb discipline covers untagged/aux senses —
