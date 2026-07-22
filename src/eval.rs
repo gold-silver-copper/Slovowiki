@@ -1906,10 +1906,17 @@ pub fn run_multiword_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
         if g.is_empty() {
             continue;
         }
-        if e.pos_raw.contains("ipf.") {
-            by_gloss_ipf.entry(g).or_default().push(e);
-        } else if e.pos_raw.contains("pf.") {
-            by_gloss_pf.entry(g).or_default().push(e);
+        // Same reading as aspect::detect_pairs: the biaspectual `ipf./pf.`
+        // row lands on the imperfective side (the historical inline
+        // `contains("ipf.")` matched it first).
+        match crate::postag::aspect(&e.pos_raw) {
+            Some(crate::postag::Aspect::Imperfective | crate::postag::Aspect::Biaspectual) => {
+                by_gloss_ipf.entry(g).or_default().push(e);
+            }
+            Some(crate::postag::Aspect::Perfective) => {
+                by_gloss_pf.entry(g).or_default().push(e);
+            }
+            None => {}
         }
     }
     let (mut p_gloss, mut p_morph) = (0usize, 0usize);

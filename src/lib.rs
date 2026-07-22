@@ -25,6 +25,7 @@ pub mod novel;
 pub mod official;
 pub mod orthography;
 pub mod pipeline;
+pub mod postag;
 pub mod proto;
 pub mod proto_link;
 pub mod release;

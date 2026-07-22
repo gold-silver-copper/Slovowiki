@@ -117,7 +117,7 @@ pub fn build_index(
                 absorb_insert(
                     &mut verb_valence,
                     forms::form_key(isv),
-                    valence_char(&e.pos_raw),
+                    crate::postag::valence(&e.pos_raw),
                 );
             }
             sink.add(
@@ -220,21 +220,6 @@ pub fn build_index(
         prep_cases,
         lexicon: Vec::new(),
         verb_valence,
-    }
-}
-
-/// Valence from the official pos tag. `.intr` is tested BEFORE `.tr`
-/// (substring safety); aux and untagged verbs yield ' ' (abstain).
-fn valence_char(pos_raw: &str) -> char {
-    let s = pos_raw.to_lowercase();
-    if s.contains(".intr") {
-        'i'
-    } else if s.contains(".refl") {
-        'r'
-    } else if s.contains(".tr") {
-        't'
-    } else {
-        ' '
     }
 }
 

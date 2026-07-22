@@ -11,34 +11,9 @@ use crate::official::OfficialEntry;
 use crate::orthography as ortho;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Aspect {
-    Imperfective,
-    Perfective,
-    Biaspectual,
-}
-
-impl Aspect {
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::Imperfective => "ipf",
-            Self::Perfective => "pf",
-            Self::Biaspectual => "ipf/pf",
-        }
-    }
-}
-
-pub fn aspect(pos_raw: &str) -> Option<Aspect> {
-    if pos_raw.contains("ipf./pf.") {
-        Some(Aspect::Biaspectual)
-    } else if pos_raw.contains("ipf.") {
-        Some(Aspect::Imperfective)
-    } else if pos_raw.contains("pf.") {
-        Some(Aspect::Perfective)
-    } else {
-        None
-    }
-}
+// Aspect and aspect() moved verbatim to crate::postag, the one pos_raw
+// grammar (V15 item 5); the old paths stay valid.
+pub use crate::postag::{aspect, Aspect};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AspectPair {
