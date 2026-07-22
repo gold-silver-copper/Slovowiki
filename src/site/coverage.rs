@@ -1298,6 +1298,7 @@ pub(super) fn fmt_bytes(n: u64) -> String {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct CoverageReportInput<'a> {
     pub(super) raw_corpus: &'a crate::dump::RawSlavicCorpus,
     pub(super) coverage_stats: Option<&'a crate::dump::RawCoverageStats>,

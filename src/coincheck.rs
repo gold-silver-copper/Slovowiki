@@ -42,7 +42,8 @@ impl Phonotactics {
                         continue;
                     }
                     p.initials.insert(chars[0]);
-                    p.finals.insert(*chars.last().unwrap());
+                    p.finals
+                        .insert(*chars.last().expect("emptiness checked above"));
                     for w in chars.windows(2) {
                         p.bigrams.insert((w[0], w[1]));
                     }
@@ -312,10 +313,9 @@ pub fn run(official_path: &Path, word: &str, json: bool, overrides: &Overrides) 
     );
     // The crate's guessed gender/animacy for the noun reading (what
     // `interslavic::noun_forms` would silently do).
-    let guess = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let guess = crate::forms::catch_inflect(std::panic::AssertUnwindSafe(|| {
         interslavic::noun_forms(word)
     }))
-    .ok()
     .map(|p| {
         (
             gender_label(p.gender),

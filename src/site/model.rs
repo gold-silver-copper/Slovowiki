@@ -202,6 +202,7 @@ pub(super) struct RenderContext<'a> {
     pub(super) raw_xref: &'a crate::enrich::Xref,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct CorpusEntryInput<'a> {
     pub(super) id: usize,
     pub(super) generated: &'a crate::corpus::GeneratedWord,
@@ -221,6 +222,7 @@ pub(super) struct CorpusEntryInput<'a> {
     pub(super) context: &'a RenderContext<'a>,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct OfficialEntryInput<'a> {
     pub(super) isv: &'a str,
     pub(super) entry: &'a crate::official::OfficialEntry,
@@ -234,6 +236,7 @@ pub(super) struct OfficialEntryInput<'a> {
     pub(super) context: &'a RenderContext<'a>,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct RawEntryInput<'a> {
     pub(super) display: &'a str,
     pub(super) lemma: &'a crate::dump::RawSlavicLemma,

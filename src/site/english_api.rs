@@ -569,16 +569,17 @@ pub fn run_en_batch(site_dir: &Path, file: &Path, json: bool) -> anyhow::Result<
         sense_notes += sense_note.is_some() as usize;
         if !json {
             let show = |c: &Option<serde_json::Value>| {
-                c.as_ref()
-                    .map(|c| {
+                c.as_ref().map_or_else(
+                    || "—".into(),
+                    |c| {
                         format!(
                             "{} [{} via {}]",
                             c["lemma"].as_str().unwrap_or(""),
                             c["trust"].as_str().unwrap_or(""),
                             c["step"].as_str().unwrap_or(""),
                         )
-                    })
-                    .unwrap_or_else(|| "—".into())
+                    },
+                )
             };
             println!(
                 "{query}	{status}	{}	{}{}",
@@ -678,7 +679,7 @@ pub fn run_translation_probe(site_dir: &Path, probe: &Path, out_dir: &Path) -> a
                 ..Default::default()
             });
         }
-        let cat = cats.last_mut().unwrap();
+        let cat = cats.last_mut().expect("pushed above when category changes");
         match row.status {
             "verified" => {
                 cat.verified += 1;

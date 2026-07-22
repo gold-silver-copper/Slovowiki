@@ -176,7 +176,7 @@ pub fn link<'a>(
                 &bare_sk,
                 &gloss_toks,
                 input,
-                Some(isv_prefix.clone()),
+                Some(&isv_prefix),
                 false,
             ) {
                 // Stripped links are slightly less certain.
@@ -196,7 +196,7 @@ fn link_core<'a>(
     skeletons: &[String],
     gloss_toks: &[String],
     input: &MeaningInput,
-    prefix: Option<String>,
+    prefix: Option<&str>,
     deep_corroboration: bool,
 ) -> Option<ProtoLink<'a>> {
     if skeletons.is_empty() {
@@ -271,7 +271,7 @@ fn link_core<'a>(
                 desc_membership,
                 form_similarity,
                 gloss_overlap,
-                prefix: prefix.clone(),
+                prefix: prefix.map(str::to_string),
             });
         }
     }

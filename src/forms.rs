@@ -123,9 +123,19 @@ pub fn shard_of(key: &str) -> u32 {
     fnv1a32(key) % SHARDS
 }
 
+/// The ONE panic boundary around the bundled inflector (V15 item 7). The
+/// interslavic crate's generators panic on shapes they cannot inflect
+/// (machine reconstructions, soft -o loans, raw notation); every caller in
+/// the crate recovers through this wrapper, so the recovery policy — a
+/// panic becomes `None`, i.e. a blank paradigm, never a crashed export or
+/// checker — lives in exactly one place.
+pub fn catch_inflect<T>(f: impl FnOnce() -> T + std::panic::UnwindSafe) -> Option<T> {
+    std::panic::catch_unwind(f).ok()
+}
+
 /// Run an inflector call, recovering its panics as the blank cell "—".
 pub fn catch<F: FnOnce() -> String + std::panic::UnwindSafe>(f: F) -> String {
-    std::panic::catch_unwind(f).unwrap_or_else(|_| "—".to_string())
+    catch_inflect(f).unwrap_or_else(|| "—".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +296,7 @@ pub fn append_reflexive(form: &str, reflexive: bool) -> String {
 }
 
 pub fn verb_cells(word: &str, reflexive: bool) -> Option<VerbCells> {
-    let p = std::panic::catch_unwind(|| interslavic::verb_forms(word)).ok()?;
+    let p = catch_inflect(|| interslavic::verb_forms(word))?;
     let fix = |v: Vec<String>| -> Vec<String> {
         v.into_iter()
             .map(|f| append_reflexive(&clean_cell(&f), reflexive))
@@ -1147,9 +1157,9 @@ fn lemma_aspect_fields(r: &FormRecord, aspect_meta: &AspectMeta) -> (String, Str
     if r.pos != "verb" || !matches!(r.status, "official" | "official-only") {
         return ("null".to_string(), "[]".to_string());
     }
-    aspect_meta
-        .get(&r.entry_id)
-        .map(|(aspect, partners)| {
+    aspect_meta.get(&r.entry_id).map_or_else(
+        || ("null".to_string(), "[]".to_string()),
+        |(aspect, partners)| {
             let partners = format!(
                 "[{}]",
                 partners
@@ -1159,8 +1169,8 @@ fn lemma_aspect_fields(r: &FormRecord, aspect_meta: &AspectMeta) -> (String, Str
                     .join(",")
             );
             (json_str(aspect), partners)
-        })
-        .unwrap_or_else(|| ("null".to_string(), "[]".to_string()))
+        },
+    )
 }
 
 pub struct ApiCounts {

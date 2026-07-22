@@ -801,17 +801,17 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
             gloss: p.matched.map_or(&p.g.set.gloss, |m| {
                 official_entries[m.entry].english.as_str()
             }),
-            pos: p
-                .matched
-                .map(|m| &official_entries[m.entry])
-                .map(|e| {
+            pos: p.matched.map_or_else(
+                || p.g.set.pos.code(),
+                |m| {
+                    let e = &official_entries[m.entry];
                     if crate::aspect::aspect(&e.pos_raw).is_some() {
                         "verb"
                     } else {
                         e.pos.code()
                     }
-                })
-                .unwrap_or_else(|| p.g.set.pos.code()),
+                },
+            ),
             confidence: p.g.confidence,
             score: p.g.score,
             probability: if p.matched.is_some() { None } else { prior },

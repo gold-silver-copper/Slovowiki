@@ -236,7 +236,10 @@ pub(super) fn corpus_entry_page(input: CorpusEntryInput<'_>) -> String {
         xref,
         raw_xref,
     } = *context;
-    let top = g.candidates.first().unwrap();
+    let top = g
+        .candidates
+        .first()
+        .expect("callers render only meanings with candidates");
     let pos_code = g.set.pos.code();
     // The official lemma is the authoritative headword when any candidate
     // reproduces it; the generated form stays visible as the reconstruction.
@@ -1202,6 +1205,7 @@ pub(super) fn enrich_member_block(
     inner
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct CorpusHomeInput<'a> {
     pub(super) entries: usize,
     pub(super) lemmas: usize,
@@ -1395,7 +1399,10 @@ pub(super) fn entry_page(
     evidence: &[Evidence],
     cal: Option<&crate::calibrate::Calibration>,
 ) -> String {
-    let top = g.candidates.first().unwrap();
+    let top = g
+        .candidates
+        .first()
+        .expect("callers render only meanings with candidates");
     let status = g.match_status;
     let pos_code = entry.pos.code();
 
@@ -1645,7 +1652,7 @@ pub(super) fn noun_table(word: &str, gender: Option<crate::model::Gender>) -> St
     // panics (inflect-eval asserts 0 panics over the official corpus), fall back
     // to the per-cell getters, which degrade a panicking cell to "—" — keeping
     // the old robustness for generated (non-official) cognate pages.
-    let forms = std::panic::catch_unwind(|| crate::forms::noun_paradigm_forms(word, gender)).ok();
+    let forms = crate::forms::catch_inflect(|| crate::forms::noun_paradigm_forms(word, gender));
     let cell = |case, num| match &forms {
         Some(f) => crate::forms::clean_cell(f.get(case, num)),
         None => crate::forms::noun_cell_g(word, case, num, gender),
@@ -1669,7 +1676,7 @@ pub(super) fn adj_table(word: &str) -> String {
     // as the API records. The four columns are exactly forms::ADJ_COLS. As in
     // noun_table, a panicking build (none in the official corpus) falls back to
     // the per-cell getters so generated cognate pages degrade to "—", not crash.
-    let forms = std::panic::catch_unwind(|| interslavic::adj_forms(word)).ok();
+    let forms = crate::forms::catch_inflect(|| interslavic::adj_forms(word));
     let header = "<table class='wikitable inflection-table'><thead><tr><th>Padež</th><th>M. živ.</th><th>M. neživ.</th><th>Ž.</th><th>Sr.</th></tr></thead><tbody>";
     let number_block = |num: IsvNumber| {
         let mut s = String::new();

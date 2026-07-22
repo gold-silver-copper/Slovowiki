@@ -984,7 +984,7 @@ fn has_inflection_issue(word: &str, pos: &str) -> bool {
     match pos {
         "noun" | "proper_noun" => {
             let forms =
-                std::panic::catch_unwind(|| crate::forms::noun_paradigm_forms(bare, None)).ok();
+                crate::forms::catch_inflect(|| crate::forms::noun_paradigm_forms(bare, None));
             cases.into_iter().any(|case| {
                 [Number::Singular, Number::Plural]
                     .into_iter()
@@ -995,7 +995,7 @@ fn has_inflection_issue(word: &str, pos: &str) -> bool {
             })
         }
         "adj" => {
-            let forms = std::panic::catch_unwind(|| interslavic::adj_forms(bare)).ok();
+            let forms = crate::forms::catch_inflect(|| interslavic::adj_forms(bare));
             cases.into_iter().any(|case| {
                 [Number::Singular, Number::Plural]
                     .into_iter()
@@ -1274,6 +1274,7 @@ pub(super) fn category_page(
     )
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct WikiIndexInput<'a> {
     pub(super) out_dir: &'a Path,
     pub(super) entries: &'a [SiteEntryMeta],
@@ -1664,15 +1665,16 @@ pub(super) fn entry_infobox(
     extra_rows: &str,
     proto_link: &str,
 ) -> String {
-    let root = ancestor_slug(m)
-        .map(|sl| format!("<a href='../root/{sl}.html'>{}</a>", esc(&m.ancestor)))
-        .unwrap_or_else(|| {
+    let root = ancestor_slug(m).map_or_else(
+        || {
             esc(if m.ancestor.is_empty() {
                 "—"
             } else {
                 &m.ancestor
             })
-        });
+        },
+        |sl| format!("<a href='../root/{sl}.html'>{}</a>", esc(&m.ancestor)),
+    );
     // Calibrated reliability badge (issue #77). Official words state the
     // fact ("oficialno" — not a prediction, no p): official-only pages AND
     // matched entries (issue #86 — the calibrated prior moved to the

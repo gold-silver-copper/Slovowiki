@@ -126,10 +126,15 @@ impl Thesaurus {
                     if row_a == row_b || key_a == key_b {
                         continue;
                     }
-                    let (ia, ib) = (
-                        &info[&(*row_a, key_a.clone())],
-                        &info[&(*row_b, key_b.clone())],
-                    );
+                    // Audit fix (V15 item 7): defensive lookup instead of
+                    // panicking map-indexing; the keys are inserted from the
+                    // same members, so the skip arm is unreachable in practice.
+                    let (Some(ia), Some(ib)) = (
+                        info.get(&(*row_a, key_a.clone())),
+                        info.get(&(*row_b, key_b.clone())),
+                    ) else {
+                        continue;
+                    };
                     if ia.pos == ib.pos && ia.pos != "x" && !ia.gloss.is_disjoint(&ib.gloss) {
                         syn.entry(key_a.clone())
                             .or_default()

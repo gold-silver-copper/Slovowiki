@@ -19,7 +19,7 @@ use crate::forms::{self, FormRecord, RecordSink};
 use crate::model::Pos;
 use crate::official::{self, OfficialEntry};
 use crate::orthography as ortho;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
@@ -424,10 +424,10 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDispos
         }
         Pos::Noun if row.indeclinable => {} // nothing to decline, nothing to probe
         Pos::Noun => {
-            let declinable = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let declinable = forms::catch_inflect(std::panic::AssertUnwindSafe(|| {
                 forms::noun_paradigm_forms_with_animacy(&row.lemma, row.gender, row.animate)
             }))
-            .is_ok();
+            .is_some();
             anyhow::ensure!(
                 declinable,
                 "lexicon lemma '{}': the inflector cannot decline this noun",
@@ -1689,11 +1689,17 @@ pub fn run(
         }
     }
     if let Some(s) = &summary {
-        let severe = match gate.unwrap().max_severe_warnings {
+        let severe = match gate
+            .expect("summary is only built when a gate is active")
+            .max_severe_warnings
+        {
             Some(max) => format!(", {} severe warnings (max {max})", s.severe_warnings),
             None => format!(", {} severe warnings (not gated)", s.severe_warnings),
         };
-        let consistency = match gate.unwrap().max_consistency {
+        let consistency = match gate
+            .expect("summary is only built when a gate is active")
+            .max_consistency
+        {
             Some(max) => format!(
                 ", {} consistency warnings (max {max})",
                 s.consistency_warnings
@@ -1708,9 +1714,9 @@ pub fn run(
             "summary: {} — {} unknown (max {}), {} agreement errors (max {}), {} project{severe}{consistency}",
             if s.passed { "PASS" } else { "FAIL" },
             s.unknown,
-            gate.unwrap().max_unknown,
+            gate.expect("summary is only built when a gate is active").max_unknown,
             s.agreement_errors,
-            gate.unwrap().max_agreement,
+            gate.expect("summary is only built when a gate is active").max_agreement,
             s.project,
         );
     }
@@ -1910,10 +1916,10 @@ pub fn run_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     let mut lex_index = build_index(&entries, &[], BTreeMap::new());
     let lex_rows = parse_lexicon(
         &std::fs::read_to_string("data/project-lexicon-fixture.tsv")
-            .expect("committed lexicon fixture"),
+            .context("committed lexicon fixture")?,
     )
-    .expect("lexicon parses");
-    apply_lexicon(&mut lex_index, lex_rows).expect("lexicon validates");
+    .context("lexicon parses")?;
+    apply_lexicon(&mut lex_index, lex_rows).context("lexicon validates")?;
     let valence_gold_flags: usize = VALENCE_GOLD
         .iter()
         .map(|s| {

@@ -26,15 +26,22 @@ interslavic = "=0.13.0"
 [lints.clippy]
 todo = "deny"
 dbg_macro = "deny"
-unwrap_used = "warn"
-unwrap_in_result = "warn"
-panic = "warn"
-# Pedantic picks (census-selected):
-cast_possible_truncation = "warn"
-cast_sign_loss = "warn"
-match_same_arms = "warn"
+unwrap_used = "deny"
+unwrap_in_result = "deny"
+panic = "deny"
+# Pedantic picks driven to ZERO this PR and gated (CI's -D warnings makes
+# every warn a hard gate):
 map_unwrap_or = "warn"
 redundant_closure_for_method_calls = "warn"
 uninlined_format_args = "warn"
 needless_pass_by_value = "warn"
-too_many_lines = "warn"
+# Pedantic picks ALLOWED with their census counts on record - under CI's
+# -D warnings a "warn" is a gate, and these need a real burn-down first
+# (tracked follow-up, per-module): cast_possible_truncation (29 lib),
+# cast_sign_loss (16 lib), match_same_arms (39), too_many_lines (46).
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+match_same_arms = "allow"
+too_many_lines = "allow"
+expect_used = "allow"
+indexing_slicing = "allow"

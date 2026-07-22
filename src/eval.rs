@@ -108,6 +108,10 @@ fn kept_ladder() -> Vec<Rung> {
 /// load (corrupt, or refused by its schema stamp) aborts with the loader's
 /// message instead of silently dropping the proto engine from every rung —
 /// that would read as a benchmark regression with no visible cause.
+// The deliberate fail-fast (V15 item 7): a cache that exists but fails to
+// load must abort the whole eval run - a silently absent proto engine
+// would read as a benchmark regression with no visible cause.
+#[allow(clippy::panic)]
 fn load_proto_index() -> Option<crate::dump::ProtoIndex> {
     let path = Path::new(crate::DEFAULT_PROTO_CACHE);
     // Note (rejected experiment): augmenting the explicit-etymology map with
@@ -1206,7 +1210,12 @@ pub fn run_select_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
                 // root fingerprint match the official one? (For proto-derived tops a
                 // dropped/added consonant can shift the surface key, so this slightly
                 // under-counts — it is a floor.)
-                if winning_root_key(cands.first().unwrap()) == official_key {
+                // Audit fix (V15 item 7): an empty candidate list is a miss,
+                // not a crash - the diagnostic previously unwrapped here.
+                if cands
+                    .first()
+                    .is_some_and(|top| winning_root_key(top) == official_key)
+                {
                     hit += 1;
                 }
             }
@@ -2605,7 +2614,12 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
     for f in &input.forms {
         println!(
             "  [{}] {:<3} {:<18} -> {}",
-            f.branch.code().chars().next().unwrap().to_uppercase(),
+            f.branch
+                .code()
+                .chars()
+                .next()
+                .expect("branch codes are non-empty")
+                .to_uppercase(),
             f.lang_code,
             f.norm.original,
             f.norm.latin
@@ -2715,7 +2729,7 @@ pub fn run(official_path: &Path, out_dir: &Path) -> Result<()> {
         Some(ConsensusConfig::production()),
         "the kept ladder must end at ConsensusConfig::production()"
     );
-    let production = runs.last().unwrap();
+    let production = runs.last().expect("the ladder always has rungs");
     println!("Shipped production config: {}", production.name);
 
     // Still surface if some earlier rung actually scored higher (a real regression).
@@ -3221,7 +3235,7 @@ fn split_rates(results: &[EntryResult]) -> SplitRates {
 /// significance of each rung's delta, bootstrap CI on the headline, and the
 /// score-calibration table (reliability, ECE, Brier).
 fn write_methodology(out_dir: &Path, runs: &[RunMetrics]) -> Result<()> {
-    let production = runs.last().unwrap();
+    let production = runs.last().expect("the ladder always has rungs");
     let mut s = String::new();
     writeln!(s, "# Evaluation methodology — statistical instruments\n")?;
 

@@ -39,7 +39,7 @@ pub struct Derived {
 
 pub(crate) fn strip_final_vowel(w: &str) -> &str {
     match w.chars().last() {
-        Some('a' | 'o' | 'e' | 'y' | 'i') => &w[..w.len() - w.chars().last().unwrap().len_utf8()],
+        Some(c @ ('a' | 'o' | 'e' | 'y' | 'i')) => &w[..w.len() - c.len_utf8()],
         _ => w,
     }
 }

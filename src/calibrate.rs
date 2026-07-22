@@ -112,8 +112,8 @@ pub fn fit_wilson_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
         }
         pools.push((*n as f64, crate::derive::wilson_lower(*hits, *n)));
         while pools.len() >= 2 && pools[pools.len() - 2].1 > pools[pools.len() - 1].1 {
-            let (w2, m2) = pools.pop().unwrap();
-            let (w1, m1) = pools.pop().unwrap();
+            let (w2, m2) = pools.pop().expect("len >= 2 loop guard");
+            let (w1, m1) = pools.pop().expect("len >= 2 loop guard");
             pools.push((w1 + w2, (w1 * m1 + w2 * m2) / (w1 + w2)));
         }
     }
@@ -181,8 +181,8 @@ pub fn fit_isotonic_deciles(samples: &[(f32, bool)]) -> [f64; 10] {
         }
         pools.push((*n as f64, *hits as f64 / *n as f64));
         while pools.len() >= 2 && pools[pools.len() - 2].1 > pools[pools.len() - 1].1 {
-            let (w2, m2) = pools.pop().unwrap();
-            let (w1, m1) = pools.pop().unwrap();
+            let (w2, m2) = pools.pop().expect("len >= 2 loop guard");
+            let (w1, m1) = pools.pop().expect("len >= 2 loop guard");
             pools.push((w1 + w2, (w1 * m1 + w2 * m2) / (w1 + w2)));
         }
     }
