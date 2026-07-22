@@ -362,24 +362,10 @@ fn proto_merge_key(proto: &str) -> String {
             '(' | '[' => depth += 1,
             ')' | ']' => depth = (depth - 1).max(0),
             _ if depth > 0 => {}
-            _ => out.push(debase_stress(c)),
+            _ => out.push(crate::proto::debase_vowel(c)),
         }
     }
     out
-}
-
-/// Strip a stress-accented base vowel to its plain base; leave etymological
-/// letters untouched (mirrors the reconstruction-cleaning in the proto engine).
-fn debase_stress(c: char) -> char {
-    match c {
-        'à' | 'á' | 'â' | 'ã' | 'ā' | 'ǎ' | 'ȁ' | 'ȃ' => 'a',
-        'è' | 'é' | 'ê' | 'ẽ' | 'ē' | 'ȅ' | 'ȇ' => 'e',
-        'ì' | 'í' | 'î' | 'ĩ' | 'ī' | 'ȉ' | 'ȋ' => 'i',
-        'ò' | 'ó' | 'ô' | 'õ' | 'ō' | 'ȍ' | 'ȏ' => 'o',
-        'ù' | 'ú' | 'û' | 'ũ' | 'ū' | 'ȕ' | 'ȗ' => 'u',
-        'ý' | 'ỳ' | 'ŷ' | 'ȳ' => 'y',
-        other => other,
-    }
 }
 
 /// The most common original reconstruction among merged members (for display).
