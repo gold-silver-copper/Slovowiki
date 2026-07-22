@@ -47,6 +47,15 @@ jobs:
           (cd /tmp/slovowiki-aspect-ci && find . -type f -print0 | sort -z | xargs -0 sha256sum) > /tmp/export-tree-b.sha256
           diff -u /tmp/export-tree-a.sha256 /tmp/export-tree-b.sha256
           git diff --exit-code -- data/novel-words.tsv data/score-calibration.json
+      # Calibrator freshness guard (V15 item 3): data/corpus-calibration.json
+      # is written by `corpus-eval --fit` and read by export, but had no
+      # staleness guard — the one committed artifact that could silently
+      # drift against corpus::build_sets. Refit-and-diff, mirroring the
+      # score-calibration pattern above (the fit takes seconds).
+      - name: Corpus-calibration freshness guard
+        run: |
+          cargo run --release -- corpus-eval --fit
+          git diff --exit-code -- data/corpus-calibration.json
       - name: Inflection full-corpus guard
         run: cargo run --release -- inflect-eval
       # Tracked translation probe (V13 item 3): a REPORTED metric, never a
