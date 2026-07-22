@@ -53,7 +53,12 @@ Tagging is a human release decision — CI never tags, but the
 tree must pass `data-manifest` and its manifest's `data_release` must match
 the tag name, so a moved or stale release tag is a red X, not a silent lie.
 Ordinary `--write` runs (data changes between releases) carry the committed
-`data_release` forward; only this ritual passes `--release`.
+`data_release` forward; only this ritual passes `--release`, and only with
+`--write` (verify mode always checks the committed identity). `data-manifest`
+cross-checks `data_release` against the changelog's newest `### data-vN`
+heading in both modes — add the heading FIRST, then `--write --release N`.
+First run on a pre-schema-2 tree: `--write --release N` (the old manifest
+carries no identity to inherit).
 
 Consumers pin `data-vN`, verify artifacts against `data/MANIFEST.json`
 (plain sha256), read `data_release` to identify an extracted tree with no

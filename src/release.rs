@@ -92,13 +92,33 @@ fn resolved_pin() -> Result<String> {
 /// by `--write` so ordinary data changes don't restate it; only a release
 /// bump passes `--release N` explicitly.
 fn committed_release() -> Result<u32> {
-    let text = std::fs::read_to_string(MANIFEST_PATH)
-        .with_context(|| format!("{MANIFEST_PATH} missing — first write needs --release N"))?;
+    let text = std::fs::read_to_string(MANIFEST_PATH).with_context(|| {
+        format!("{MANIFEST_PATH} missing — first write needs `--write --release N`")
+    })?;
     let v: serde_json::Value = serde_json::from_str(&text).context("parse committed manifest")?;
-    v["data_release"]
-        .as_u64()
-        .map(|n| n as u32)
-        .context("committed manifest has no data_release — regenerate with --release N")
+    v["data_release"].as_u64().map(|n| n as u32).context(
+        "committed manifest has no data_release (pre-schema-2 tree) — regenerate with \
+         `--write --release N`",
+    )
+}
+
+/// The newest `### data-vN` heading in the refresh changelog — the
+/// non-circular witness for `data_release` (V14.3 item 5): verify mode
+/// would otherwise read N from the very manifest being verified, so a
+/// hand-edited number round-tripped green. Two committed, reviewed files
+/// must now agree to lie.
+fn newest_changelog_release(changelog: &Path) -> Result<u32> {
+    let text = std::fs::read_to_string(changelog)
+        .with_context(|| format!("read {}", changelog.display()))?;
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("### data-v"))
+        .and_then(|n| n.trim().parse::<u32>().ok())
+        .with_context(|| {
+            format!(
+                "{} has no `### data-vN` heading — the release ritual adds one per release",
+                changelog.display()
+            )
+        })
 }
 
 fn render_manifest(files: &[String], data_release: u32) -> Result<String> {
@@ -128,11 +148,27 @@ fn render_manifest(files: &[String], data_release: u32) -> Result<String> {
 /// content, file added, file removed, pin bump, baseline move — fails until
 /// the manifest is regenerated, which is the visible event.
 pub fn run_manifest(write: bool, release: Option<u32>) -> Result<()> {
+    // --release is the release-bump act and only makes sense while
+    // writing; in verify mode it would render the comparison with the
+    // caller's N and misreport the mismatch as data drift (V14.3 item 5).
+    anyhow::ensure!(
+        write || release.is_none(),
+        "--release only makes sense with --write (verify mode always checks the committed identity)"
+    );
     let files = tracked_data_files()?;
     let n = match release {
         Some(n) => n,
         None => committed_release()?,
     };
+    // Non-circular identity witness: the changelog's newest release
+    // heading must agree, in BOTH modes — writing enforces the ritual
+    // order (heading first), verifying catches hand-edits and bad merges.
+    let witnessed = newest_changelog_release(Path::new("data/refresh-changelog.md"))?;
+    anyhow::ensure!(
+        witnessed == n,
+        "data_release {n} disagrees with data/refresh-changelog.md's newest heading \
+         `### data-v{witnessed}` — the two committed files must agree (see docs/DATA-REFRESH.md)"
+    );
     let rendered = render_manifest(&files, n)?;
     if write {
         std::fs::write(MANIFEST_PATH, &rendered)?;
@@ -305,6 +341,33 @@ mod tests {
             parsed["data_release"].as_u64().is_some(),
             "schema 2: a tree must know which data-vN it is"
         );
+    }
+
+    /// V14.3 item 5: --release is write-only, and data_release has a
+    /// non-circular witness — the changelog heading.
+    #[test]
+    fn manifest_release_flag_and_witness_discipline() {
+        let err = run_manifest(false, Some(5)).unwrap_err();
+        assert!(err.to_string().contains("--write"), "{err}");
+        let dir = std::env::temp_dir().join(format!(
+            "slovowiki-witness-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("t")
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cl = dir.join("cl.md");
+        std::fs::write(&cl, "# log\n\n### data-v4\n\n## entry\n").unwrap();
+        assert_eq!(newest_changelog_release(&cl).unwrap(), 4);
+        std::fs::write(&cl, "# log\n\nno heading\n").unwrap();
+        assert!(newest_changelog_release(&cl).is_err());
+        // The committed pair agrees (the real cross-check runs in
+        // committed_manifest_matches_tree via run_manifest's own path).
+        assert_eq!(
+            newest_changelog_release(Path::new("data/refresh-changelog.md")).unwrap(),
+            committed_release().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
