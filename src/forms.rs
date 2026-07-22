@@ -665,7 +665,7 @@ fn noun_paradigm_into_sink(
         for (cf, case) in CASES {
             sink.add(
                 &clean_cell(forms.get(case, num)),
-                &format!("{cf}.{nf}."),
+                &noun_feature_label(cf, nf),
                 lemma,
                 entry_id,
                 pos.code(),
@@ -674,6 +674,60 @@ fn noun_paradigm_into_sink(
                 probability,
                 gloss,
             );
+        }
+    }
+}
+
+/// The noun feature-label shape ("gen.jd.") — the ONE formatter behind both
+/// record emission and the animate-reading enrichment, so a label change
+/// breaks loudly at compile/test instead of silently unmatching (V14.2).
+pub fn noun_feature_label(case: &str, number: &str) -> String {
+    format!("{case}.{number}.")
+}
+
+/// The animate accusative-genitive syncretism, stated ONCE for every
+/// consumer (V14.2 item 3): masculine dictionary-animate nouns' genitive
+/// records gain the parallel accusative READING. Cell surfaces are never
+/// reshaped — paradigms stay inanimate-declined on purpose; this is reading
+/// metadata. Called by BOTH index builders (check-text's and the site
+/// export's), which is what the module doctrine above promises. The `'m'`
+/// restriction is linguistically required: feminine a-stems have distinct
+/// accusatives (enriching `ženy` would be wrong), and neuter accusatives
+/// are nominative-shaped.
+pub fn enrich_animate_accusatives(
+    records: &mut [FormRecord],
+    masc_animate_keys: &std::collections::HashSet<String>,
+) {
+    let pairs = [
+        (
+            noun_feature_label("gen", "jd"),
+            noun_feature_label("akuz", "jd"),
+        ),
+        (
+            noun_feature_label("gen", "mn"),
+            noun_feature_label("akuz", "mn"),
+        ),
+    ];
+    for r in records.iter_mut() {
+        if r.pos != "noun" {
+            continue;
+        }
+        // Cheap reject before any allocation: only genitive-bearing records
+        // can be enriched.
+        if !r
+            .analyses
+            .iter()
+            .any(|a| a == &pairs[0].0 || a == &pairs[1].0)
+        {
+            continue;
+        }
+        if !masc_animate_keys.contains(&form_key(&r.lemma)) {
+            continue;
+        }
+        for (gen, akuz) in &pairs {
+            if r.analyses.iter().any(|a| a == gen) && !r.analyses.iter().any(|a| a == akuz) {
+                r.analyses.push(akuz.clone());
+            }
         }
     }
 }
@@ -1574,13 +1628,15 @@ dictionary's own `v.intr.` tag, followed by an unambiguously object-shaped
 SINGULAR noun form, i.e. the animate accusative-genitive syncretism, with
 `ne` negation and plural/partitive genitives abstaining) that fires only
 when NO combination of the tokens' analyses is compatible and both tokens
-are POS-unambiguous verification-grade words. The checker's index states
-that syncretism once, at the record layer: masculine dictionary-animate
-nouns' genitive-shaped forms carry the parallel accusative READING
-(`netopyŕa` = gen.jd. + akuz.jd.), so preposition government and valence
-treat official and project animates identically. The CSV animacy tag is
-trusted for readings and warnings only — never to reshape paradigm cell
-surfaces, which stay inanimate-declined on purpose.
+are POS-unambiguous verification-grade words. The record layer states the
+masculine animate accusative-genitive syncretism once, EVERYWHERE:
+genitive-shaped forms of dictionary-animate masculine nouns carry the
+parallel accusative READING (`netopyŕa` = gen.jd. + akuz.jd.) in
+`api/forms` and in the CLI alike, so preposition government, valence, and
+any API consumer's own agreement logic treat official and project animates
+identically. The CSV animacy tag is trusted for readings and warnings
+only — never to reshape paradigm cell SURFACES, which stay
+inanimate-declined on purpose.
 
 ## Verification workflow (Interslavic text)
 

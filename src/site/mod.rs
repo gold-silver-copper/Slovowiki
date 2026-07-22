@@ -1880,7 +1880,16 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         "raw-intl: {} borrowed internationalism candidates recovered from raw attestations (2e).",
         raw_intl.len()
     );
-    let form_records = form_sink.into_records();
+    let mut form_records = form_sink.into_records();
+    // The SAME animate-reading enrichment check-text's index applies (V14.2
+    // item 3): api/forms and the CLI carry identical analyses for the
+    // masculine-animate accusative-genitive syncretism — the one-pipeline
+    // doctrine. Additive readings on existing records: counts, keys, and
+    // schema are unchanged.
+    crate::forms::enrich_animate_accusatives(
+        &mut form_records,
+        &crate::check::masc_animate_lemma_keys(&official_entries),
+    );
     let lemma_records = lemma_sink.into_records();
     // Computed false-friend notes for the web text-checker (the CLI computes
     // the same records), keyed by folded form and SHARDED like the suggest

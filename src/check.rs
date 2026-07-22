@@ -78,8 +78,12 @@ pub fn build_index(
     let mut sink = RecordSink::default();
     forms::closed_class_records(&mut sink);
     let mut seen: HashSet<String> = HashSet::new();
-    let mut noun_gender: HashMap<String, char> = HashMap::new();
-    let mut noun_animate: HashMap<String, char> = HashMap::new();
+    // Gender and animacy maps come from the shared trait-map builder — the
+    // same absorbing discipline the site export's enrichment set uses
+    // (`družba` friendship f. / best man m. absorbs to ' '; issue #89
+    // B04/G12): once conflicting senses make a key ambiguous, later rows
+    // must not restore a concrete value.
+    let (noun_gender, noun_animate) = noun_trait_maps(entries);
     let mut verb_valence: HashMap<String, char> = HashMap::new();
     // Preposition government comes from the same shared table used by entry
     // rendering; no site-only copy may drift from checker behavior.
@@ -110,40 +114,6 @@ pub fn build_index(
                     forms::form_key(isv),
                     valence_char(&e.pos_raw),
                 );
-            }
-            if e.pos == Pos::Noun {
-                absorb_insert(
-                    &mut noun_animate,
-                    forms::form_key(isv),
-                    if e.noun_traits.animate { 'a' } else { 'n' },
-                );
-            }
-            if e.pos == Pos::Noun {
-                if let Some(g) = e.noun_traits.gender {
-                    let c = match g {
-                        crate::model::Gender::Masculine => 'm',
-                        crate::model::Gender::Feminine => 'f',
-                        crate::model::Gender::Neuter => 'n',
-                        _ => ' ',
-                    };
-                    if c != ' ' {
-                        // A spelling can name nouns of different genders
-                        // (`družba` friendship f. / best man m.). Agreement must
-                        // abstain instead of letting CSV order choose a gender
-                        // for every homograph (issue #89 B04/G12).
-                        noun_gender
-                            .entry(forms::form_key(isv))
-                            .and_modify(|known| {
-                                // Once conflicting senses make the key
-                                // ambiguous, later rows must not restore a
-                                // concrete gender.
-                                if *known != ' ' && *known != c {
-                                    *known = ' ';
-                                }
-                            })
-                            .or_insert(c);
-                    }
-                }
             }
             sink.add(
                 isv,
@@ -232,31 +202,20 @@ pub fn build_index(
     let mut by_key: HashMap<String, Vec<FormRecord>> = HashMap::new();
     let mut lemma_keys: Vec<(String, String)> = Vec::new();
     let mut lemma_seen: HashSet<String> = HashSet::new();
-    for mut r in records {
+    // The animate-reading enrichment is the SHARED pass in forms.rs (V14.2
+    // item 3): the site export applies the same call before write_api, so
+    // check-text, coin-check, and api/forms carry identical readings — the
+    // one-pipeline doctrine, restored.
+    let masc_animate: HashSet<String> = noun_animate
+        .iter()
+        .filter(|(k, a)| **a == 'a' && noun_gender.get(*k) == Some(&'m'))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let mut records = records;
+    forms::enrich_animate_accusatives(&mut records, &masc_animate);
+    for r in records {
         if r.source == "lemma" && lemma_seen.insert(r.key.clone()) {
             lemma_keys.push((r.key.clone(), r.lemma.clone()));
-        }
-        // V14.1 (review findings 2+4): the animate accusative-genitive
-        // syncretism, stated ONCE at the record layer as a READING. Official
-        // paradigms deliberately decline inanimate (cell surfaces are never
-        // reshaped by the CSV animacy tag), so masculine dictionary-animate
-        // nouns' genitive-shaped forms gain the parallel accusative analysis
-        // here — every reading consumer (preposition government, valence)
-        // then handles animates through the same rule as explicitly-animate
-        // project nouns, with no per-consumer special cases. This index is
-        // check-text/coin-check only; the exported site is untouched.
-        if r.pos == "noun" {
-            let lemma_key = forms::form_key(&r.lemma);
-            if noun_animate.get(&lemma_key) == Some(&'a')
-                && noun_gender.get(&lemma_key) == Some(&'m')
-            {
-                for (gen, akuz) in [("gen.jd.", "akuz.jd."), ("gen.mn.", "akuz.mn.")] {
-                    if r.analyses.iter().any(|a| a == gen) && !r.analyses.iter().any(|a| a == akuz)
-                    {
-                        r.analyses.push(akuz.to_string());
-                    }
-                }
-            }
         }
         by_key.entry(r.key.clone()).or_default().push(r);
     }
@@ -611,6 +570,54 @@ pub fn validate_lexicon_row(index: &Index, row: &LexiconRow) -> Result<RowDispos
     Ok(RowDisposition::OfficialPin)
 }
 
+/// The absorbing noun gender/animacy maps over the official entries'
+/// citation byforms — ONE builder for `build_index` and
+/// [`masc_animate_lemma_keys`], so the checker and the site export can
+/// never disagree about which lemmas are animate-masculine.
+pub(crate) fn noun_trait_maps(
+    entries: &[OfficialEntry],
+) -> (HashMap<String, char>, HashMap<String, char>) {
+    let mut gender: HashMap<String, char> = HashMap::new();
+    let mut animate: HashMap<String, char> = HashMap::new();
+    for e in entries {
+        for byform in e.citation_byforms() {
+            let e = byform.entry;
+            if e.pos != Pos::Noun {
+                continue;
+            }
+            let Some(clean) = forms::citation(byform.form.as_str()) else {
+                continue;
+            };
+            let key = forms::form_key(&clean);
+            absorb_insert(
+                &mut animate,
+                key.clone(),
+                if e.noun_traits.animate { 'a' } else { 'n' },
+            );
+            let c = gender_char(e.noun_traits.gender);
+            if c != ' ' {
+                absorb_insert(&mut gender, key, c);
+            }
+        }
+    }
+    (gender, animate)
+}
+
+/// Lemma keys eligible for the animate-accusative reading enrichment
+/// ([`forms::enrich_animate_accusatives`]): dictionary-animate AND
+/// unambiguously masculine. Mixed-gender-absorbed animate homographs
+/// deliberately abstain — a canary test pins that the current data has
+/// none, so a refresh introducing one is a visible event, not silent
+/// coverage loss.
+pub fn masc_animate_lemma_keys(entries: &[OfficialEntry]) -> HashSet<String> {
+    let (gender, animate) = noun_trait_maps(entries);
+    animate
+        .iter()
+        .filter(|(k, a)| **a == 'a' && gender.get(*k) == Some(&'m'))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
 fn gender_char(g: Option<crate::model::Gender>) -> char {
     match g {
         Some(crate::model::Gender::Masculine) => 'm',
@@ -731,15 +738,7 @@ pub fn apply_lexicon(index: &mut Index, rows: Vec<LexiconRow>) -> Result<Applied
         // gender does (same absorbing homograph logic).
         let c = gender_char(row.gender);
         if row.pos == Pos::Noun && c != ' ' {
-            index
-                .noun_gender
-                .entry(row.lemma_key.clone())
-                .and_modify(|known| {
-                    if *known != ' ' && *known != c {
-                        *known = ' ';
-                    }
-                })
-                .or_insert(c);
+            absorb_insert(&mut index.noun_gender, row.lemma_key.clone(), c);
         }
     }
     index.lemma_keys.sort();
@@ -2437,6 +2436,26 @@ mod tests {
             dvema.iter().all(|r| r.status == "unknown"),
             "the dual-archaic dvěma must stay unknown (crate instrumental is dvoma): {:?}",
             dvema.iter().map(|r| r.status).collect::<Vec<_>>()
+        );
+    }
+
+    /// V14.2 item 3 canary: the enrichment abstains on animate lemmas whose
+    /// gender absorbed to ambiguous — correct conservatism, but SILENT
+    /// coverage loss if data drifts there. Current data has none; a refresh
+    /// introducing one fails HERE and forces an explicit decision.
+    #[test]
+    fn no_animate_lemma_has_absorbed_gender() {
+        let entries = official::load(Path::new(crate::DEFAULT_OFFICIAL)).expect("official csv");
+        let (gender, animate) = noun_trait_maps(&entries);
+        let absorbed: Vec<&String> = animate
+            .iter()
+            .filter(|(k, a)| **a == 'a' && gender.get(*k).copied().unwrap_or(' ') != 'm')
+            .map(|(k, _)| k)
+            .collect();
+        assert!(
+            absorbed.is_empty(),
+            "animate lemmas with non-masculine/absorbed gender now exist — decide whether the \
+             enrichment abstention is still right for: {absorbed:?}"
         );
     }
 
