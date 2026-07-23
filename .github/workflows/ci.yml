@@ -62,6 +62,17 @@ jobs:
       - name: Wall-clock ban (SOURCE_DATE_EPOCH discipline)
         run: |
           ! grep -rnE "SystemTime::now|Instant::now|chrono::|OffsetDateTime|Zoned::now" src/
+      # Report freshness (V15.1 item 2): the metrics page reads
+      # synonym-summary.json and corpus-summary.json at export time, so the
+      # committed copies must always match the code. Re-run and diff, same
+      # pattern as the calibrator guards. (The floor step below guards
+      # candidate-generation-summary.json the same way.)
+      - name: Benchmark report freshness (synonym + corpus summaries)
+        run: |
+          set -euo pipefail
+          cargo run --release -- synonym-eval
+          cargo run --release -- corpus-eval
+          git diff --exit-code -- reports/synonym-summary.json reports/synonym-accuracy.md reports/corpus-summary.json
       - name: Inflection full-corpus guard
         run: cargo run --release -- inflect-eval
       # Tracked translation probe (V13 item 3): a REPORTED metric, never a

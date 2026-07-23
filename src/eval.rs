@@ -328,6 +328,22 @@ pub fn run_corpus_eval(official_path: &Path, fit: bool) -> Result<()> {
         pct(exact),
         pct(norm)
     );
+    // Machine-readable twin (V15.1 item 2): the metrics page reads this
+    // instead of carrying hardcoded copies of these two numbers.
+    std::fs::create_dir_all("reports")?;
+    let summary = serde_json::json!({
+        "schema": 1,
+        "n": n,
+        "inherited": inh,
+        "international": bor,
+        "exact_top1": pct(exact) as f64 / 100.0,
+        "normalized_top1": pct(norm) as f64 / 100.0,
+    });
+    std::fs::write(
+        "reports/corpus-summary.json",
+        serde_json::to_string_pretty(&summary)? + "\n",
+    )?;
+    println!("Wrote reports/corpus-summary.json");
 
     if fit {
         // ---- Corpus-coverage calibrator (V11 item 5 / issue #90) ----
@@ -1408,6 +1424,26 @@ pub fn run_synonym_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
     )?;
     std::fs::write(out_dir.join("synonym-accuracy.md"), s)?;
     println!("Wrote {}", out_dir.join("synonym-accuracy.md").display());
+    // Machine-readable twin (V15.1 item 2): the metrics page reads THIS,
+    // never the markdown — the md table is for humans only.
+    let summary = serde_json::json!({
+        "schema": 1,
+        "n": n,
+        "exact_top1": pct(exact, n) as f64 / 100.0,
+        "strict_normalized_top1": pct(norm, n) as f64 / 100.0,
+        "synonym_inclusive_top1": pct(syn_incl, n) as f64 / 100.0,
+        "miss_breakdown": {
+            "misses": miss,
+            "valid_synonym_pct": pct(syn, miss) as f64,
+            "other_sense_pct": pct(other_sense, miss) as f64,
+            "non_official_pct": pct(not_official, miss) as f64,
+        },
+    });
+    std::fs::write(
+        out_dir.join("synonym-summary.json"),
+        serde_json::to_string_pretty(&summary)? + "\n",
+    )?;
+    println!("Wrote {}", out_dir.join("synonym-summary.json").display());
     Ok(())
 }
 
