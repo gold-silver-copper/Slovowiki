@@ -849,41 +849,28 @@ pub fn surface_readings(
         .collect()
 }
 
-/// Load both caches and compute notes; an ABSENT cache degrades silently to
-/// fewer/no notes so `check-text` stays usable without them, but a cache
-/// that exists and fails to load (corrupt/stale schema) warns loudly —
-/// silently dropping every warning would look identical to a clean text.
+/// Load the caches and compute notes. The ACTUAL contract (V15 item 2):
+/// an ABSENT cache degrades silently to fewer/no notes so `check-text`
+/// stays usable without them; a cache that EXISTS but fails to load
+/// (corrupt/stale schema) is a hard error naming the cache — these feed
+/// the shipped notes shards, and silent degradation is precisely what the
+/// schema stamps exist to prevent. (The V15-era warn-and-continue helper
+/// was unreachable under this contract and is gone — V15.1 item 6.)
 pub fn compute_from_default_caches(
     official: &[OfficialEntry],
 ) -> anyhow::Result<BTreeMap<String, Note>> {
-    fn warn_if_unreadable(name: &str, path: &str, loaded: bool) {
-        if !loaded && std::path::Path::new(path).exists() {
-            eprintln!(
-                "warning: {name} cache at {path} exists but failed to load — \
-                 false-friend warnings will be incomplete (re-run the extractor?)"
-            );
-        }
-    }
-    // load_optional contract (V15 item 2, the worst of the three violations
-    // the audit found): these caches feed the SHIPPED notes shards — a
-    // corrupt cache silently degrading the site's false-friend coverage is
-    // precisely what the schema stamps exist to prevent. Absent stays a
-    // warned degradation; corrupt is now a hard error.
     let evidence = crate::dump::load_optional(
         std::path::Path::new(crate::DEFAULT_LEMMA_CACHE),
         LemmaCorpus::load,
     )?;
-    warn_if_unreadable("lemma", crate::DEFAULT_LEMMA_CACHE, evidence.is_some());
     let raw = crate::dump::load_optional(
         std::path::Path::new(crate::DEFAULT_RAW_LEMMA_CACHE),
         RawSlavicCorpus::load,
     )?;
-    warn_if_unreadable("raw-lemma", crate::DEFAULT_RAW_LEMMA_CACHE, raw.is_some());
     let enrich = crate::dump::load_optional(
         std::path::Path::new(crate::DEFAULT_ENRICH_CACHE),
         crate::enrich::EnrichIndex::load,
     )?;
-    warn_if_unreadable("enrich", crate::DEFAULT_ENRICH_CACHE, enrich.is_some());
     Ok(compute(
         official,
         evidence.as_ref(),
