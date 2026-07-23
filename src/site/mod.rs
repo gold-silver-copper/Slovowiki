@@ -1392,6 +1392,12 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         })
         .collect();
     let tsv = crate::novel::write_tsv(&novel_rows);
+    // The export index must see the rows EXACTLY as CLI consumers will read
+    // them back (V15.1 item 7): parsing the serialized TSV restores what the
+    // pre-V15 disk round-trip enforced by construction — quantized
+    // probabilities, sanitized glosses, file-line id numbering — while the
+    // disk read itself stays dead.
+    let novel_rows = crate::novel::parse(&tsv);
     // Committed data artifact AND a served copy, so the page's download link
     // works on the static host.
     std::fs::write(crate::novel::DEFAULT_NOVEL_WORDS, &tsv)?;
