@@ -878,6 +878,9 @@ pub fn run_audit(official_path: &Path, out_dir: &Path) -> Result<()> {
         }
         miss += 1;
 
+        // Deliberately NOT fold_key: this pre-existing idiom folds WITHOUT
+        // lowercasing (consonant_key's skeleton handles case), so the V15
+        // fold audit correctly skipped it. Do not "fix" without measuring.
         let official_key = ortho::consonant_key(&ortho::to_standard(&entry.isv));
         let predicted_key = ortho::consonant_key(&predicted);
         let root_in_evidence = keys.iter().any(|k| k == &official_key);
@@ -2096,7 +2099,7 @@ pub fn run_aspect_eval(official_path: &Path, out_dir: &Path) -> Result<()> {
             pf.isv.trim()
         )?;
     }
-    let pair_hash = fnv1a(&manifest);
+    let pair_hash = crate::fingerprint::fnv1a64(&manifest);
     const EXPECTED_PAIRS: usize = 1_440;
     const EXPECTED_MANIFEST_FNV: u64 = 0x5ab3_e19e_c5d7_58dd;
     anyhow::ensure!(
@@ -2597,7 +2600,7 @@ pub fn explain(official_path: &Path, query: &str) -> Result<()> {
         .or_else(|| {
             // Folded match, so a query without the flavored letters still finds
             // the lemma: "kratky" → kråtky, "medzu" → medžu.
-            let qs = ortho::to_standard(&ql);
+            let qs = ortho::fold_key(query.trim());
             let qk = ortho::ascii_skeleton(&ql);
             entries
                 .iter()
@@ -3156,18 +3159,6 @@ fn write_errors_sample(out_dir: &Path, best: &RunMetrics) -> Result<()> {
 // reproducible byte-for-byte.
 // ---------------------------------------------------------------------------
 
-/// Deterministic FNV-1a hash of an entry id, used for the seeded dev/holdout
-/// split. Stable across runs, platforms and rule changes (depends only on the
-/// entry's id string), so the same entries are held out forever.
-fn fnv1a(s: &str) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s.as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    h
-}
-
 /// ~25% of entries form the HOLDOUT split; rules are developed against the DEV
 /// split and must generalize to the holdout. A rule that gains on dev but not on
 /// holdout is memorizing dictionary idiosyncrasies (overfitting guard).
@@ -3175,7 +3166,7 @@ fn fnv1a(s: &str) -> u64 {
 /// derive-eval, …) so all dev/holdout numbers are computed on the same
 /// entries. Never change the hash or the modulus.
 pub fn is_holdout_id(id: &str) -> bool {
-    fnv1a(id).is_multiple_of(4)
+    crate::fingerprint::fnv1a64(id).is_multiple_of(4)
 }
 
 /// Exact two-sided sign test on discordant pairs. Under H0 the smaller tail is
@@ -3577,20 +3568,6 @@ fn csv_escape(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::indexing_slicing,
-        clippy::too_many_lines,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::match_same_arms,
-        clippy::map_unwrap_or,
-        clippy::redundant_closure_for_method_calls,
-        clippy::uninlined_format_args,
-        clippy::needless_pass_by_value
-    )]
     use super::*;
 
     #[test]

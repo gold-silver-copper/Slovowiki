@@ -1,18 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::unwrap_in_result,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::match_same_arms,
-    clippy::map_unwrap_or,
-    clippy::redundant_closure_for_method_calls,
-    clippy::uninlined_format_args,
-    clippy::needless_pass_by_value
-)]
-
 use super::coverage::{
     inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
     plan_raw_pages, raw_lemma_fate, select_official_entry, select_official_surface, RawFate,
@@ -651,6 +636,55 @@ fn deterministic_entry_ids_ignore_previous_output() {
         "1784371344 UNIX"
     );
     assert!(format_source_date_epoch("not-an-epoch").is_err());
+}
+
+/// V15.1 item 8 (successor to the deleted fallback-banner test): a
+/// comma-joined official cell ("foo, bar") must never be rendered raw by
+/// a shipped page — headwords come from the sanitized byform selection.
+#[test]
+fn official_page_never_renders_raw_comma_byform_cell() {
+    let entry = crate::official::OfficialEntry {
+        id: "synthetic".to_string(),
+        isv: "foo, bar".to_string(),
+        addition: String::new(),
+        pos_raw: "adj.".to_string(),
+        pos: Pos::Adjective,
+        noun_traits: crate::model::NounTraits::default(),
+        english: "sample gloss".to_string(),
+        same_in: String::new(),
+        genesis: String::new(),
+        cells: std::collections::HashMap::new(),
+        frequency: None,
+        de: String::new(),
+        nl: String::new(),
+        eo: String::new(),
+        intelligibility: String::new(),
+        using_example: String::new(),
+    };
+    let meta = meta_for(Confidence::High, None, None, true, Some("bar"), &["ru"]);
+    let raw_xref = crate::enrich::Xref::new();
+    let context = super::model::RenderContext {
+        enrich: None,
+        xref: None,
+        raw_xref: &raw_xref,
+    };
+    let html = super::entries::official_only_page(super::model::OfficialEntryInput {
+        isv: "bar",
+        entry: &entry,
+        id: 1,
+        synonyms: "",
+        derivation: "",
+        wiki_top: "",
+        meta: &meta,
+        raw_credit: "",
+        wiki_bottom: "",
+        context: &context,
+    });
+    assert!(html.contains("bar"));
+    assert!(
+        !html.contains("foo, bar"),
+        "raw comma-joined official cell leaked into shipped HTML"
+    );
 }
 
 /// Test metas for the official-fact-treatment invariants (issue #86).

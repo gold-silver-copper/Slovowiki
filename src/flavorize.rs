@@ -824,20 +824,6 @@ fn push_capitalized(out: &mut String, repl: &str) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::indexing_slicing,
-        clippy::too_many_lines,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::match_same_arms,
-        clippy::map_unwrap_or,
-        clippy::redundant_closure_for_method_calls,
-        clippy::uninlined_format_args,
-        clippy::needless_pass_by_value
-    )]
     use super::*;
 
     fn fw(lang: &str, pos: &str, w: &str) -> String {

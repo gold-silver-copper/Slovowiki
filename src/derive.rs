@@ -14,7 +14,7 @@
 //! (61 `-[pbvm]jeńje`), `-sky` palatalizes (34 `-čsky`, 6 `-žsky`), adverbs
 //! take `-o` (430) with `-e` after softs (71).
 //!
-//! `run_eval` is the leakage-free benchmark (`derive-eval`), built BEFORE the
+//! `derive_eval::run_eval` (src/derive_eval.rs) is the leakage-free benchmark (`derive-eval`), built BEFORE the
 //! layer was tuned: derivationally related official lemma pairs are mined by
 //! inverse suffix lookup, the layer derives the official BASE lemma forward,
 //! and the output is scored against the official DERIVATIVE (which the layer
@@ -358,20 +358,6 @@ pub fn pattern_probabilities(entries: &[OfficialEntry]) -> DerivationProbabiliti
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::indexing_slicing,
-        clippy::too_many_lines,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::match_same_arms,
-        clippy::map_unwrap_or,
-        clippy::redundant_closure_for_method_calls,
-        clippy::uninlined_format_args,
-        clippy::needless_pass_by_value
-    )]
     use super::*;
 
     fn fam(base: &str, pos: Pos) -> Vec<(String, &'static str)> {

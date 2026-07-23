@@ -649,7 +649,9 @@ Site-wide tools beyond the entry pages:
 - **`metrics.html`** ("Statistiky točnosti") — every accuracy metric explained,
   with current numbers;
 - **`datasets.html`** — all machine-readable artifacts (`api/`, `entries.json`,
-  `graph.json`, `novel-words.tsv`, `build.json`, …).
+  `graph.json`, `novel-words.tsv`, `build.json`, `build-info.json` — the
+  machine-readable provenance stamp: git revision, crate versions, pinned
+  data release, cache sha256s — …).
 
 ## Benchmark artifacts
 

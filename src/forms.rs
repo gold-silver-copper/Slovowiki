@@ -1367,7 +1367,8 @@ License: {LICENSE}.
 Other root-level datasets: `edges.json` (semantic graph), `categories.json`,
 `roots.json` (Proto-Slavic root membership), `rules.json` (sound-rule reverse
 index), `search/manifest.json` (client search index), `build.json` (git +
-counts).
+counts), `build-info.json` (full provenance: git revision, crate versions,
+pinned data release, sha256 of each input cache).
 
 ## Verify your client first (self-tests)
 
@@ -1711,20 +1712,6 @@ inanimate-declined on purpose.
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::indexing_slicing,
-        clippy::too_many_lines,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::match_same_arms,
-        clippy::map_unwrap_or,
-        clippy::redundant_closure_for_method_calls,
-        clippy::uninlined_format_args,
-        clippy::needless_pass_by_value
-    )]
     use super::*;
 
     #[test]
