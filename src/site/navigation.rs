@@ -22,6 +22,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+pub(super) const CURATION_NOTES_PATH: &str = "data/curation-notes.json";
+
 fn page(title: &str, body: &str, depth: usize) -> String {
     super::layout::page(title, body, depth, search_js())
 }
@@ -424,7 +426,7 @@ pub(super) fn homograph_groups(
 /// is a normal state (empty map), but an existing-but-corrupt one is a hard
 /// error — it used to silently strip every curation note from the site.
 pub(super) fn load_curation_notes() -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let path = Path::new("data/curation-notes.json");
+    let path = Path::new(CURATION_NOTES_PATH);
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

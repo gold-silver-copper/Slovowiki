@@ -159,4 +159,12 @@ jobs:
               print(f"::error::exact top-1 {exact:.2f}% fell below the 39.5% regression floor")
               sys.exit(1)
           PY
-          git diff --exit-code -- data/score-calibration.json reports/methodology.md reports/candidate-generation-summary.json
+          git diff --exit-code -- \
+            data/score-calibration.json \
+            reports/candidate-generation-report.md \
+            reports/candidate-generation-summary.json \
+            reports/methodology.md \
+            reports/predictions.csv \
+            reports/regressions.csv \
+            reports/improvements.csv \
+            reports/errors-sample.csv

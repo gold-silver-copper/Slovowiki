@@ -155,8 +155,8 @@ enum Command {
         #[arg(long, default_value = "reports")]
         out: PathBuf,
     },
-    /// Print (and optionally write) the canonical record dump + FNV-1a
-    /// fingerprint of the checker/API record surface (V15 item 8).
+    /// Run a scratch full export, then print (and optionally write) its
+    /// canonical api/forms record dump + FNV-1a fingerprint (V15 item 8).
     DumpOutput {
         /// Write the full canonical dump to this file.
         #[arg(long)]
@@ -448,7 +448,10 @@ fn main() -> Result<()> {
             (Some(q), None) => site::run_en_lookup(&site, &q, json),
             _ => anyhow::bail!("pass exactly one of <QUERY> or --batch <file>"),
         },
-        Command::DumpOutput { out } => fingerprint::run_dump(out.as_deref()),
+        Command::DumpOutput { out } => {
+            forms::install_cli_quiet_inflection_hook();
+            fingerprint::run_dump(out.as_deref())
+        }
         Command::DiffOutput { before, after } => fingerprint::run_diff(&before, &after),
         Command::DataManifest { write, release } => release::run_manifest(write, release),
         Command::RefreshOfficial {

@@ -82,12 +82,15 @@ be read through the official-row pipeline calibrator or vice versa.
 | export | `make export` / `cargo run --release -- export --out site` | `data/official-isv.csv`; `data/slavic-lemmas.cache.json` (required for the corpus site); `data/proto-slavic.cache.json`, `data/raw-slavic-lemmas.cache.json`, `data/wiktionary-enrich.cache.json` (optional display caches); `data/corpus-calibration.json`; `data/score-calibration.json`; `data/raw-slavic-coverage.json`; `data/curation-notes.json` (optional); `reports/candidate-generation-summary.json`, `reports/synonym-summary.json`, and `reports/corpus-summary.json` (metrics-page numbers, V15.1 item 2 — read, never invented) | the `site/` tree (HTML + `api/` + `search/` + root JSON datasets) **and** `data/novel-words.tsv` |
 
 The export also writes `site/build-info.json` (V15 item 8): a
-machine-readable provenance stamp — git revision, crate versions, the actual
-official-dictionary path/hash, the optional pinned `data_release`, and the
-sha256 of each input cache — so any deployed tree names its exact inputs even
-outside the release ritual. `data_release` is non-null only when the default
-inputs are used and the complete manifest contract verifies; custom inputs,
-edited data, and incomplete checkouts leave it null.
+machine-readable provenance stamp — git revision, crate versions, the optional
+pinned `data_release`, and a role-keyed `inputs` map containing the
+path, required/optional status, and sha256 of every file read to construct site
+content (including calibrators and benchmark summaries, not only caches) — so
+any deployed tree names its exact content inputs even outside the release
+ritual. An absent optional input is recorded with `sha256: null`; a missing
+required input fails the export. `data_release` is non-null only when the
+default inputs are used and the complete manifest contract verifies; custom
+inputs, edited data, and incomplete checkouts leave it null.
 
 `site/` is scratch (gitignored); `.github/workflows/pages.yml` rebuilds and
 deploys it to GitHub Pages on every master push. `data/novel-words.tsv` is the
@@ -116,7 +119,7 @@ Make-covered:
 | evaluate | `make eval` | proto cache | `reports/candidate-generation-{report.md,summary.json}`, `methodology.md`, `predictions.csv`, `regressions.csv`, `improvements.csv`, `errors-sample.csv` |
 | proto-eval | `make proto-eval` | proto cache | `reports/proto-engine-report.md` |
 | audit | `make audit` | proto cache | `reports/stage-attribution.md`, `audit-misses.csv` |
-| corpus-eval | `make corpus-eval` | lemma + proto caches | stdout only (no report file); `--fit` writes the calibrator above |
+| corpus-eval | `make corpus-eval` | lemma + proto caches | `reports/corpus-summary.json`; `--fit` additionally writes the calibrator above |
 | aspect-eval | `make aspect-eval` | — | `reports/aspect-pairs.{md,tsv}` (frozen manifest; CI diff-guards it) |
 | coverage | `make coverage` | raw cache + tally, enrich cache | `reports/raw-coverage.{md,json}` |
 | translation-probe | `make probe` | a prior `export` (`site/api/en`), `tools/translation-probe.txt` | `reports/translation-probe.md` (reported metric, never a gate; baseline pinned in `src/site/english_api.rs::PROBE_BASELINE` and `data/MANIFEST.json`) |
@@ -132,7 +135,7 @@ maintainer benchmarks and audits — CI runs `inflect-eval` directly as a guard:
 | multiword-eval | multi-word slices + historical aspect baseline | `reports/multiword-aspect.md` |
 | evidence-eval | root-absent recoverability + augmentation A/B | `reports/evidence-growth.md` |
 | checktext-eval | fixture classification + agreement gold/error sets | `reports/checktext-report.md` |
-| synonym-eval | synonym-inclusive accuracy (also read by export's about page) | `reports/synonym-accuracy.md` |
+| synonym-eval | synonym-inclusive accuracy (also read by export's metrics page) | `reports/synonym-{accuracy.md,summary.json}` |
 
 Diagnostic-only, **answer-reading** (they read the official lemma to bound
 headroom and can never feed production):
@@ -155,7 +158,7 @@ Both are governed by the ceremony in [DATA-REFRESH.md](DATA-REFRESH.md);
 
 | Tool | Command | Reads | Owns |
 |---|---|---|---|
-| dump-output | `… dump-output [--out FILE]` | `data/official-isv.csv`, `data/novel-words.tsv` | nothing committed — prints the FNV-1a fingerprint of the canonical record dump (pinned in a unit test) |
+| dump-output | `… dump-output [--out FILE]` | the full default `export` input set above | a scratch full site (deleted on exit) and the optional dump file; prints the FNV-1a fingerprint of the exact finalized `api/forms` record slice, including corpus-only records and every wire field, and enforces the default-tree pin when the data release verifies (custom/unpinned exports report without comparing to that pin; like `export`, this command deterministically rewrites `data/novel-words.tsv`) |
 | diff-output | `… diff-output BEFORE AFTER` | two `dump-output` files | nothing — enumerates the record-level diff, turning "the fingerprint moved" into a reviewable list |
 
 ## Consumer CLIs (not pipeline stages — they only read)

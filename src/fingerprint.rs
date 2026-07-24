@@ -1,20 +1,29 @@
-//! Whole-output fingerprint + differ (V15 item 8, adopted from the
+//! Whole-export form-record fingerprint + differ (V15 item 8, adopted from the
 //! interslavic-rs release workflow).
 //!
 //! The export tree sha proves two builds are identical; this module
-//! EXPLAINS non-identity. `canonical_dump` renders the crate's lexical
-//! record surface — every `FormRecord` the checker/API index carries,
-//! built from the committed dictionary + novel-words data exactly as
-//! `check-text` and the export build it — as sorted, keyed, one-per-line
-//! text. `fnv1a64` reduces it to one number pinned in a unit test, and
-//! `diff-output` turns "the number moved" into the enumerated record diff.
+//! provides the reviewable record-level explanation for non-identity.
+//! The finalized `FormRecord` slice handed to `forms::write_api` is rendered
+//! as sorted, keyed, one-per-line text using the exact `api/forms` wire
+//! serializer. This covers official, generated, derivative, raw-intl, and
+//! corpus-only records plus every serialized field. `fnv1a64` reduces the
+//! dump to a pinned number checked by every verified default-data export,
+//! and `diff-output` turns "the number moved" into the enumerated record
+//! diff. Custom or intentionally degraded exports still report their exact
+//! fingerprint without being compared to the default-tree pin.
 //!
-//! CLI: `dump-output [--out FILE]` prints the fingerprint (and writes the
-//! dump); `diff-output BEFORE AFTER` compares two dumps.
+//! CLI: `dump-output [--out FILE]` runs the default full export in a scratch
+//! directory, prints the fingerprint, and optionally writes the canonical
+//! dump; `diff-output BEFORE AFTER` compares two dumps.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Pinned fingerprint of the finalized 569,538-record `api/forms` surface.
+/// A deliberate export change updates this only after `dump-output` files
+/// from before and after have been compared with `diff-output`.
+pub const EXPORT_FORM_FINGERPRINT: u64 = 0x55a9_a38b_ed7a_13fb;
 
 /// FNV-1a, 64-bit. The 32-bit sibling in forms.rs shards keys; this one
 /// fingerprints the whole canonical dump, where 32 bits would collide.
@@ -27,33 +36,20 @@ pub fn fnv1a64(s: &str) -> u64 {
     h
 }
 
-/// One line per record, tab-keyed, sorted — canonical by construction.
-/// Probabilities are quantized to 3 decimals (the novel-words TSV cell
-/// precision) so the dump never depends on float formatting drift.
-pub fn canonical_dump() -> Result<String> {
-    let entries = crate::official::load(Path::new(crate::DEFAULT_OFFICIAL))?;
-    let novel = crate::novel::load_or_warn(Path::new(crate::novel::DEFAULT_NOVEL_WORDS));
-    let index = crate::check::build_index(&entries, &novel, Default::default());
+/// One line per exported form record, sorted — canonical by construction. The
+/// leading JSON strings are the map key and stored lemma key; the remaining
+/// JSON array is the exact `api/forms` record encoding, including gloss.
+pub(crate) fn canonical_records_dump<'a>(
+    records: impl IntoIterator<Item = &'a crate::forms::FormRecord>,
+) -> Result<String> {
     let mut lines: Vec<String> = Vec::new();
-    for recs in index.by_key.values() {
-        for r in recs {
-            let mut analyses: Vec<&str> = r.analyses.iter().map(String::as_str).collect();
-            analyses.sort_unstable();
-            let prob = r.probability.map(|p| format!("{p:.3}")).unwrap_or_default();
-            lines.push(format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                r.key,
-                r.form,
-                r.lemma,
-                r.lemma_key,
-                r.entry_id,
-                r.pos,
-                r.source,
-                r.status,
-                prob,
-                analyses.join(","),
-            ));
-        }
+    for record in records {
+        lines.push(format!(
+            "{}\t{}\t{}",
+            serde_json::to_string(&record.key)?,
+            serde_json::to_string(&record.lemma_key)?,
+            crate::forms::record_json(record),
+        ));
     }
     lines.sort_unstable();
     let mut out = String::with_capacity(lines.len() * 48);
@@ -64,19 +60,78 @@ pub fn canonical_dump() -> Result<String> {
     Ok(out)
 }
 
-/// `dump-output`: print the fingerprint, optionally write the full dump.
-pub fn run_dump(out: Option<&Path>) -> Result<()> {
-    let dump = canonical_dump()?;
-    if let Some(path) = out {
-        std::fs::write(path, &dump)?;
-        println!(
-            "wrote {} ({} records)",
-            path.display(),
-            dump.lines().count()
-        );
+/// Verify and optionally persist the exact record surface being exported.
+pub(crate) fn verify_export_records(
+    records: &[crate::forms::FormRecord],
+    dump_path: Option<&Path>,
+    enforce_default_pin: bool,
+) -> Result<()> {
+    let dump = canonical_records_dump(records)?;
+    if let Some(path) = dump_path {
+        std::fs::write(path, &dump)
+            .with_context(|| format!("write record dump {}", path.display()))?;
+        println!("wrote {} ({} records)", path.display(), records.len());
     }
-    println!("output fingerprint: {:016x}", fnv1a64(&dump));
+    let got = fnv1a64(&dump);
+    println!("export form-record fingerprint: {got:016x}");
+    if enforce_default_pin {
+        anyhow::ensure!(
+            got == EXPORT_FORM_FINGERPRINT,
+            "export form-record fingerprint moved: {EXPORT_FORM_FINGERPRINT:016x} -> {got:016x} \
+             ({} records). Generate before/after dumps with `dump-output --out FILE`, \
+             enumerate them with `diff-output BEFORE AFTER`, then deliberately update \
+             EXPORT_FORM_FINGERPRINT.",
+            records.len()
+        );
+    } else {
+        println!("export form-record pin not enforced for custom or unpinned data inputs");
+    }
     Ok(())
+}
+
+struct ScratchExport(PathBuf);
+
+impl ScratchExport {
+    fn create() -> Result<Self> {
+        let path =
+            std::env::temp_dir().join(format!("slovowiki-dump-output-{}", std::process::id()));
+        std::fs::create_dir(&path).with_context(|| {
+            format!(
+                "create scratch export {} (remove a stale directory if necessary)",
+                path.display()
+            )
+        })?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for ScratchExport {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            eprintln!(
+                "warning: could not remove scratch export {}: {error}",
+                self.0.display()
+            );
+        }
+    }
+}
+
+/// `dump-output`: run the same full exporter that produces `api/forms`, print
+/// its pinned fingerprint, and optionally write the canonical record dump.
+pub fn run_dump(out: Option<&Path>) -> Result<()> {
+    let lemmas = Path::new(crate::DEFAULT_LEMMA_CACHE);
+    anyhow::ensure!(
+        lemmas.exists(),
+        "{} is missing — run `make extract-lemmas` first",
+        lemmas.display()
+    );
+    let scratch = ScratchExport::create()?;
+    crate::site::export_corpus_with_record_dump(
+        lemmas,
+        Path::new(crate::DEFAULT_OFFICIAL),
+        &scratch.0,
+        out,
+    )
 }
 
 /// `diff-output`: enumerate the record-level differences of two dumps.
@@ -111,32 +166,49 @@ pub fn run_diff(before: &Path, after: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
-    /// The pinned whole-output fingerprint. If this fails, the record
-    /// surface changed: regenerate and ENUMERATE the diff —
-    ///   git stash && cargo run --release -- dump-output --out /tmp/before.tsv && git stash pop
-    ///   cargo run --release -- dump-output --out /tmp/after.tsv
-    ///   cargo run --release -- diff-output /tmp/before.tsv /tmp/after.tsv
-    /// then update FINGERPRINT here and record the enumerated diff in the
-    /// commit message (a data refresh records it in the refresh changelog).
-    /// An UNEXPLAINED movement is a bug, not a pin to bump.
     #[test]
-    fn output_fingerprint_is_pinned() {
-        if cfg!(debug_assertions) {
-            eprintln!(
-                "skipped: the pin is enforced in release runs (CI and `cargo test --release`)"
-            );
-            return;
-        }
-        const FINGERPRINT: u64 = 0x262d_d798_416d_323f;
-        let dump = canonical_dump().unwrap();
-        let got = fnv1a64(&dump);
+    fn export_fingerprint_pin_cannot_be_disabled() {
+        assert_ne!(
+            EXPORT_FORM_FINGERPRINT, 0,
+            "every full export enforces this pin; zero must never disable the gate"
+        );
+    }
+
+    #[test]
+    fn canonical_record_dump_covers_the_complete_forms_wire_record() {
+        let record = crate::forms::FormRecord {
+            form: "forma".into(),
+            key: "form-key".into(),
+            lemma: "lemma".into(),
+            lemma_key: "lemma-key".into(),
+            entry_id: 7,
+            pos: "noun",
+            analyses: vec!["nom.jd.".into()],
+            source: "lemma",
+            status: "official",
+            probability: Some(0.375),
+            gloss: "gloss".into(),
+        };
+        let dump = canonical_records_dump([&record]).unwrap();
         assert_eq!(
-            got,
-            FINGERPRINT,
-            "output fingerprint moved: {FINGERPRINT:016x} -> {got:016x} \
-             ({} records). See this test's doc comment for the regenerate/diff \
-             ritual and the changelog obligation.",
-            dump.lines().count()
+            dump,
+            "\"form-key\"\t\"lemma-key\"\t\
+             [\"forma\",\"lemma\",7,\"noun\",[\"nom.jd.\"],\"lemma\",\
+             \"official\",0.375,\"gloss\"]\n"
+        );
+
+        let mut changed_gloss = record.clone();
+        changed_gloss.gloss = "changed gloss".into();
+        assert_ne!(
+            dump,
+            canonical_records_dump([&changed_gloss]).unwrap(),
+            "a wire-visible gloss change must move the fingerprint"
+        );
+        verify_export_records(std::slice::from_ref(&record), None, false)
+            .expect("custom/unpinned exports report without enforcing the default-tree pin");
+        assert!(
+            verify_export_records(std::slice::from_ref(&record), None, true).is_err(),
+            "the verified default-data path must enforce the pinned whole-export fingerprint"
         );
     }
 

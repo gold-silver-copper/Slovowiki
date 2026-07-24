@@ -639,7 +639,7 @@ fn deterministic_entry_ids_ignore_previous_output() {
 }
 
 #[test]
-fn build_info_hashes_the_actual_lemma_input() {
+fn build_info_hashes_every_export_input() {
     let dir = std::env::temp_dir().join(format!(
         "slovowiki-build-info-{}-{}",
         std::process::id(),
@@ -660,27 +660,134 @@ fn build_info_hashes_the_actual_lemma_input() {
     let doc: serde_json::Value =
         serde_json::from_str(&super::special::build_info_json(&build, &official, &lemmas).unwrap())
             .unwrap();
-    let key = lemmas.display().to_string();
-    assert!(
-        doc["caches"]
-            .get(&key)
-            .is_some_and(serde_json::Value::is_string),
-        "custom lemma input is absent from build provenance: {doc}"
+    assert_eq!(doc["schema_version"], 1);
+    assert_eq!(
+        doc["inputs"]["lemma_corpus"]["path"],
+        lemmas.display().to_string()
     );
-    assert!(
-        doc["caches"].get(crate::DEFAULT_LEMMA_CACHE).is_none(),
-        "build provenance incorrectly names the default lemma cache: {doc}"
+    assert_eq!(
+        doc["inputs"]["lemma_corpus"]["sha256"],
+        crate::release::sha256_file(&lemmas).unwrap().0
     );
-    assert_eq!(doc["official"]["path"], official.display().to_string());
-    assert!(
-        doc["official"]["sha256"].is_string(),
-        "custom official input is absent from build provenance: {doc}"
+    assert_eq!(doc["inputs"]["lemma_corpus"]["required"], true);
+    assert_eq!(
+        doc["inputs"]["official_dictionary"]["path"],
+        official.display().to_string()
     );
+    assert_eq!(
+        doc["inputs"]["official_dictionary"]["sha256"],
+        crate::release::sha256_file(&official).unwrap().0
+    );
+    assert_eq!(doc["inputs"]["official_dictionary"]["required"], true);
+    for (role, path, required) in [
+        ("raw_lemma_corpus", crate::DEFAULT_RAW_LEMMA_CACHE, false),
+        ("proto_slavic_cache", crate::DEFAULT_PROTO_CACHE, false),
+        ("wiktionary_enrichment", crate::DEFAULT_ENRICH_CACHE, false),
+        (
+            "corpus_calibration",
+            crate::calibrate::CORPUS_CALIBRATION_PATH,
+            false,
+        ),
+        ("pipeline_score_calibration", crate::calibrate::PATH, false),
+        (
+            "raw_slavic_coverage",
+            "data/raw-slavic-coverage.json",
+            false,
+        ),
+        (
+            "candidate_generation_summary",
+            super::special::CANDIDATE_SUMMARY_PATH,
+            true,
+        ),
+        (
+            "synonym_summary",
+            super::special::SYNONYM_SUMMARY_PATH,
+            true,
+        ),
+        ("corpus_summary", super::special::CORPUS_SUMMARY_PATH, true),
+    ] {
+        assert_eq!(
+            doc["inputs"][role]["path"], path,
+            "wrong path for {role}: {doc}"
+        );
+        assert_eq!(
+            doc["inputs"][role]["sha256"],
+            crate::release::sha256_file(Path::new(path)).unwrap().0,
+            "wrong digest for {role}: {doc}"
+        );
+        assert_eq!(
+            doc["inputs"][role]["required"], required,
+            "wrong requiredness for {role}: {doc}"
+        );
+    }
+    let curation = &doc["inputs"]["curation_notes"];
+    assert_eq!(curation["path"], super::navigation::CURATION_NOTES_PATH);
+    if Path::new(super::navigation::CURATION_NOTES_PATH).exists() {
+        assert!(curation["sha256"].is_string(), "{doc}");
+    } else {
+        assert!(curation["sha256"].is_null(), "{doc}");
+    }
+    assert_eq!(curation["required"], false);
     assert!(
         doc["data_release"].is_null(),
         "custom inputs must not claim the default data release: {doc}"
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn export_record_pin_only_applies_to_the_verified_default_data_tree() {
+    assert!(
+        super::default_record_pin_applies(
+            Path::new(crate::DEFAULT_LEMMA_CACHE),
+            Path::new(crate::DEFAULT_OFFICIAL),
+        ),
+        "the committed default inputs should enforce the whole-export record pin"
+    );
+    assert!(
+        !super::default_record_pin_applies(
+            Path::new(crate::DEFAULT_LEMMA_CACHE),
+            Path::new("/tmp/custom-official.csv"),
+        ),
+        "a custom official dictionary must not be compared to the default-tree pin"
+    );
+    assert!(
+        !super::default_record_pin_applies(
+            Path::new("/tmp/custom-lemmas.cache.json"),
+            Path::new(crate::DEFAULT_OFFICIAL),
+        ),
+        "a custom lemma corpus must not be compared to the default-tree pin"
+    );
+}
+
+#[test]
+fn metrics_page_only_publishes_machine_readable_benchmark_values() {
+    let bench = super::special::BenchSummary::load().unwrap();
+    let candidate: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(super::special::CANDIDATE_SUMMARY_PATH).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        bench.main_n,
+        candidate["runs"].as_array().unwrap().last().unwrap()["n"]
+            .as_u64()
+            .unwrap() as usize
+    );
+
+    let page = super::special::metrics_page(None, &bench);
+    assert!(
+        page.contains(&format!("({} jednoslovnyh zapisov)", bench.main_n)),
+        "benchmark denominator must come from the summary"
+    );
+    for stale_literal in [
+        "20,1%", "46,68%", "52,74%", "~48%", "~30%", "~21%", "89,5%", "+4,5pp", "+2,3pp", "+2,7pp",
+        "+9,4pp", "+1,09pp",
+    ] {
+        assert!(
+            !page.contains(stale_literal),
+            "report-only historical value {stale_literal} was presented as live"
+        );
+    }
 }
 
 /// V15.1 item 8 (successor to the deleted fallback-banner test): a

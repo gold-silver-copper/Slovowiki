@@ -1125,7 +1125,12 @@ fn json_str(s: &str) -> String {
     out
 }
 
-fn record_json(r: &FormRecord) -> String {
+/// The canonical wire encoding of one `api/forms` record.
+///
+/// Kept crate-visible so the record-surface fingerprint uses exactly the
+/// serializer the export writes. Any wire-field addition therefore changes
+/// both the API and the pinned diagnostic dump in the same change.
+pub(crate) fn record_json(r: &FormRecord) -> String {
     let analyses = r
         .analyses
         .iter()
@@ -1368,7 +1373,8 @@ Other root-level datasets: `edges.json` (semantic graph), `categories.json`,
 `roots.json` (Proto-Slavic root membership), `rules.json` (sound-rule reverse
 index), `search/manifest.json` (client search index), `build.json` (git +
 counts), `build-info.json` (full provenance: git revision, crate versions,
-pinned data release, sha256 of each input cache).
+pinned data release, and role-keyed path/sha256 records for every content
+input).
 
 ## Verify your client first (self-tests)
 

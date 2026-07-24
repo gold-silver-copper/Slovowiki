@@ -57,8 +57,8 @@ The cache is built by filtering the RU/PL/CS dumps to the ~70k cognate words tha
 actually appear in the corpus (streamed in seconds), so the enrichment is
 committed and the site build stays self-contained.
 - `cargo run -- export` — generate the cognate-set site (~26.4k generated words plus
-  ~14.2k official-only sense pages after conservative deduplication; falls back to the
-  dictionary-seeded site if the lemma cache is absent).
+  ~14.2k official-only sense pages after conservative deduplication). The lemma cache
+  is required; when it is absent, export fails with the regeneration command.
 - Independent validation: **~4.2k official Interslavic senses are conservatively reproduced**
   by a generated word (of ~26.4k), with same-spelling homographs kept as separate sense
   pages and duplicate generated sets deduped, without dictionary leakage into generation.
@@ -399,7 +399,8 @@ INTEGRATION.md           downstream-consumer contract (check-text schema, pinnin
 ```
 
 Within `site/`, dependencies flow from shared `model`/`assets` and `layout`
-boundaries into page-specific renderers, then into `site::export` orchestration.
+boundaries into page-specific renderers, then into `site::export_corpus`
+orchestration.
 Modules use explicit imports so cross-boundary dependencies remain visible and
 cycles cannot be hidden by a shared glob namespace.
 
@@ -651,7 +652,8 @@ Site-wide tools beyond the entry pages:
 - **`datasets.html`** — all machine-readable artifacts (`api/`, `entries.json`,
   `graph.json`, `novel-words.tsv`, `build.json`, `build-info.json` — the
   machine-readable provenance stamp: git revision, crate versions, official
-  dictionary path/hash, optional pinned data release, cache sha256s — …).
+  dictionary and all other content-input paths/hashes, optional pinned data
+  release — …).
 
 ## Benchmark artifacts
 

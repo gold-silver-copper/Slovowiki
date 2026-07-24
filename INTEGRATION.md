@@ -95,14 +95,19 @@ never re-sort variants, and must not assume any ordering other than
 Every deployed tree carries `build-info.json` at its root: git revision,
 crate name/version, the RESOLVED `interslavic` version from Cargo.lock
 (field `interslavic`, plain version with no constraint operator — truthful
-even under a `[patch]` override), the official dictionary input path/hash,
-the optional pinned `data_release`, and the sha256 of each input cache (the
-same digests `data/MANIFEST.json` publishes). `data_release` is non-null only
-when the default inputs are used and the full manifest contract verifies
-against the current checkout; custom inputs, edited data, or an incomplete
-checkout leave it null rather than falsely claiming a data-vN identity. Use
-it to identify what produced the artifacts you are consuming; it is
-deterministic for a given checkout and exact set of input bytes.
+even under a `[patch]` override), and the optional pinned `data_release`.
+Schema 1's role-keyed `inputs` object records every file read to construct site
+content. Each record contains `path`, `required`, and `sha256`; absent optional
+inputs have a null digest, while missing required inputs fail the export. This
+includes the official dictionary, evidence caches, calibrators, curation and
+coverage data, and the benchmark summaries rendered on `metrics.html` (using
+the same digests `data/MANIFEST.json` publishes for covered data).
+`data_release` is non-null only when the default inputs are used and the full
+manifest contract verifies against the current checkout; custom inputs, edited
+data, or an incomplete checkout leave it null rather than falsely claiming a
+data-vN identity. Use the complete `inputs` map to identify what produced the
+artifacts you are consuming; it is deterministic for a given checkout and
+exact set of content-input bytes.
 
 ## 6. Never post-process
 

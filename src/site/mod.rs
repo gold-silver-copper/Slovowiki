@@ -90,6 +90,40 @@ impl DeterministicEntryIds {
 /// etymologically-connected Slavic lemmas becomes one Interslavic word, with
 /// confidence scaling by how many languages/branches attest it.
 pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -> Result<()> {
+    export_corpus_impl(lemmas_path, official_path, out_dir, None)
+}
+
+fn default_record_pin_applies(lemmas_path: &Path, official_path: &Path) -> bool {
+    official_path == Path::new(crate::DEFAULT_OFFICIAL)
+        && lemmas_path == Path::new(crate::DEFAULT_LEMMA_CACHE)
+        && crate::release::verified_data_release()
+            .ok()
+            .flatten()
+            .is_some()
+}
+
+/// Run the full exporter and also persist its exact finalized `api/forms`
+/// record surface for `dump-output`. Keeping this path inside the exporter
+/// prevents the diagnostic from rebuilding a smaller, divergent index.
+pub(crate) fn export_corpus_with_record_dump(
+    lemmas_path: &Path,
+    official_path: &Path,
+    out_dir: &Path,
+    record_dump: Option<&Path>,
+) -> Result<()> {
+    export_corpus_impl(lemmas_path, official_path, out_dir, record_dump)
+}
+
+fn export_corpus_impl(
+    lemmas_path: &Path,
+    official_path: &Path,
+    out_dir: &Path,
+    record_dump: Option<&Path>,
+) -> Result<()> {
+    // Snapshot pin applicability before export rewrites its owned
+    // data/novel-words.tsv artifact. A code-induced novel-row change must not
+    // invalidate the manifest mid-run and thereby disable this very gate.
+    let enforce_default_pin = default_record_pin_applies(lemmas_path, official_path);
     let corpus = crate::dump::LemmaCorpus::load(lemmas_path)?;
     let cfg = ConsensusConfig::production();
     let built = crate::corpus::build_sets(&corpus);
@@ -1671,6 +1705,10 @@ pub fn export_corpus(lemmas_path: &Path, official_path: &Path, out_dir: &Path) -
         &mut form_records,
         &crate::check::masc_animate_lemma_keys(&official_entries),
     );
+    // V15 item 8: fingerprint the exact finalized slice that write_api
+    // receives below. A checker-only reconstruction silently omitted
+    // corpus-generated, derivative, and raw-intl records.
+    crate::fingerprint::verify_export_records(&form_records, record_dump, enforce_default_pin)?;
     let lemma_records = lemma_sink.into_records();
     // Computed false-friend notes for the web text-checker (the CLI computes
     // the same records), keyed by folded form and SHARDED like the suggest
