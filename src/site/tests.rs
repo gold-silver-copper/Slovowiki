@@ -2,7 +2,7 @@ use super::coverage::{
     inject_generated_derivatives, insert_official_byform_aliases, official_surface_maps,
     plan_raw_pages, raw_lemma_fate, select_official_entry, select_official_surface, RawFate,
 };
-use super::entries::{cognate_block, entry_page, noun_table, word_chip};
+use super::entries::{cognate_block, noun_table, word_chip};
 use super::layout::json_str;
 use super::model::{
     format_source_date_epoch, proto_stem, razum_pct, BuildMeta, HeadwordIndex, SiteEntryInput,
@@ -23,7 +23,7 @@ use super::special::{
 };
 use super::DeterministicEntryIds;
 use crate::consensus::ConsensusConfig;
-use crate::model::{Candidate, CandidateSource, Confidence, MatchStatus, Pos};
+use crate::model::{Candidate, CandidateSource, Confidence, Pos};
 use interslavic::{
     Animacy as IsvAnimacy, Case as IsvCase, Gender as IsvGender, Number as IsvNumber,
 };
@@ -52,40 +52,6 @@ fn branch_pattern_renders_the_seven_combinations_canonically() {
     );
     assert_eq!(branch_pattern(&l(&["xx"])), None);
     assert_eq!(branch_pattern(&[]), None);
-}
-
-#[test]
-fn dictionary_seeded_banner_uses_sanitized_official_byform() {
-    let entry = crate::official::OfficialEntry {
-        id: "synthetic".to_string(),
-        isv: "foo, bar".to_string(),
-        addition: String::new(),
-        pos_raw: "adj.".to_string(),
-        pos: Pos::Adjective,
-        noun_traits: crate::model::NounTraits::default(),
-        english: "sample gloss".to_string(),
-        same_in: String::new(),
-        genesis: String::new(),
-        cells: std::collections::HashMap::new(),
-        frequency: None,
-        de: String::new(),
-        nl: String::new(),
-        eo: String::new(),
-        intelligibility: String::new(),
-        using_example: String::new(),
-    };
-    let mut candidate = Candidate::new("bar".to_string(), CandidateSource::BranchConsensus, 0.9);
-    candidate.confidence = Confidence::High;
-    let generation = crate::generator::Generation {
-        candidates: vec![candidate],
-        official: Some("bar".to_string()),
-        match_status: MatchStatus::OfficialMatch,
-        reconstruction: None,
-    };
-
-    let html = entry_page(1, &entry, &generation, &[], None);
-    assert!(html.contains("oficialnomu slovniku: <span class='mention'>bar</span>"));
-    assert!(!html.contains("foo, bar"));
 }
 
 #[test]
@@ -398,7 +364,7 @@ fn suppletive_plurals_come_from_the_inflector() {
 fn canonical_paradigms_pin_the_inflector_rev() {
     // A crate rev bump that changes these canonical cells (STEEN-G tables)
     // must fail CI, not silently reshape 30k inflection tables.
-    let fold = |x: String| crate::orthography::to_standard(&x.to_lowercase());
+    let fold = |x: String| crate::orthography::fold_key(&x);
     assert_eq!(
         fold(interslavic::noun("žena", IsvCase::Gen, IsvNumber::Singular)),
         "ženy"
@@ -670,6 +636,207 @@ fn deterministic_entry_ids_ignore_previous_output() {
         "1784371344 UNIX"
     );
     assert!(format_source_date_epoch("not-an-epoch").is_err());
+}
+
+#[test]
+fn build_info_hashes_every_export_input() {
+    let dir = std::env::temp_dir().join(format!(
+        "slovowiki-build-info-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("t")
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let lemmas = dir.join("custom-lemmas.cache.json");
+    std::fs::write(&lemmas, b"custom lemma input").unwrap();
+    let official = dir.join("custom-official.csv");
+    std::fs::write(&official, b"id,isv\n1,slovo\n").unwrap();
+    let build = BuildMeta {
+        git: "test".into(),
+        generated: "0 UNIX".into(),
+        total_entries: 1,
+        lemma_total: 1,
+    };
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&super::special::build_info_json(&build, &official, &lemmas).unwrap())
+            .unwrap();
+    assert_eq!(doc["schema_version"], 1);
+    assert_eq!(
+        doc["inputs"]["lemma_corpus"]["path"],
+        lemmas.display().to_string()
+    );
+    assert_eq!(
+        doc["inputs"]["lemma_corpus"]["sha256"],
+        crate::release::sha256_file(&lemmas).unwrap().0
+    );
+    assert_eq!(doc["inputs"]["lemma_corpus"]["required"], true);
+    assert_eq!(
+        doc["inputs"]["official_dictionary"]["path"],
+        official.display().to_string()
+    );
+    assert_eq!(
+        doc["inputs"]["official_dictionary"]["sha256"],
+        crate::release::sha256_file(&official).unwrap().0
+    );
+    assert_eq!(doc["inputs"]["official_dictionary"]["required"], true);
+    for (role, path, required) in [
+        ("raw_lemma_corpus", crate::DEFAULT_RAW_LEMMA_CACHE, false),
+        ("proto_slavic_cache", crate::DEFAULT_PROTO_CACHE, false),
+        ("wiktionary_enrichment", crate::DEFAULT_ENRICH_CACHE, false),
+        (
+            "corpus_calibration",
+            crate::calibrate::CORPUS_CALIBRATION_PATH,
+            false,
+        ),
+        ("pipeline_score_calibration", crate::calibrate::PATH, false),
+        (
+            "raw_slavic_coverage",
+            "data/raw-slavic-coverage.json",
+            false,
+        ),
+        (
+            "candidate_generation_summary",
+            super::special::CANDIDATE_SUMMARY_PATH,
+            true,
+        ),
+        (
+            "synonym_summary",
+            super::special::SYNONYM_SUMMARY_PATH,
+            true,
+        ),
+        ("corpus_summary", super::special::CORPUS_SUMMARY_PATH, true),
+    ] {
+        assert_eq!(
+            doc["inputs"][role]["path"], path,
+            "wrong path for {role}: {doc}"
+        );
+        assert_eq!(
+            doc["inputs"][role]["sha256"],
+            crate::release::sha256_file(Path::new(path)).unwrap().0,
+            "wrong digest for {role}: {doc}"
+        );
+        assert_eq!(
+            doc["inputs"][role]["required"], required,
+            "wrong requiredness for {role}: {doc}"
+        );
+    }
+    let curation = &doc["inputs"]["curation_notes"];
+    assert_eq!(curation["path"], super::navigation::CURATION_NOTES_PATH);
+    if Path::new(super::navigation::CURATION_NOTES_PATH).exists() {
+        assert!(curation["sha256"].is_string(), "{doc}");
+    } else {
+        assert!(curation["sha256"].is_null(), "{doc}");
+    }
+    assert_eq!(curation["required"], false);
+    assert!(
+        doc["data_release"].is_null(),
+        "custom inputs must not claim the default data release: {doc}"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn export_record_pin_only_applies_to_the_verified_default_data_tree() {
+    assert!(
+        super::default_record_pin_applies(
+            Path::new(crate::DEFAULT_LEMMA_CACHE),
+            Path::new(crate::DEFAULT_OFFICIAL),
+        ),
+        "the committed default inputs should enforce the whole-export record pin"
+    );
+    assert!(
+        !super::default_record_pin_applies(
+            Path::new(crate::DEFAULT_LEMMA_CACHE),
+            Path::new("/tmp/custom-official.csv"),
+        ),
+        "a custom official dictionary must not be compared to the default-tree pin"
+    );
+    assert!(
+        !super::default_record_pin_applies(
+            Path::new("/tmp/custom-lemmas.cache.json"),
+            Path::new(crate::DEFAULT_OFFICIAL),
+        ),
+        "a custom lemma corpus must not be compared to the default-tree pin"
+    );
+}
+
+#[test]
+fn metrics_page_only_publishes_machine_readable_benchmark_values() {
+    let bench = super::special::BenchSummary::load().unwrap();
+    let candidate: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(super::special::CANDIDATE_SUMMARY_PATH).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        bench.main_n,
+        candidate["runs"].as_array().unwrap().last().unwrap()["n"]
+            .as_u64()
+            .unwrap() as usize
+    );
+
+    let page = super::special::metrics_page(None, &bench);
+    assert!(
+        page.contains(&format!("({} jednoslovnyh zapisov)", bench.main_n)),
+        "benchmark denominator must come from the summary"
+    );
+    for stale_literal in [
+        "20,1%", "46,68%", "52,74%", "~48%", "~30%", "~21%", "89,5%", "+4,5pp", "+2,3pp", "+2,7pp",
+        "+9,4pp", "+1,09pp",
+    ] {
+        assert!(
+            !page.contains(stale_literal),
+            "report-only historical value {stale_literal} was presented as live"
+        );
+    }
+}
+
+/// V15.1 item 8 (successor to the deleted fallback-banner test): a
+/// comma-joined official cell ("foo, bar") must never be rendered raw by
+/// a shipped page — headwords come from the sanitized byform selection.
+#[test]
+fn official_page_never_renders_raw_comma_byform_cell() {
+    let entry = crate::official::OfficialEntry {
+        id: "synthetic".to_string(),
+        isv: "foo, bar".to_string(),
+        addition: String::new(),
+        pos_raw: "adj.".to_string(),
+        pos: Pos::Adjective,
+        noun_traits: crate::model::NounTraits::default(),
+        english: "sample gloss".to_string(),
+        same_in: String::new(),
+        genesis: String::new(),
+        cells: std::collections::HashMap::new(),
+        frequency: None,
+        de: String::new(),
+        nl: String::new(),
+        eo: String::new(),
+        intelligibility: String::new(),
+        using_example: String::new(),
+    };
+    let meta = meta_for(Confidence::High, None, None, true, Some("bar"), &["ru"]);
+    let raw_xref = crate::enrich::Xref::new();
+    let context = super::model::RenderContext {
+        enrich: None,
+        xref: None,
+        raw_xref: &raw_xref,
+    };
+    let html = super::entries::official_only_page(super::model::OfficialEntryInput {
+        isv: "bar",
+        entry: &entry,
+        id: 1,
+        synonyms: "",
+        derivation: "",
+        wiki_top: "",
+        meta: &meta,
+        raw_credit: "",
+        wiki_bottom: "",
+        context: &context,
+    });
+    assert!(html.contains("bar"));
+    assert!(
+        !html.contains("foo, bar"),
+        "raw comma-joined official cell leaked into shipped HTML"
+    );
 }
 
 /// Test metas for the official-fact-treatment invariants (issue #86).
@@ -1023,7 +1190,7 @@ fn jabluko_reconciles_as_near_official() {
 #[test]
 fn comma_separated_byforms_are_official_identities() {
     let official = crate::official::load(Path::new(crate::DEFAULT_OFFICIAL)).unwrap();
-    let index = crate::check::build_index(&official, None, Default::default());
+    let index = crate::check::build_index(&official, &[], Default::default());
     for byform in ["iměti", "imati", "poslědnji", "poslědny"] {
         let key = crate::forms::form_key(byform);
         let recs = index
